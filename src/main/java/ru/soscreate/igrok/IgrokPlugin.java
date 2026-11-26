@@ -32,10 +32,12 @@ public final class IgrokPlugin extends JavaPlugin implements Listener {
     private HouseBuilder houseBuilder;
     private AgentBrain brain;
     private AgentMemory memory;
+    private CognitiveNetwork cognition;
     private BukkitTask respawnTask;
     private BukkitTask brainTask;
     private BukkitTask memorySaveTask;
     private BukkitTask stateSaveTask;
+    private BukkitTask cognitionSaveTask;
     private File stateFile;
     private YamlConfiguration stateData;
     private final Map<UUID, Long> lastExplorationObservation = new HashMap<>();
@@ -50,6 +52,7 @@ public final class IgrokPlugin extends JavaPlugin implements Listener {
         memory = new AgentMemory(new File(getDataFolder(), "memory.bin"));
         memory.load();
         brain = new AgentBrain(this, memory);
+        cognition = new CognitiveNetwork(new File(getDataFolder(), "cognition.yml"));
         brain.loadState(stateData);
         dialogue = new ChatDialogue(this);
         Bukkit.getPluginManager().registerEvents(this, this);
@@ -57,6 +60,7 @@ public final class IgrokPlugin extends JavaPlugin implements Listener {
         brainTask = Bukkit.getScheduler().runTaskTimer(this, brain::tick, 1L, 1L);
         memorySaveTask = Bukkit.getScheduler().runTaskTimer(this, memory::save, 1200L, 1200L);
         stateSaveTask = Bukkit.getScheduler().runTaskTimer(this, this::savePersistentState, 600L, 600L);
+        cognitionSaveTask = Bukkit.getScheduler().runTaskTimer(this, cognition::save, 1200L, 1200L);
 
         if (getConfig().getBoolean("auto-spawn", true)) {
             Bukkit.getScheduler().runTask(this, () -> {
@@ -64,7 +68,7 @@ public final class IgrokPlugin extends JavaPlugin implements Listener {
                 houseBuilder.resumeSavedState(stateData);
             });
         }
-        getLogger().info("Igrok 0.7.0 social learning agent enabled for Paper 1.21.4.");
+        getLogger().info("Igrok 0.8.0 multi-layer cognitive agent enabled for Paper 1.21.4.");
     }
 
     @Override
@@ -72,10 +76,12 @@ public final class IgrokPlugin extends JavaPlugin implements Listener {
         if (respawnTask != null) respawnTask.cancel();
         if (brainTask != null) brainTask.cancel();
         if (stateSaveTask != null) stateSaveTask.cancel();
+        if (cognitionSaveTask != null) cognitionSaveTask.cancel();
         savePersistentState();
         if (memorySaveTask != null) memorySaveTask.cancel();
         if (houseBuilder != null) houseBuilder.cancel(false);
         if (memory != null) memory.save();
+        if (cognition != null) cognition.save();
         if (controller != null) controller.remove();
     }
 
@@ -273,4 +279,5 @@ public final class IgrokPlugin extends JavaPlugin implements Listener {
     FakePlayerController controller() { return controller; }
     HouseBuilder houseBuilder() { return houseBuilder; }
     AgentBrain brain() { return brain; }
+    CognitiveNetwork cognition() { return cognition; }
 }
