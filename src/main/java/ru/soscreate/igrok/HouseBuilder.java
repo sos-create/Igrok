@@ -6,7 +6,6 @@ import org.bukkit.Material;
 import org.bukkit.World;
 import org.bukkit.block.Block;
 import org.bukkit.block.BlockFace;
-import org.bukkit.block.Biome;
 import org.bukkit.block.data.Bisected;
 import org.bukkit.block.data.BlockData;
 import org.bukkit.block.data.type.Door;
@@ -97,6 +96,14 @@ final class HouseBuilder {
             return;
         }
 
+        if (actor == null || !actor.isOnline()) {
+            actor = plugin.controller().bukkitPlayer();
+            if (actor == null) {
+                stopForSafety("Строительство остановлено: бот больше не находится в мире.");
+                return;
+            }
+        }
+
         BlockStep step = plan.get(cursor);
         World world = base.getWorld();
         Block target = world.getBlockAt(base.getBlockX() + step.x(),
@@ -157,12 +164,23 @@ final class HouseBuilder {
         for (int[] offset : offsets) {
             int centerX = originX + offset[0];
             int centerZ = originZ + offset[1];
+            // Do not cause chunk loads/generation while looking for a site.
+            if (!isAreaLoaded(world, centerX, centerZ)) continue;
             int groundY = world.getHighestBlockYAt(centerX, centerZ);
             if (isSuitableSite(world, centerX, centerZ, groundY)) {
                 return new Location(world, centerX, groundY + 1, centerZ);
             }
         }
         return null;
+    }
+
+    private boolean isAreaLoaded(World world, int centerX, int centerZ) {
+        for (int x = centerX - 4; x <= centerX + 4; x++) {
+            for (int z = centerZ - 4; z <= centerZ + 4; z++) {
+                if (!world.isChunkLoaded(x >> 4, z >> 4)) return false;
+            }
+        }
+        return true;
     }
 
     private boolean isSuitableSite(World world, int centerX, int centerZ, int groundY) {
