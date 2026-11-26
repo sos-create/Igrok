@@ -12,6 +12,11 @@ java {
     }
 }
 
+repositories {
+    mavenCentral()
+    maven { url = "https://repo.papermc.io/repository/maven-public/" }
+}
+
 dependencies {
     paperweight.paperDevBundle("1.21.4-R0.1-SNAPSHOT")
 }
@@ -27,6 +32,6 @@ tasks {
 }
 
 paperweight {
-    // Paper 1.21.4 runs with Mojang mappings; do not reobfuscate the output.
-    reobfArtifactConfiguration = io.papermc.paperweight.userdev.ReobfArtifactConfiguration.MOJANG_PRODUCTION
+    // Paper 1.21.4 uses Mojang mappings at runtime.
+    reobfArtifactConfiguration = io.papermc.paperweight.userdev.ReobfArtifactConfiguration.getMOJANG_PRODUCTION()
 }
