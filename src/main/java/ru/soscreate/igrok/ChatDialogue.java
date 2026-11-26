@@ -9,13 +9,13 @@ import org.bukkit.event.Listener;
 import org.bukkit.plugin.java.JavaPlugin;
 
 import java.util.Locale;
+import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
-import java.util.concurrent.ConcurrentHashMap;
 
 final class ChatDialogue implements Listener {
     private final JavaPlugin plugin;
-    private final Map<UUID, Long> lastReply = new ConcurrentHashMap<>();
+    private final Map<UUID, Long> lastReply = new HashMap<>();
 
     ChatDialogue(JavaPlugin plugin) {
         this.plugin = plugin;
@@ -23,22 +23,26 @@ final class ChatDialogue implements Listener {
 
     @EventHandler
     public void onChat(AsyncChatEvent event) {
-        if (!plugin.getConfig().getBoolean("chat.enabled", true)) return;
-        String text = PlainTextComponentSerializer.plainText().serialize(event.message()).toLowerCase(Locale.ROOT);
-        String botName = plugin.getConfig().getString("bot-name", "Igrok").toLowerCase(Locale.ROOT);
-        if (!text.contains(botName) && !text.contains("игрок")) return;
+        String message = PlainTextComponentSerializer.plainText().serialize(event.message())
+                .toLowerCase(Locale.ROOT);
+        UUID senderId = event.getPlayer().getUniqueId();
 
-        long now = System.currentTimeMillis();
-        long cooldown = plugin.getConfig().getLong("chat.cooldown-seconds", 3) * 1000L;
-        long previous = lastReply.getOrDefault(event.getPlayer().getUniqueId(), 0L);
-        if (now - previous < cooldown) return;
-        lastReply.put(event.getPlayer().getUniqueId(), now);
-
-        String reply = response(text);
+        // AsyncChatEvent may run off-thread. All Bukkit/config access and dialogue
+        // state changes are deferred to the primary server thread.
         Bukkit.getScheduler().runTask(plugin, () -> {
-            if (plugin.isEnabled() && plugin.getServer().getOnlinePlayers().size() >= 0) {
-                Bukkit.broadcast(Component.text("Igrok: " + reply));
-            }
+            if (!plugin.isEnabled() || !plugin.getConfig().getBoolean("chat.enabled", true)
+                    || !plugin.controller().isSpawned()) return;
+
+            String botName = plugin.getConfig().getString("bot-name", "Igrok").toLowerCase(Locale.ROOT);
+            if (!message.contains(botName) && !message.contains("игрок")) return;
+
+            long now = System.currentTimeMillis();
+            long cooldown = plugin.getConfig().getLong("chat.cooldown-seconds", 3) * 1000L;
+            long previous = lastReply.getOrDefault(senderId, 0L);
+            if (now - previous < cooldown) return;
+            lastReply.put(senderId, now);
+
+            Bukkit.broadcast(Component.text("Igrok: " + response(message)));
         });
     }
 
