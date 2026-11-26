@@ -76,6 +76,10 @@ final class AgentNavigator {
         if (plannedDestination == null || manhattan(plannedDestination, goal) > 1
                 || path.isEmpty() || stuckTicks > 8) {
             if (!buildPath(goal)) {
+                // A* is deliberately bounded. If a complex forest or uneven terrain
+                // exhausts its search budget, keep making safe local progress instead
+                // of cancelling the goal and leaving the bot motionless.
+                if (moveDirectlyToward(destination)) return true;
                 failPath();
                 return false;
             }
@@ -94,6 +98,7 @@ final class AgentNavigator {
             // A path can outlive a chunk ticket. Never move toward stale chunk data.
             path.clear();
             plannedDestination = null;
+            if (moveDirectlyToward(destination)) return true;
             retryCooldown = 5;
             return true;
         }
@@ -162,6 +167,61 @@ final class AgentNavigator {
         lastRequestedDestination = null;
         cachedGoal = null;
         goalLookupCooldown = 0;
+    }
+
+    /**
+     * Safe local steering fallback used when bounded A* cannot find a route.
+     * It advances one walkable block at a time, respects loaded chunks, world
+     * borders, hazards and headroom, and lets vanilla entity physics do the walking.
+     */
+    private boolean moveDirectlyToward(Location destination) {
+        if (destination == null || destination.getWorld() != bot.getWorld()) return false;
+        World world = bot.getWorld();
+        Location current = bot.getLocation();
+        double currentDistance = square(destination.getX() - current.getX())
+                + square(destination.getZ() - current.getZ());
+        Node best = null;
+        double bestScore = Double.POSITIVE_INFINITY;
+        for (int[] dir : DIRECTIONS) {
+            int x = current.getBlockX() + dir[0];
+            int z = current.getBlockZ() + dir[1];
+            if (!world.isChunkLoaded(x >> 4, z >> 4)) continue;
+            Node candidate = findStandable(world, x, current.getBlockY(), z);
+            if (candidate == null || Math.abs(candidate.y() - current.getBlockY()) > 1) continue;
+            if (dir[0] != 0 && dir[1] != 0) {
+                Node sideA = findStandable(world, current.getBlockX() + dir[0],
+                        current.getBlockY(), current.getBlockZ());
+                Node sideB = findStandable(world, current.getBlockX(),
+                        current.getBlockY(), current.getBlockZ() + dir[1]);
+                if (sideA == null || sideB == null) continue;
+            }
+            double dx = candidate.x() + 0.5 - destination.getX();
+            double dz = candidate.z() + 0.5 - destination.getZ();
+            double distance = dx * dx + dz * dz;
+            if (distance >= currentDistance - 0.02) continue;
+            double score = distance + Math.abs(candidate.y() - current.getBlockY()) * 0.8;
+            if (score < bestScore) {
+                bestScore = score;
+                best = candidate;
+            }
+        }
+        if (best == null) return false;
+        double dx = best.x() + 0.5 - current.getX();
+        double dz = best.z() + 0.5 - current.getZ();
+        double length = Math.sqrt(dx * dx + dz * dz);
+        if (length < 0.001) return false;
+        dx /= length;
+        dz /= length;
+        bot.setRotation((float) Math.toDegrees(Math.atan2(-dx, dz)), 0.0F);
+        bot.setSprinting(false);
+        double vertical = bot.isOnGround() ? 0.0 : bot.getVelocity().getY();
+        if (bot.isOnGround() && best.y() > current.getBlockY()) {
+            Block feet = current.getBlock();
+            if (feet.getRelative(0, 1, 0).isPassable()
+                    && feet.getRelative(0, 2, 0).isPassable()) vertical = 0.42;
+        }
+        bot.setVelocity(new Vector(dx * 0.12, vertical, dz * 0.12));
+        return true;
     }
 
     private void failPath() {

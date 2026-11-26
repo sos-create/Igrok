@@ -1100,7 +1100,8 @@ final class AgentBrain {
                     Location center = block.getLocation().add(0.5, 0.5, 0.5);
                     double distance = center.distanceSquared(eye);
                     if (distance >= bestDistance || distance > (radius + 2.0) * (radius + 2.0)) continue;
-                    if (!bot.hasLineOfSight(center)) continue;
+                    // Select resources behind leaves/terrain too. Navigation must
+                    // approach them first; line of sight is checked again before mining.
                     if (woodMode && !hasNearbyLeaves(block)) continue;
                     best = block;
                     bestDistance = distance;
