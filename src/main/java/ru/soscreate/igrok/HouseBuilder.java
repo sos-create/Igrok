@@ -14,6 +14,7 @@ import org.bukkit.inventory.EquipmentSlot;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.entity.Player;
 import org.bukkit.scheduler.BukkitTask;
+import org.bukkit.configuration.file.YamlConfiguration;
 
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -36,6 +37,38 @@ final class HouseBuilder {
 
     HouseBuilder(IgrokPlugin plugin) {
         this.plugin = plugin;
+    }
+
+
+    void saveState(YamlConfiguration data) {
+        data.set("builder.active", isBuilding());
+        if (!isBuilding() || base == null || base.getWorld() == null) return;
+        data.set("builder.world", base.getWorld().getName());
+        data.set("builder.x", base.getX());
+        data.set("builder.y", base.getY());
+        data.set("builder.z", base.getZ());
+        data.set("builder.cursor", cursor);
+        data.set("builder.placed", placed);
+    }
+
+    void resumeSavedState(YamlConfiguration data) {
+        if (!data.getBoolean("builder.active", false) || isBuilding()) return;
+        World world = Bukkit.getWorld(data.getString("builder.world", ""));
+        Player bot = plugin.controller().bukkitPlayer();
+        if (world == null || bot == null) return;
+        base = new Location(world, data.getDouble("builder.x"), data.getDouble("builder.y"), data.getDouble("builder.z"));
+        if (!world.isChunkLoaded(base.getBlockX() >> 4, base.getBlockZ() >> 4)) {
+            plugin.getLogger().warning("Igrok cannot resume building: saved chunk is not loaded.");
+            return;
+        }
+        actor = bot;
+        plan.clear();
+        createCabinPlan();
+        cursor = Math.max(0, Math.min(plan.size(), data.getInt("builder.cursor", 0)));
+        placed = Math.max(0, data.getInt("builder.placed", cursor));
+        int interval = Math.max(1, plugin.getConfig().getInt("building.block-interval-ticks", 2));
+        task = Bukkit.getScheduler().runTaskTimer(plugin, this::placeNextBlock, 20L, interval);
+        say("Я продолжил строительство с того места, где остановился.");
     }
 
     boolean isBuilding() {
