@@ -169,6 +169,7 @@ final class AgentBrain {
             return;
         }
         navigator.stop();
+        bot.getInventory().setHeldItemSlot(2);
         face(bot, target);
         state = "Защищаюсь от " + threat.getName();
         if (tickCounter >= nextAttackTick) {
@@ -227,6 +228,7 @@ final class AgentBrain {
         }
 
         navigator.stop();
+        bot.getInventory().setHeldItemSlot(miningMode.equals("wood") ? 0 : 1);
         face(bot, blockLocation);
         int baseTicks = Math.max(12, plugin.getConfig().getInt("brain.mining.break-ticks", 28));
         int requiredTicks = miningMode.equals("stone") ? baseTicks * 2 : baseTicks;
