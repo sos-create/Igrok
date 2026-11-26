@@ -28,7 +28,7 @@ import java.util.zip.GZIPOutputStream;
  */
 final class AgentMemory {
     private static final int MAGIC = 0x49474D31; // IGM1
-    private static final int VERSION = 2;
+    private static final int VERSION = 3;
     private static final int MAX_PLAYERS = 128;
     private static final int MAX_HISTORY = 10;
     private static final int MAX_TEXT_CHARS = 180;
@@ -58,6 +58,8 @@ final class AgentMemory {
         int lastTopic;
         final int[] topics = new int[TOPIC_COUNT];
         final int[] actions = new int[5];
+        final int[][] transitions = new int[5][5];
+        int lastAction = -1;
         final ArrayDeque<Entry> history = new ArrayDeque<>();
     }
 
@@ -101,6 +103,13 @@ final class AgentMemory {
                     }
                     if (version >= 2) {
                         for (int action = 0; action < record.actions.length; action++) record.actions[action] = readVarInt(in);
+                    }
+                    if (version >= 3) {
+                        for (int from = 0; from < 5; from++) {
+                            for (int to = 0; to < 5; to++) record.transitions[from][to] = readVarInt(in);
+                        }
+                        record.lastAction = in.readByte() - 1;
+                        if (record.lastAction < -1 || record.lastAction >= 5) record.lastAction = -1;
                     }
                     int historyCount = in.readUnsignedByte();
                     if (historyCount > MAX_HISTORY) throw new IOException("Invalid conversation history size");
@@ -187,6 +196,8 @@ final class AgentMemory {
                 out.writeByte(record.lastTopic);
                 for (int count : record.topics) writeVarInt(out, Math.max(0, count));
                 for (int count : record.actions) writeVarInt(out, Math.max(0, count));
+                for (int[] row : record.transitions) for (int count : row) writeVarInt(out, Math.max(0, count));
+                out.writeByte(record.lastAction + 1);
                 out.writeByte(record.history.size());
                 for (Entry line : record.history) {
                     out.writeBoolean(line.fromBot);
@@ -310,14 +321,13 @@ final class AgentMemory {
     void observeAction(UUID player, String action) {
         if (player == null || action == null) return;
         PlayerRecord record = record(player);
-        int index = switch (action) {
-            case "build" -> 0;
-            case "mine" -> 1;
-            case "combat" -> 2;
-            case "explore" -> 3;
-            default -> 4;
-        };
+        int index = actionIndex(action);
         record.actions[index] = Math.min(1_000_000, record.actions[index] + 1);
+        if (record.lastAction >= 0 && record.lastAction < 5 && record.lastAction != index) {
+            record.transitions[record.lastAction][index] =
+                    Math.min(1_000_000, record.transitions[record.lastAction][index] + 1);
+        }
+        record.lastAction = index;
     }
 
     String learnedBehavior(UUID player) {
@@ -330,7 +340,25 @@ final class AgentMemory {
             if (record.actions[i] > record.actions[best]) best = i;
         }
         if (total == 0) return "Я пока наблюдал за тобой слишком мало, чтобы понять твой стиль игры.";
-        return "Я заметил " + total + " твоих игровых действий. Похоже, тебе больше всего нравится " + labels[best] + ".";
+        int next = -1;
+        for (int i = 0; i < 5; i++) {
+            if (next < 0 || record.transitions[best][i] > record.transitions[best][next]) next = i;
+        }
+        String habit = next >= 0 && record.transitions[best][next] > 0
+                ? " Часто после того, как ты начинаешь " + labels[best] + ", ты переходишь к тому, чтобы " + labels[next] + "."
+                : "";
+        return "Я заметил " + total + " твоих игровых действий. Чаще всего ты предпочитаешь " + labels[best] + "." + habit
+                + " Это пока наблюдаемая привычка, а не окончательный вывод.";
+    }
+
+    private static int actionIndex(String action) {
+        return switch (action) {
+            case "build" -> 0;
+            case "mine" -> 1;
+            case "combat" -> 2;
+            case "explore" -> 3;
+            default -> 4;
+        };
     }
 
     void recordMined(Material material) {
