@@ -243,7 +243,7 @@ final class ChatDialogue implements Listener {
         switch (action) {
             case "build" -> started = plugin.houseBuilder().start(sender.getLocation(), sender);
             case "follow" -> { plugin.brain().follow(sender); started = true; }
-            case "stop" -> { plugin.brain().stop(); started = true; }
+            case "stop" -> { plugin.brain().pauseByPlayer(); started = true; }
             case "wood" -> started = plugin.brain().requestMining("wood");
             case "stone" -> started = plugin.brain().requestMining("stone");
             case "attack" -> started = plugin.brain().attackNearest();

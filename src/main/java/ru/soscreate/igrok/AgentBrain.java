@@ -64,6 +64,8 @@ final class AgentBrain {
     private double decisionConfidence;
     private final SurvivalController survival;
     private boolean manualOrderActive;
+    /** Explicit player pause: keep position while the owner transfers items. */
+    private boolean pausedByPlayer;
     private org.bukkit.entity.Animals foodTarget;
     private int nextHuntAttackTick;
     private int nextBuildAttemptTick;
@@ -192,6 +194,13 @@ final class AgentBrain {
         // A recent player attack temporarily overrides every voluntary activity.
         // This keeps an attack from behind from being overwritten by IDLE/MINE/FOLLOW.
         if (handlePlayerDefense(bot)) return;
+        // An explicit stop is a persistent hold, not a one-tick navigator stop.
+        // It also outranks the short approach-to-speaker behavior triggered by chat.
+        if (pausedByPlayer) {
+            if (navigator != null) navigator.stop();
+            state = "Жду на месте";
+            return;
+        }
         if (handleConversationAttention(bot)) return;
 
         if (plugin.houseBuilder().isBuilding()) {
@@ -339,6 +348,7 @@ final class AgentBrain {
         face(bot, player.getEyeLocation());
 
         if (distanceSquared > 20.25 && distanceSquared <= 24.0 * 24.0) {
+            if (pausedByPlayer) return;
             if (navigator == null) navigator = new AgentNavigator(bot);
             if (plugin.houseBuilder().isBuilding()) plugin.houseBuilder().cancel(false);
             conversationTarget = playerId;
@@ -1201,6 +1211,7 @@ final class AgentBrain {
 
     void follow(Player player) {
         if (player == null) return;
+        pausedByPlayer = false;
         followTarget = player.getUniqueId();
         manualOrderActive = true;
         miningRequested = false;
@@ -1213,6 +1224,7 @@ final class AgentBrain {
     boolean requestMining(String mode) {
         String value = mode == null ? "wood" : mode.toLowerCase(Locale.ROOT);
         if (!java.util.Set.of("wood", "stone", "coal", "iron").contains(value)) return false;
+        pausedByPlayer = false;
         miningMode = value;
         manualOrderActive = true;
         miningRequested = true;
@@ -1227,6 +1239,7 @@ final class AgentBrain {
     }
 
     boolean attackNearest() {
+        pausedByPlayer = false;
         attackRequested = true;
         manualOrderActive = true;
         followTarget = null;
@@ -1254,6 +1267,7 @@ final class AgentBrain {
     }
 
     void exploreNow() {
+        pausedByPlayer = false;
         manualOrderActive = true;
         explorationRequested = true;
         followTarget = null;
@@ -1263,7 +1277,16 @@ final class AgentBrain {
         goal = GoalPlanner.Goal.EXPLORE;
         if (navigator != null) navigator.stop();
     }
+    void pauseByPlayer() {
+        stop();
+        pausedByPlayer = true;
+        state = "Жду на месте";
+    }
+
     void stop() {
+        pausedByPlayer = false;
+        conversationTarget = null;
+        conversationUntilTick = 0;
         manualOrderActive = false;
         foodTarget = null;
         followTarget = null;
