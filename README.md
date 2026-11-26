@@ -1,4 +1,4 @@
-# Igrok 0.9.16
+# Igrok 0.9.17
 
 Paper 1.21.4 server-side player agent (Java 21). Igrok is a lightweight autonomous survival agent built around a fake server-side Player, bounded pathfinding, utility-based goals, associative cognition and compact persistent memory.
 
@@ -59,3 +59,5 @@ The fake-player architecture is adapted from https://github.com/skylhcss/my-bot-
 Dialogue parsing recognizes Russian and English words with Unicode-aware tokenization, uses sentence-level question detection instead of treating every occurrence of "what/how" as a question, and distinguishes imperative forms from ordinary conversation. Repeated identical answers are varied without forcing a question at the end of every reply. Interaction and attack reactions are rate-limited; cancelled server events do not affect memory or trust.
 
 The Russian question detector uses Unicode-safe word boundaries. Standalone negation words are separated from ordinary phrases such as "без проблем", so casual positive wording does not suppress an otherwise valid action request.
+
+Wood and nature recognition also covers common Russian forms such as дерево, деревья, деревянный, древесина and доски.

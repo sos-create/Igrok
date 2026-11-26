@@ -91,7 +91,7 @@ final class LanguageProcessor {
         put(Concept.HOUSE, "дом", "домик", "здани", "хижин", "баз", "крыша", "стен", "house", "base");
         put(Concept.FOLLOW, "след", "рядом", "вместе", "сопровож", "за мной", "follow", "come");
         put(Concept.STOP, "останов", "хватит", "стой", "прекрат", "перестан", "stop", "halt");
-        put(Concept.WOOD, "дерев", "бревн", "дос", "ствол", "лес", "wood", "log", "tree");
+        put(Concept.WOOD, "дерев", "дерево", "деревья", "деревян", "древес", "бревн", "доск", "доска", "ствол", "лес", "wood", "log", "logs", "tree");
         put(Concept.STONE, "кам", "булыж", "гранит", "диорит", "андезит", "stone", "cobble");
         put(Concept.ORE, "руд", "желез", "угол", "мед", "алмаз", "золот", "лазур", "редстоун", "ore", "diamond", "iron");
         put(Concept.MINE, "коп", "шахт", "добы", "ресурс", "кирк", "mine", "mining");
@@ -111,7 +111,7 @@ final class LanguageProcessor {
         put(Concept.DISAGREEMENT, "нет", "неправ", "несоглас", "против", "отказ", "no", "disagree");
         put(Concept.QUESTION, "почему", "зачем", "как", "что", "кто", "где", "когда", "сколько", "можно", "ли", "question");
         put(Concept.IDEA, "иде", "предлож", "вариант", "план", "решен", "придум", "idea", "plan");
-        put(Concept.NATURE, "биом", "дерев", "лес", "река", "озер", "гора", "пустын", "nature", "forest");
+        put(Concept.NATURE, "биом", "дерев", "дерево", "деревья", "лес", "река", "озер", "гора", "пустын", "nature", "forest");
         put(Concept.CAVE, "пещер", "туннел", "подзем", "шахт", " cave", "cave", "tunnel");
         put(Concept.WEATHER, "погод", "дожд", "снег", "гроз", "ноч", "день", "weather", "rain");
         put(Concept.CREATIVE, "красив", "дизайн", "стиль", "украс", "цвет", "твор", "creative", "design");
