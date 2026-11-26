@@ -97,10 +97,12 @@ final class DialogueComposer {
         String base = response;
         if (base.equals(previous)) {
             repeat = repeatedReplyCounts.getOrDefault(playerId, 0) + 1;
-            response += switch ((repeat - 1) % 3) {
-                case 0 -> " Я уже говорил об этом, но пока придерживаюсь той же мысли.";
-                case 1 -> " Новых доводов у меня пока не появилось.";
-                default -> " Мой ответ не изменился после повторного обдумывания.";
+            // Replace the whole repeated line: appending text to a repeated
+            // question would still make the bot ask that same question again.
+            response = switch ((repeat - 1) % 3) {
+                case 0 -> "Я уже отвечал на это. Пока моя мысль не изменилась.";
+                case 1 -> "Не буду повторять одно и то же. Можем перейти к другой теме.";
+                default -> "Кажется, мы ходим по кругу. Давай пока займёмся чем-нибудь другим.";
             };
         }
         previousReplyBases.put(playerId, base);
