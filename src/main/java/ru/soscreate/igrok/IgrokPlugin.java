@@ -1,11 +1,11 @@
 package ru.soscreate.igrok;
 
-import net.kyori.adventure.text.Component;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.World;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandSender;
+import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
 import org.bukkit.event.entity.PlayerDeathEvent;
@@ -17,12 +17,14 @@ import java.util.Locale;
 public final class IgrokPlugin extends JavaPlugin implements Listener {
     private FakePlayerController controller;
     private ChatDialogue dialogue;
+    private HouseBuilder houseBuilder;
     private BukkitTask respawnTask;
 
     @Override
     public void onEnable() {
         saveDefaultConfig();
         controller = new FakePlayerController(this);
+        houseBuilder = new HouseBuilder(this);
         dialogue = new ChatDialogue(this);
         Bukkit.getPluginManager().registerEvents(this, this);
         Bukkit.getPluginManager().registerEvents(dialogue, this);
@@ -37,6 +39,7 @@ public final class IgrokPlugin extends JavaPlugin implements Listener {
     @Override
     public void onDisable() {
         if (respawnTask != null) respawnTask.cancel();
+        if (houseBuilder != null) houseBuilder.cancel(false);
         if (controller != null) controller.remove();
     }
 
@@ -63,9 +66,9 @@ public final class IgrokPlugin extends JavaPlugin implements Listener {
             return true;
         }
         if (args.length == 0 || args[0].equalsIgnoreCase("status")) {
-            sender.sendMessage(controller.isSpawned()
-                    ? "§aIgrok находится в мире."
-                    : "§eIgrok сейчас не создан.");
+            String status = controller.isSpawned() ? "§aIgrok находится в мире." : "§eIgrok сейчас не создан.";
+            if (houseBuilder.isBuilding()) status += " §6Он строит дом.";
+            sender.sendMessage(status);
             return true;
         }
         switch (args[0].toLowerCase(Locale.ROOT)) {
@@ -75,10 +78,31 @@ public final class IgrokPlugin extends JavaPlugin implements Listener {
                 else sender.sendMessage("§cНе удалось создать Igrok. Подробности в консоли.");
             }
             case "remove" -> {
+                houseBuilder.cancel(false);
                 controller.remove();
                 sender.sendMessage("§aIgrok удалён.");
             }
-            default -> sender.sendMessage("§eИспользование: /igrok <spawn|remove|status>");
+            case "build" -> {
+                if (!controller.isSpawned()) {
+                    sender.sendMessage("§cСначала создай бота: /igrok spawn");
+                    return true;
+                }
+                Location anchor = sender instanceof Player player ? player.getLocation() : controller.location();
+                Player actor = sender instanceof Player player ? player : controller.bukkitPlayer();
+                if (houseBuilder.start(anchor, actor)) {
+                    sender.sendMessage("§aIgrok начал строить дом. Прогресс будет виден в чате.");
+                } else {
+                    sender.sendMessage("§eIgrok не смог начать строительство. Проверь сообщение в чате.");
+                }
+            }
+            case "cancelbuild" -> {
+                if (!houseBuilder.isBuilding()) sender.sendMessage("§eСейчас строительство не выполняется.");
+                else {
+                    houseBuilder.cancel(true);
+                    sender.sendMessage("§aСтроительство остановлено.");
+                }
+            }
+            default -> sender.sendMessage("§eИспользование: /igrok <spawn|remove|status|build|cancelbuild>");
         }
         return true;
     }
@@ -89,6 +113,7 @@ public final class IgrokPlugin extends JavaPlugin implements Listener {
         event.setKeepInventory(true);
         event.setKeepLevel(true);
         event.setDroppedExp(0);
+        houseBuilder.cancel(false);
         if (!getConfig().getBoolean("auto-respawn", true)) return;
         if (respawnTask != null) respawnTask.cancel();
         respawnTask = Bukkit.getScheduler().runTaskLater(this, () -> {
@@ -96,7 +121,12 @@ public final class IgrokPlugin extends JavaPlugin implements Listener {
             spawnAtDefaultWorldSpawn();
         }, 40L);
     }
+
     FakePlayerController controller() {
         return controller;
+    }
+
+    HouseBuilder houseBuilder() {
+        return houseBuilder;
     }
 }
