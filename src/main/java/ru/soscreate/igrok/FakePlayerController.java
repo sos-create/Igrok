@@ -52,6 +52,7 @@ final class FakePlayerController {
             plugin.getLogger().severe("A real player already uses the bot name " + name);
             return false;
         }
+        IgrokServerPlayer created = null;
         try {
             MinecraftServer server = ((CraftServer) Bukkit.getServer()).getServer();
             ServerLevel level = ((CraftWorld) location.getWorld()).getHandle();
@@ -62,7 +63,7 @@ final class FakePlayerController {
             // no channel and crashes in setupInboundProtocol. EmbeddedChannel provides
             // a local, socket-free channel for this server-side fake player.
             EmbeddedChannel fakeChannel = new EmbeddedChannel(networkConnection);
-            IgrokServerPlayer created = new IgrokServerPlayer(server, level, profile, networkConnection);
+            created = new IgrokServerPlayer(server, level, profile, networkConnection);
             created.setPos(location.getX(), location.getY(), location.getZ());
             created.setYRot(location.getYaw());
             created.setXRot(location.getPitch());
@@ -89,6 +90,21 @@ final class FakePlayerController {
                     + " " + location.getBlockX() + " " + location.getBlockY() + " " + location.getBlockZ());
             return true;
         } catch (Throwable error) {
+            // PlayerList.placeNewPlayer may have registered the entity before a later
+            // initialization step fails. Always undo a partial spawn to avoid leaving
+            // an invisible/orphaned player in the server player list.
+            if (created != null && !created.isRemoved()) {
+                try {
+                    created.connection.onDisconnect(
+                            new DisconnectionDetails(Component.literal("Igrok spawn failed")));
+                } catch (Throwable cleanupError) {
+                    plugin.getLogger().warning("Could not clean up partial Igrok spawn: "
+                            + cleanupError.getMessage());
+                    try {
+                        created.remove(net.minecraft.world.entity.Entity.RemovalReason.DISCARDED);
+                    } catch (Throwable ignored) { }
+                }
+            }
             plugin.getLogger().severe("Could not spawn Igrok: " + error.getMessage());
             error.printStackTrace();
             return false;
