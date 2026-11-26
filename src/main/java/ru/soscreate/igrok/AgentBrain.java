@@ -633,7 +633,7 @@ final class AgentBrain {
     }
 
     /** The player may suggest an action, but the bot makes the final decision. */
-    boolean considerRequest(UUID playerId, String action) {
+    boolean considerRequest(UUID playerId, String action, boolean directOrder) {
         if (playerId == null || action == null) return false;
         String normalized = action.toLowerCase(Locale.ROOT);
         // Permanent safety rules cannot be overridden by trust, permissions or personality.
@@ -646,9 +646,11 @@ final class AgentBrain {
         if (plugin.getConfig().getBoolean("autonomy.refuse-all-player-orders", false)) return false;
 
         int trust = memory.trust(playerId);
-        double willingness = 0.28 + personality.sociability() * 0.24
+        double willingness = 0.42 + personality.sociability() * 0.18
                 + personality.patience() * 0.12 + Math.max(-5, Math.min(5, trust)) * 0.055;
-        // Busy, risky or disruptive requests are less likely to be accepted.
+        // A request is a proposal; a bare imperative is more intrusive and receives
+        // a lower acceptance chance. Igrok still evaluates risk, trust and its own goal.
+        if (directOrder) willingness -= 0.22;
         if (goal != GoalPlanner.Goal.IDLE && !normalized.contains("останов")) willingness -= 0.20;
         if (normalized.contains("атак") || normalized.contains("напад")) willingness -= 0.16;
         if (normalized.contains("след") || normalized.contains("иди")) willingness -= 0.04;
@@ -656,7 +658,8 @@ final class AgentBrain {
         return ThreadLocalRandom.current().nextDouble() < willingness;
     }
 
-    String refusalReason(UUID playerId) {
+    String refusalReason(UUID playerId, boolean directOrder) {
+        if (directOrder) return "Я понял, что ты мне приказываешь, но я не обязан подчиняться автоматически. У меня есть свои цели и причины отказаться.";
         int trust = memory.trust(playerId);
         if (goal != GoalPlanner.Goal.IDLE) return "Нет, я уже занят своим делом и не хочу бросать его.";
         if (trust < 0) return "Нет. Пока я тебе недостаточно доверяю.";
