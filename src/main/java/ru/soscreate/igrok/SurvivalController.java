@@ -895,7 +895,7 @@ final class SurvivalController {
         BlockPlaceEvent event = new BlockPlaceEvent(target, target.getState(),
                 target.getRelative(BlockFace.DOWN), item.clone(), bot, true, EquipmentSlot.HAND);
         Bukkit.getPluginManager().callEvent(event);
-        if (event.isCancelled()) return false;
+        if (event.isCancelled() || !event.canBuild()) return false;
         target.setType(Material.CRAFTING_TABLE);
         consumeOne(bot, Material.CRAFTING_TABLE);
         return true;
