@@ -63,8 +63,8 @@ final class FakePlayerController {
             created.setHealth(created.getMaxHealth());
 
             Player bukkitBot = created.getBukkitEntity();
-            bukkitBot.getInventory().setItem(0, new ItemStack(Material.WOODEN_AXE));
-            bukkitBot.getInventory().setItem(1, new ItemStack(Material.WOODEN_PICKAXE));
+            bukkitBot.getInventory().setItem(0, new ItemStack(Material.STONE_AXE));
+            bukkitBot.getInventory().setItem(1, new ItemStack(Material.STONE_PICKAXE));
             bukkitBot.getInventory().setItem(2, new ItemStack(Material.WOODEN_SWORD));
             bukkitBot.getInventory().setItem(3, new ItemStack(Material.BREAD, 8));
             bukkitBot.getInventory().setHeldItemSlot(2);

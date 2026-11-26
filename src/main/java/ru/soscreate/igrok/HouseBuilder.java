@@ -209,6 +209,12 @@ final class HouseBuilder {
     }
 
     private void createCabinPlan() {
+        // Personality influences the material palette, so different instances
+        // of the same blueprint do not all produce an identical cabin.
+        boolean boldPalette = plugin.brain().personality().creativity() > 0.58;
+        Material wallMaterial = boldPalette ? Material.DARK_OAK_PLANKS : Material.SPRUCE_PLANKS;
+        Material roofMaterial = boldPalette ? Material.DARK_OAK_STAIRS : Material.SPRUCE_PLANKS;
+
         // 7x7 foundation and floor.
         for (int x = -3; x <= 3; x++) {
             for (int z = -3; z <= 3; z++) {
@@ -235,7 +241,7 @@ final class HouseBuilder {
                     boolean window = y == 2 && ((z == -3 && x == 0)
                             || (x == -3 && z == 0) || (x == 3 && z == 0));
                     if (doorway || window) continue;
-                    add(x, y, z, Material.SPRUCE_PLANKS);
+                    add(x, y, z, wallMaterial);
                 }
             }
         }
@@ -257,7 +263,7 @@ final class HouseBuilder {
         // Flat overhanging roof, intentionally simple and reliable.
         for (int x = -4; x <= 4; x++) {
             for (int z = -4; z <= 4; z++) {
-                add(x, 4, z, Material.SPRUCE_PLANKS);
+                add(x, 4, z, boldPalette ? Material.DARK_OAK_PLANKS : Material.SPRUCE_PLANKS);
             }
         }
 

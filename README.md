@@ -1,17 +1,17 @@
 # Igrok
 
-Paper 1.21.4 server-side player agent (Java 21).
+Paper 1.21.4 server-side player agent (Java 21), version 0.3.1.
 
 ## Cognitive systems in 0.3.0
 - **Perception:** periodically observes nearby hostile mobs and the local loaded world.
 - **Personality:** stable traits (curiosity, bravery, sociability, patience, creativity) derived from the bot profile.
 - **Memory:** stores player reputation and mined block counts in `plugins/Igrok/memory.yml`.
 - **Goal planner:** prioritizes survival, defense, following a player, gathering and exploration.
-- **A* navigation:** bounded search over walkable blocks; it never loads chunks to make a route.
+- **A* navigation:** bounded search over walkable blocks; it never loads chunks to make a route and backs off briefly after a failed route to avoid repeatedly burning CPU.
 - **Combat:** approaches and attacks hostile Minecraft monsters. Player-versus-player attacks are not implemented.
 - **Mining:** can cut tree logs or mine stone/ore with a visible staged break action. Every actual block break uses Paper's player block-breaking API so protection plugins can cancel it.
 - **Dialogue:** opinions are selected from the bot's personality traits and remembered reputation, rather than only a fixed greeting list.
-- **House building:** the existing gradual cabin builder remains available.
+- **House building:** the gradual cabin builder remains available; its material palette is influenced by the bot's creativity trait.
 
 ## Commands
 - `/igrok status` — current agent activity.

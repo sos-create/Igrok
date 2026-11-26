@@ -278,10 +278,10 @@ final class AgentBrain {
                     Block block = world.getBlockAt(x, y, z);
                     Material type = block.getType();
                     if (!isWantedResource(type)) continue;
-                    if (miningMode.equals("wood") && !hasNearbyLeaves(block)) continue;
                     Location center = block.getLocation().add(0.5, 0.5, 0.5);
                     double distance = center.distanceSquared(origin);
                     if (distance >= bestDistance || distance > (radius + 2.0) * (radius + 2.0)) continue;
+                    if (miningMode.equals("wood") && !hasNearbyLeaves(block)) continue;
                     if (!bot.hasLineOfSight(center)) continue;
                     best = block;
                     bestDistance = distance;
@@ -298,9 +298,8 @@ final class AgentBrain {
         }
         return name.equals("STONE") || name.equals("COBBLESTONE")
                 || name.endsWith("_COAL_ORE") || name.endsWith("_IRON_ORE")
-                || name.endsWith("_COPPER_ORE") || name.endsWith("_GOLD_ORE")
-                || name.endsWith("_REDSTONE_ORE") || name.endsWith("_LAPIS_ORE")
-                || name.endsWith("_DIAMOND_ORE") || name.endsWith("_EMERALD_ORE");
+                || name.endsWith("_COPPER_ORE")
+                || name.endsWith("_REDSTONE_ORE") || name.endsWith("_LAPIS_ORE");
     }
 
     private boolean hasNearbyLeaves(Block log) {
@@ -328,7 +327,14 @@ final class AgentBrain {
                 int x = bot.getLocation().getBlockX() + ThreadLocalRandom.current().nextInt(-radius, radius + 1);
                 int z = bot.getLocation().getBlockZ() + ThreadLocalRandom.current().nextInt(-radius, radius + 1);
                 if (!bot.getWorld().isChunkLoaded(x >> 4, z >> 4)) continue;
-                int y = bot.getWorld().getHighestBlockYAt(x, z) + 1;
+                int groundY = bot.getWorld().getHighestBlockYAt(x, z);
+                while (groundY > bot.getWorld().getMinHeight() + 2) {
+                    String groundName = bot.getWorld().getBlockAt(x, groundY, z).getType().name();
+                    if (!groundName.endsWith("_LEAVES") && !groundName.endsWith("_LOG")
+                            && !groundName.endsWith("_WOOD")) break;
+                    groundY--;
+                }
+                int y = groundY + 1;
                 Location candidate = new Location(bot.getWorld(), x + 0.5, y, z + 0.5);
                 if (bot.getWorld().getBlockAt(x, y, z).isPassable()
                         && bot.getWorld().getBlockAt(x, y + 1, z).isPassable()) {

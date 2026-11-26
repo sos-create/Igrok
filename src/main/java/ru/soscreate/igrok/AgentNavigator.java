@@ -26,6 +26,7 @@ final class AgentNavigator {
     private Node plannedDestination;
     private int pathIndex;
     private int stuckTicks;
+    private int retryCooldown;
     private Location previousPosition;
 
     AgentNavigator(Player bot) {
@@ -33,22 +34,26 @@ final class AgentNavigator {
     }
 
     boolean moveTo(Location destination) {
+        if (retryCooldown > 0) {
+            retryCooldown--;
+            return false;
+        }
         if (destination == null || destination.getWorld() == null
                 || destination.getWorld() != bot.getWorld()) {
-            stop();
+            failPath();
             return false;
         }
 
         Node goal = findGoal(destination);
         if (goal == null) {
-            stop();
+            failPath();
             return false;
         }
 
         if (plannedDestination == null || manhattan(plannedDestination, goal) > 1
                 || path.isEmpty() || stuckTicks > 8) {
             if (!buildPath(goal)) {
-                stop();
+                failPath();
                 return false;
             }
         }
@@ -98,6 +103,11 @@ final class AgentNavigator {
         if (stuckTicks > 8) {
             path.clear();
             plannedDestination = null;
+            retryCooldown = 5;
+            if (bot.isOnGround()) {
+                Vector currentVelocity = bot.getVelocity();
+                bot.setVelocity(new Vector(currentVelocity.getX(), 0.42, currentVelocity.getZ()));
+            }
         }
         return true;
     }
@@ -110,7 +120,13 @@ final class AgentNavigator {
         pathIndex = 0;
         plannedDestination = null;
         stuckTicks = 0;
+        retryCooldown = 0;
         previousPosition = null;
+    }
+
+    private void failPath() {
+        stop();
+        retryCooldown = 20;
     }
 
     boolean arrived() {
