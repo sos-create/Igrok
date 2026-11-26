@@ -68,7 +68,7 @@ public final class IgrokPlugin extends JavaPlugin implements Listener {
                 houseBuilder.resumeSavedState(stateData);
             });
         }
-        getLogger().info("Igrok 0.9.8 autonomous survival agent enabled for Paper 1.21.4.");
+        getLogger().info("Igrok 0.9.9 autonomous survival agent enabled for Paper 1.21.4.");
     }
 
     @Override
@@ -95,8 +95,15 @@ public final class IgrokPlugin extends JavaPlugin implements Listener {
         Location saved = new Location(world, stateData.getDouble("bot.x"), stateData.getDouble("bot.y"),
                 stateData.getDouble("bot.z"), (float) stateData.getDouble("bot.yaw"),
                 (float) stateData.getDouble("bot.pitch"));
+        // Never synchronously load or generate a chunk just to restore the bot.
+        // If its old chunk is not already loaded, use the normal world spawn instead.
         if (!world.isChunkLoaded(saved.getBlockX() >> 4, saved.getBlockZ() >> 4)) {
-            world.getChunkAt(saved.getBlockX() >> 4, saved.getBlockZ() >> 4);
+            getLogger().warning("Saved Igrok position is in an unloaded chunk; using the world spawn.");
+            return false;
+        }
+        if (!isSafeSpawn(saved)) {
+            getLogger().warning("Saved Igrok position is unsafe; using the world spawn.");
+            return false;
         }
         return controller.spawn(saved, getConfig().getString("bot-name", "Igrok"));
     }
@@ -135,7 +142,28 @@ public final class IgrokPlugin extends JavaPlugin implements Listener {
         Location spawn = world.getSpawnLocation().clone();
         spawn.setX(spawn.getBlockX() + 0.5);
         spawn.setZ(spawn.getBlockZ() + 0.5);
+        if (!isSafeSpawn(spawn)) {
+            getLogger().severe("Igrok was not spawned: world spawn chunk is not loaded or the location is unsafe. "
+                    + "No chunk was force-loaded and the world was not modified.");
+            return false;
+        }
         return controller.spawn(spawn, getConfig().getString("bot-name", "Igrok"));
+    }
+
+    private boolean isSafeSpawn(Location location) {
+        if (location == null || location.getWorld() == null) return false;
+        World world = location.getWorld();
+        int x = location.getBlockX();
+        int y = location.getBlockY();
+        int z = location.getBlockZ();
+        if (y <= world.getMinHeight() || y + 1 >= world.getMaxHeight()
+                || !world.isChunkLoaded(x >> 4, z >> 4)
+                || !world.getWorldBorder().isInside(location)) return false;
+        org.bukkit.block.Block feet = world.getBlockAt(x, y, z);
+        org.bukkit.block.Block head = world.getBlockAt(x, y + 1, z);
+        org.bukkit.block.Block floor = world.getBlockAt(x, y - 1, z);
+        return feet.isPassable() && head.isPassable() && !feet.isLiquid()
+                && !head.isLiquid() && floor.getType().isSolid() && !floor.isLiquid();
     }
 
     @EventHandler
