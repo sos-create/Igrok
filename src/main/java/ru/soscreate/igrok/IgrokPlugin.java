@@ -49,18 +49,18 @@ public final class IgrokPlugin extends JavaPlugin implements Listener {
         stateData = YamlConfiguration.loadConfiguration(stateFile);
         controller = new FakePlayerController(this);
         houseBuilder = new HouseBuilder(this);
-        memory = new AgentMemory(new File(getDataFolder(), "memory.bin"));
+        memory = new AgentMemory(getDataFolder());
         memory.load();
         brain = new AgentBrain(this, memory);
-        cognition = new CognitiveNetwork(new File(getDataFolder(), "cognition.yml"));
+        cognition = new CognitiveNetwork(new File(new File(getDataFolder(), "memory"), "cognition.yml"));
         brain.loadState(stateData);
         dialogue = new ChatDialogue(this);
         Bukkit.getPluginManager().registerEvents(this, this);
         Bukkit.getPluginManager().registerEvents(dialogue, this);
         brainTask = Bukkit.getScheduler().runTaskTimer(this, brain::tick, 1L, 1L);
-        memorySaveTask = Bukkit.getScheduler().runTaskTimer(this, memory::save, 1200L, 1200L);
+        memorySaveTask = Bukkit.getScheduler().runTaskTimer(this, memory::save, 6000L, 6000L);
         stateSaveTask = Bukkit.getScheduler().runTaskTimer(this, this::savePersistentState, 600L, 600L);
-        cognitionSaveTask = Bukkit.getScheduler().runTaskTimer(this, cognition::save, 1200L, 1200L);
+        cognitionSaveTask = Bukkit.getScheduler().runTaskTimer(this, cognition::save, 6000L, 6000L);
 
         if (getConfig().getBoolean("auto-spawn", true)) {
             Bukkit.getScheduler().runTask(this, () -> {

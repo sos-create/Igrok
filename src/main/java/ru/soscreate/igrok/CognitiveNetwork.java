@@ -4,6 +4,7 @@ import org.bukkit.configuration.file.YamlConfiguration;
 
 import java.io.File;
 import java.io.IOException;
+import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
@@ -54,6 +55,7 @@ final class CognitiveNetwork {
     private final LanguageProcessor language = new LanguageProcessor();
     private final double[][] synapses = new double[NODES][NODES];
     private final File storage;
+    private boolean dirty;
 
     CognitiveNetwork(File storage) {
         this.storage = storage;
@@ -236,6 +238,7 @@ final class CognitiveNetwork {
                     LanguageProcessor.Concept.TRUST);
             default -> { }
         }
+        dirty = true;
     }
 
     private void reinforcePath(LanguageProcessor.Concept... concepts) {
@@ -268,10 +271,11 @@ final class CognitiveNetwork {
             synapses[from][intentNode] = clamp(synapses[from][intentNode] + association * Math.max(0.2, signal), 0.0, MAX_WEIGHT);
             if (reward > 0.15) synapses[intentNode][from] = clamp(synapses[intentNode][from] + association * 0.35, 0.0, MAX_WEIGHT);
         }
+        dirty = true;
     }
 
     void save() {
-        if (storage == null) return;
+        if (storage == null || !dirty) return;
         YamlConfiguration yaml = new YamlConfiguration();
         yaml.set("version", 1);
         yaml.set("node-count", NODES);
@@ -281,15 +285,38 @@ final class CognitiveNetwork {
         try {
             File parent = storage.getParentFile();
             if (parent != null && !parent.exists() && !parent.mkdirs()) return;
-            yaml.save(storage);
+            File temporary = new File(parent, storage.getName() + ".tmp");
+            yaml.save(temporary);
+            Files.move(temporary.toPath(), storage.toPath(),
+                    java.nio.file.StandardCopyOption.REPLACE_EXISTING,
+                    java.nio.file.StandardCopyOption.ATOMIC_MOVE);
+            dirty = false;
+        } catch (java.nio.file.AtomicMoveNotSupportedException unsupported) {
+            try {
+                File temporary = new File(storage.getParentFile(), storage.getName() + ".tmp");
+                yaml.save(temporary);
+                Files.move(temporary.toPath(), storage.toPath(),
+                        java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+                dirty = false;
+            } catch (IOException error) {
+                org.bukkit.Bukkit.getLogger().warning("[Igrok] Не удалось сохранить нейронные связи: " + error.getMessage());
+            }
         } catch (IOException error) {
             org.bukkit.Bukkit.getLogger().warning("[Igrok] Не удалось сохранить нейронные связи: " + error.getMessage());
         }
     }
 
     private void load() {
-        if (storage == null || !storage.isFile()) return;
-        YamlConfiguration yaml = YamlConfiguration.loadConfiguration(storage);
+        if (storage == null) return;
+        File source = storage;
+        if (!source.isFile()) {
+            File parent = storage.getParentFile();
+            File legacy = parent == null ? null : new File(parent.getParentFile(), "cognition.yml");
+            if (legacy == null || !legacy.isFile()) return;
+            source = legacy;
+            dirty = true;
+        }
+        YamlConfiguration yaml = YamlConfiguration.loadConfiguration(source);
         if (yaml.contains("node-count") && yaml.getInt("node-count") != NODES) return;
         List<?> values = yaml.getList("synapses");
         if (values == null || values.size() != NODES * NODES) return;

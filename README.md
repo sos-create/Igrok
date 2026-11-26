@@ -1,42 +1,45 @@
-# Igrok 0.8.0
+# Igrok 0.9.0
 
 Paper 1.21.4 server-side player agent (Java 21).
 
+## Compact memory format
+All persistent memory is stored in the dedicated folder plugins/Igrok/memory/.
+
+- memory.dat — one compressed GZIP container holding a shared word dictionary, phrase table, player profiles and a sparse 2D phrase-transition matrix.
+- cognition.yml — learned cognitive-network weights; written only after the weights change.
+- The word dictionary maps each unique token to a numeric ID. Repeated words are not copied into every sentence.
+- The phrase table maps each unique sentence to a sequence of word IDs. If a sentence repeats, history stores only its phrase ID.
+- The two-dimensional matrix uses X = previous phrase ID and Y = current phrase ID. It counts which sentence sequences commonly follow one another. It is sparse, so unused coordinates consume no storage.
+- IDs use variable-length integer encoding; the full payload is GZIP-compressed.
+- The player cap is 50. Up to 24 recent phrase references are kept per player. Oldest profiles are removed first when the cap is exceeded.
+- Word IDs, phrase IDs and matrix coordinates are bounded to prevent unbounded storage growth.
+
+## Low disk activity and migration
+- Files are read once at plugin startup and kept in memory during gameplay.
+- The memory pack is written every five minutes only if something changed, and once on normal shutdown.
+- Cognitive weights are also saved only when changed, on the same five-minute schedule and during shutdown.
+- A write uses a temporary file and atomic replacement where supported; one compressed memory pack avoids many tiny disk writes.
+- Existing plugins/Igrok/memory.bin, memory.yml and root cognition.yml are read as legacy sources and copied into the new folder format. Old files are left untouched as backups.
+- Existing 0.8.0 memory is converted to shared word and phrase IDs at first startup after the upgrade.
+
 ## Cognitive architecture
-- Language layer: Russian/English normalization, lightweight stemming, synonym groups, question and command detection, negation and sentiment signals.
-- Associative layer: dozens of semantic concept nodes activate related ideas through weighted links.
-- Intent layer: combines several signals to distinguish greetings, questions, memories, opinions, emotions, requests, agreement and disagreement.
-- Dialogue layer: response openings, topic-specific reasoning, content fragments and follow-up questions combine into a large variety of replies.
-- Adaptive links: a Hebbian-style learning rule strengthens or weakens associations when a player reacts to a previous answer. Co-occurring concepts also form stronger links.
-- Player behavior model: per-player counters and action transitions remember whether a player tends to build, mine, fight, explore or interact socially, including common sequences.
+- Russian/English normalization, common word endings, synonym groups, question/command detection, negation and sentiment.
+- Concept neurons, associative links, intent neurons and two shallow propagation passes.
+- Hebbian-style link adaptation based on conversation context and player reactions.
+- DialogueComposer creates varied replies using topic-specific reasoning, memory and personality.
+- Player profiles learn mining, building, combat, exploration and social interaction patterns.
 
-This is an algorithmic simulation, not a human brain or a pretrained language model. It does not understand every possible sentence like a large language model, but it uses multiple connected stages rather than a one-keyword-to-one-answer lookup.
-
-## Persistent learning
-- plugins/Igrok/memory.bin keeps compact per-player records, dialogue snippets, reputation, preferred topics, action counters and action-transition counts.
-- plugins/Igrok/cognition.yml stores learned synaptic weights.
-- Old memory.bin versions 1 and 2 are read and upgraded to version 3 on the next save.
-- Learning and language analysis run only when a relevant event occurs. The network is not ticked continuously.
-- Memory and network weights are saved periodically and on normal shutdown.
+This is an algorithmic cognitive simulation, not a pretrained large language model. It performs bounded calculations only for relevant events and addressed messages, not on every game tick.
 
 ## Chat and actions
-- Igrok responds when addressed by its configured name or by “Игрок”; it can also continue a recent direct conversation.
+- Igrok responds when addressed by its configured name or Игрок; recent direct dialogue can continue without repeating the name.
 - Unrelated player-to-player chat is ignored.
-- It can answer in public chat, express opinions, remember earlier messages and politely refuse requests.
-- Chat requests are suggestions, not guaranteed commands. igrok.control and igrok.build permissions are required to request actions.
-- TNT placement, ignition and detonation remain permanently forbidden.
-
-## Performance
-- No neural framework, GPU, model files, database, external network request or extra runtime dependency.
-- Inference is event-driven and bounded: a few dozen semantic nodes with two propagation passes, and small bounded memory records.
-- The neural-inspired network is calculated on addressed chat only, not on every game tick.
-- Existing movement, pathfinding, mining and building remain governed by their current tick limits.
+- Requests require igrok.control or igrok.build; permission does not force the bot to accept.
+- TNT and ignition remain forbidden.
 
 ## Commands
-- /igrok status — current activity.
-- /igrok brain — personality, memory statistics and state.
-- /igrok follow, /igrok mine wood, /igrok mine stone, /igrok attack, /igrok explore, /igrok stop.
-- /igrok build, /igrok cancelbuild, /igrok spawn, /igrok remove.
+- /igrok status, /igrok brain, /igrok follow
+- /igrok mine wood, /igrok mine stone, /igrok attack, /igrok explore, /igrok stop
+- /igrok build, /igrok cancelbuild, /igrok spawn, /igrok remove
 
-## Existing behavior retained
-Igrok automatically appears while the Paper server runs, disconnects when it shuts down, remembers its location and unfinished goals across restarts, and keeps the existing safety restrictions. The fake-player architecture is adapted from https://github.com/skylhcss/my-bot-mod, distributed under MIT; see UPSTREAM-LICENSE.
+The fake-player architecture is adapted from https://github.com/skylhcss/my-bot-mod, distributed under MIT; see UPSTREAM-LICENSE.
