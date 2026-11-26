@@ -186,7 +186,10 @@ final class CognitiveNetwork {
         if (!imperative) return null;
 
         if (containsAny(text, "постро", "дом", "строй", "build", "house")) return "build";
-        if (containsAny(text, "след", "иди за", "пойдем", "пойдём", "рядом", "follow", "come with")) return "follow";
+        // Clear "come here" variants must resume the bot after an explicit stop.
+        if (containsAny(text, "след", "иди за", "иди ко мне", "иди сюда", "пойдем", "пойдём",
+                "подойди", "подойти", "подходи", "приходи", "ко мне", "сюда", "рядом",
+                "follow", "come with", "come here", "come to me", "approach")) return "follow";
         if (containsAny(text, "останов", "стой", "прекрат", "stop", "halt")) return "stop";
         if (containsAny(text, "атак", "напад", "защит", "убей", "attack", "fight")) return "attack";
         if (containsAny(text, "исслед", "развед", "прогуля", "осмотр", "explore")) return "explore";

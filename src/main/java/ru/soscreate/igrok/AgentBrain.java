@@ -639,8 +639,11 @@ final class AgentBrain {
         // Permanent safety rules cannot be overridden by trust, permissions or personality.
         if (normalized.contains("tnt") || normalized.contains("динамит")
                 || normalized.contains("подж") || normalized.contains("взорв")) return false;
-        if (plugin.getConfig().getBoolean("autonomy.refuse-all-player-orders", false)) return false;
         if ("stop".equals(normalized)) return true;
+        // A player must always be able to release an explicit pause by asking Igrok
+        // to come over; random personality refusal must not make the pause permanent.
+        if (pausedByPlayer && "follow".equals(normalized)) return true;
+        if (plugin.getConfig().getBoolean("autonomy.refuse-all-player-orders", false)) return false;
 
         int trust = memory.trust(playerId);
         double willingness = 0.28 + personality.sociability() * 0.24
