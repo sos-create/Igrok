@@ -68,7 +68,7 @@ public final class IgrokPlugin extends JavaPlugin implements Listener {
                 houseBuilder.resumeSavedState(stateData);
             });
         }
-        getLogger().info("Igrok 0.9.0 compact matrix-memory cognitive agent enabled for Paper 1.21.4.");
+        getLogger().info("Igrok 0.9.1 hybrid reasoning agent enabled for Paper 1.21.4.");
     }
 
     @Override
@@ -186,6 +186,8 @@ public final class IgrokPlugin extends JavaPlugin implements Listener {
                 sender.sendMessage("§6Характер Igrok: §f" + brain.personalityDescription());
                 brain.memoryStats(sender instanceof Player player ? player : null);
                 sender.sendMessage("§6Состояние: §f" + brain.state());
+                sender.sendMessage("§7Почему выбрано это действие: §f" + brain.decisionReason());
+                sender.sendMessage("§7Уверенность оценки: §f" + Math.round(brain.decisionConfidence() * 100) + "%");
             }
             case "follow" -> {
                 if (!(sender instanceof Player player)) {

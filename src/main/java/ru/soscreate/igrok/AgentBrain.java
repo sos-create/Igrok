@@ -45,6 +45,8 @@ final class AgentBrain {
     private int tickCounter;
     private Location exploreTarget;
     private String state = "Наблюдаю за миром";
+    private String decisionReason = "Пока нет достаточных наблюдений.";
+    private double decisionConfidence;
 
     AgentBrain(IgrokPlugin plugin, AgentMemory memory) {
         this.plugin = plugin;
@@ -57,6 +59,8 @@ final class AgentBrain {
     AgentPersonality personality() { return personality; }
     AgentMemory memory() { return memory; }
     String state() { return state; }
+    String decisionReason() { return decisionReason; }
+    double decisionConfidence() { return decisionConfidence; }
     String personalityDescription() { return personality.describe(); }
 
 
@@ -260,13 +264,23 @@ final class AgentBrain {
             explore = true;
         }
 
-        GoalPlanner.Goal chosen = planner.choose(new GoalPlanner.Situation(
+        GoalPlanner.Decision decision = planner.evaluate(new GoalPlanner.Situation(
                 health, maxHealth, threatDistance, threat != null,
-                followed != null, miningRequested, explore,
-                personality.bravery(), personality.curiosity()));
+                followed != null, miningRequested, explore, attackRequested,
+                personality.bravery(), personality.curiosity(), goal));
+        GoalPlanner.Goal chosen = decision.goal();
+        decisionReason = decision.reason();
+        decisionConfidence = decision.confidence();
 
-        if (followTarget != null) chosen = GoalPlanner.Goal.FOLLOW;
-        if (attackRequested && threat != null) chosen = GoalPlanner.Goal.DEFEND;
+        // A critical survival rule is stronger than a follow/attack request.
+        if (chosen != GoalPlanner.Goal.FLEE && followTarget != null) {
+            chosen = GoalPlanner.Goal.FOLLOW;
+            decisionReason = "Есть активная цель сопровождения; угрозы сейчас не требуют отступления.";
+        }
+        if (chosen != GoalPlanner.Goal.FLEE && attackRequested && threat != null) {
+            chosen = GoalPlanner.Goal.DEFEND;
+            decisionReason = "Запрошена защита, а противник обнаружен; риск проверен правилом безопасности.";
+        }
         if (chosen != goal) {
             navigator.stop();
             goal = chosen;
