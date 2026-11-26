@@ -1,6 +1,8 @@
 package ru.soscreate.igrok;
 
 import com.mojang.authlib.GameProfile;
+import com.mojang.authlib.properties.Property;
+import com.destroystokyo.paper.profile.ProfileProperty;
 import net.minecraft.network.Connection;
 import net.minecraft.network.DisconnectionDetails;
 import net.minecraft.network.protocol.PacketFlow;
@@ -24,6 +26,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.StandardCopyOption;
 import java.util.Arrays;
+import java.util.Collection;
 import java.util.List;
 
 import java.nio.charset.StandardCharsets;
@@ -33,6 +36,7 @@ final class FakePlayerController {
     private final IgrokPlugin plugin;
     private IgrokServerPlayer bot;
     private EmbeddedChannel fakeChannel;
+    private List<ProfileProperty> skinProperties = List.of();
 
     FakePlayerController(IgrokPlugin plugin) {
         this.plugin = plugin;
@@ -42,6 +46,18 @@ final class FakePlayerController {
     boolean isBot(Player player) { return isSpawned() && player.getUniqueId().equals(bot.getUUID()); }
     Location location() { return isSpawned() ? bot.getBukkitEntity().getLocation().clone() : null; }
     Player bukkitPlayer() { return isSpawned() ? bot.getBukkitEntity() : null; }
+
+    void setSkinProperties(Collection<ProfileProperty> properties) {
+        if (properties == null || properties.isEmpty()) {
+            skinProperties = List.of();
+            return;
+        }
+        skinProperties = properties.stream()
+                .filter(property -> "textures".equals(property.getName()))
+                .filter(property -> property.getValue() != null && !property.getValue().isBlank())
+                .filter(property -> property.getSignature() != null && !property.getSignature().isBlank())
+                .toList();
+    }
 
     boolean spawn(Location location, String configuredName) {
         if (isSpawned()) return true;
@@ -61,12 +77,27 @@ final class FakePlayerController {
             ServerLevel level = ((CraftWorld) location.getWorld()).getHandle();
             UUID uuid = UUID.nameUUIDFromBytes(("OfflinePlayer:" + name).getBytes(StandardCharsets.UTF_8));
             GameProfile profile = new GameProfile(uuid, name);
+            // Preserve the official signed textures property for the normal player model.
+            for (ProfileProperty skin : skinProperties) {
+                profile.getProperties().put("textures",
+                        new Property("textures", skin.getValue(), skin.getSignature()));
+            }
+
+            ClientInformation defaults = ClientInformation.createDefault();
+            ClientInformation limitedClientInfo = new ClientInformation(
+                    defaults.language(), 2, defaults.chatVisibility(), defaults.chatColors(),
+                    defaults.modelCustomisation(), defaults.mainHand(), defaults.textFilteringEnabled(),
+                    defaults.allowsListing(), defaults.particleStatus());
+            CommonListenerCookie cookie = new CommonListenerCookie(profile, 0, limitedClientInfo, false);
+
             Connection networkConnection = new Connection(PacketFlow.SERVERBOUND);
             // PlayerList.placeNewPlayer expects an active channel. A bare Connection has
             // no channel and crashes in setupInboundProtocol. EmbeddedChannel provides
             // a local, socket-free channel for this server-side fake player.
             channel = new EmbeddedChannel(networkConnection);
-            created = new IgrokServerPlayer(server, level, profile, networkConnection);
+            // The real ServerPlayer client settings must be restricted before registration,
+            // because registration immediately creates player chunk tickets.
+            created = new IgrokServerPlayer(server, level, profile, networkConnection, limitedClientInfo);
             created.setPos(location.getX(), location.getY(), location.getZ());
             created.setYRot(location.getYaw());
             created.setXRot(location.getPitch());
@@ -79,17 +110,11 @@ final class FakePlayerController {
             // PlayerList installs the initial client settings.
             Player bukkitBot = created.getBukkitEntity();
             applySafeChunkDistances(bukkitBot);
-            ClientInformation defaults = ClientInformation.createDefault();
-            ClientInformation limitedClientInfo = new ClientInformation(
-                    defaults.language(), 2, defaults.chatVisibility(), defaults.chatColors(),
-                    defaults.modelCustomisation(), defaults.mainHand(), defaults.textFilteringEnabled(),
-                    defaults.allowsListing(), defaults.particleStatus());
-            CommonListenerCookie cookie = new CommonListenerCookie(profile, 0, limitedClientInfo, false);
             server.getPlayerList().placeNewPlayer(networkConnection, created, cookie);
             created.restoreFakeListener();
             applySafeChunkDistances(bukkitBot);
-            created.teleportTo(level, location.getX(), location.getY(), location.getZ(),
-                    java.util.Set.of(), location.getYaw(), location.getPitch(), false);
+            // Position was set before registration. A second teleport here is redundant
+            // and would recalculate player tracking for no benefit.
             created.setHealth(created.getMaxHealth());
 
             if (!loadInventory(bukkitBot)) {
@@ -103,7 +128,12 @@ final class FakePlayerController {
             bot = created;
             fakeChannel = channel;
             plugin.getLogger().info("Igrok spawned at " + location.getWorld().getName()
-                    + " " + location.getBlockX() + " " + location.getBlockY() + " " + location.getBlockZ());
+                    + " " + location.getBlockX() + " " + location.getBlockY() + " " + location.getBlockZ()
+                    + " [client-view=" + bukkitBot.getClientViewDistance()
+                    + ", view=" + bukkitBot.getViewDistance()
+                    + ", send-view=" + bukkitBot.getSendViewDistance()
+                    + ", simulation=" + bukkitBot.getSimulationDistance()
+                    + ", skin=" + (skinProperties.isEmpty() ? "default" : "custom") + "]");
             return true;
         } catch (Throwable error) {
             // PlayerList.placeNewPlayer may have registered the entity before a later

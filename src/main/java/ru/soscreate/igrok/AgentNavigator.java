@@ -3,6 +3,7 @@ package ru.soscreate.igrok;
 import org.bukkit.Location;
 import org.bukkit.World;
 import org.bukkit.block.Block;
+import org.bukkit.Material;
 import org.bukkit.entity.Player;
 import org.bukkit.util.Vector;
 
@@ -39,7 +40,7 @@ final class AgentNavigator {
     boolean moveTo(Location destination) {
         if (retryCooldown > 0) {
             retryCooldown--;
-            return false;
+            return true;
         }
         if (destination == null || destination.getWorld() == null
                 || destination.getWorld() != bot.getWorld()) {
@@ -64,6 +65,13 @@ final class AgentNavigator {
             failPath();
             return false;
         }
+        if (!bot.getWorld().isChunkLoaded(goal.x() >> 4, goal.z() >> 4)) {
+            path.clear();
+            plannedDestination = null;
+            cachedGoal = null;
+            retryCooldown = 5;
+            return true;
+        }
 
         if (plannedDestination == null || manhattan(plannedDestination, goal) > 1
                 || path.isEmpty() || stuckTicks > 8) {
@@ -81,6 +89,14 @@ final class AgentNavigator {
         }
 
         Node next = path.get(pathIndex);
+        World currentWorld = bot.getWorld();
+        if (!currentWorld.isChunkLoaded(next.x() >> 4, next.z() >> 4) || !standable(currentWorld, next)) {
+            // A path can outlive a chunk ticket. Never move toward stale chunk data.
+            path.clear();
+            plannedDestination = null;
+            retryCooldown = 5;
+            return true;
+        }
         Location current = bot.getLocation();
         double dx = next.x() + 0.5 - current.getX();
         double dz = next.z() + 0.5 - current.getZ();
@@ -97,14 +113,11 @@ final class AgentNavigator {
         bot.setRotation(yaw, 0.0F);
         bot.setSprinting(false);
 
-        double vertical = bot.getVelocity().getY();
-        if (bot.isOnGround()) {
-            vertical = next.y() > current.getBlockY() ? 0.42 : 0.0;
-            if (bot.isCollidable() && bot.getLocation().getBlock().getRelative(0, 1, 0).isPassable()
-                    && bot.getLocation().getBlock().getRelative(0, 2, 0).isPassable()) {
-                // Keep ordinary walking unless the next waypoint is a step up.
-                if (next.y() <= current.getBlockY()) vertical = 0.0;
-            }
+        double vertical = bot.isOnGround() ? 0.0 : bot.getVelocity().getY();
+        if (bot.isOnGround() && next.y() > current.getBlockY()) {
+            Block feet = currentWorld.getBlockAt(current.getBlockX(), current.getBlockY(), current.getBlockZ());
+            if (feet.getRelative(0, 1, 0).isPassable()
+                    && feet.getRelative(0, 2, 0).isPassable()) vertical = 0.42;
         }
         bot.setVelocity(new Vector(dx * 0.20, vertical, dz * 0.20));
 
@@ -149,6 +162,39 @@ final class AgentNavigator {
 
     boolean arrived() {
         return !path.isEmpty() && pathIndex >= path.size();
+    }
+
+    boolean canStandAt(Location location) {
+        if (location == null || location.getWorld() == null || location.getWorld() != bot.getWorld()) return false;
+        return findStandable(location.getWorld(), location.getBlockX(),
+                location.getBlockY(), location.getBlockZ()) != null;
+    }
+
+    /** A short sidestep or retreat checked against loaded chunks and safe ground. */
+    boolean moveVector(Vector direction, double speed) {
+        if (direction == null || !Double.isFinite(speed) || speed <= 0.0) return false;
+        Vector horizontal = direction.clone();
+        horizontal.setY(0.0);
+        if (horizontal.lengthSquared() < 0.0001) return false;
+        horizontal.normalize();
+
+        Location current = bot.getLocation();
+        int targetX = (int) Math.floor(current.getX() + horizontal.getX() * 1.25);
+        int targetZ = (int) Math.floor(current.getZ() + horizontal.getZ() * 1.25);
+        Node safeTarget = findStandable(bot.getWorld(), targetX, current.getBlockY(), targetZ);
+        if (safeTarget == null || Math.abs(safeTarget.y() - current.getBlockY()) > 1) return false;
+
+        float yaw = (float) Math.toDegrees(Math.atan2(-horizontal.getX(), horizontal.getZ()));
+        bot.setRotation(yaw, 0.0F);
+        bot.setSprinting(false);
+        double vertical = bot.isOnGround() ? 0.0 : bot.getVelocity().getY();
+        if (bot.isOnGround() && safeTarget.y() > current.getBlockY()) {
+            Block feet = current.getBlock();
+            if (feet.getRelative(0, 1, 0).isPassable()
+                    && feet.getRelative(0, 2, 0).isPassable()) vertical = 0.42;
+        }
+        bot.setVelocity(new Vector(horizontal.getX() * speed, vertical, horizontal.getZ() * speed));
+        return true;
     }
 
     private boolean buildPath(Node requestedGoal) {
@@ -264,8 +310,9 @@ final class AgentNavigator {
         Block feet = world.getBlockAt(node.x(), node.y(), node.z());
         Block head = world.getBlockAt(node.x(), node.y() + 1, node.z());
         Block floor = world.getBlockAt(node.x(), node.y() - 1, node.z());
-        return feet.isPassable() && head.isPassable() && !feet.isLiquid()
-                && floor.getType().isSolid() && !floor.isLiquid();
+        return feet.isPassable() && head.isPassable() && !feet.isLiquid() && !head.isLiquid()
+                && !isHazard(feet.getType()) && !isHazard(head.getType())
+                && floor.getType().isSolid() && !floor.isLiquid() && !isHazard(floor.getType());
     }
 
     private boolean reached(Node node) {
@@ -278,6 +325,14 @@ final class AgentNavigator {
     private static double heuristic(Node a, Node b) {
         return Math.sqrt(square(a.x() - b.x()) + square(a.z() - b.z()))
                 + Math.abs(a.y() - b.y()) * 1.1;
+    }
+
+    private static boolean isHazard(Material material) {
+        return switch (material) {
+            case FIRE, SOUL_FIRE, MAGMA_BLOCK, CACTUS, CAMPFIRE, SOUL_CAMPFIRE,
+                    WITHER_ROSE, SWEET_BERRY_BUSH, POWDER_SNOW, POINTED_DRIPSTONE -> true;
+            default -> false;
+        };
     }
 
     private static double square(double x) { return x * x; }

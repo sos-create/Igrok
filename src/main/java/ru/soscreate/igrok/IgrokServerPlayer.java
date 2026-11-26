@@ -10,10 +10,11 @@ import net.minecraft.server.network.CommonListenerCookie;
 final class IgrokServerPlayer extends ServerPlayer {
     private final FakeServerGamePacketListener fakeListener;
 
-    IgrokServerPlayer(MinecraftServer server, ServerLevel level, GameProfile profile, Connection connection) {
-        super(server, level, profile, net.minecraft.server.level.ClientInformation.createDefault());
-        this.fakeListener = new FakeServerGamePacketListener(
-                server, connection, this, CommonListenerCookie.createInitial(profile, false));
+    IgrokServerPlayer(MinecraftServer server, ServerLevel level, GameProfile profile,
+                      Connection connection, net.minecraft.server.level.ClientInformation clientInformation) {
+        super(server, level, profile, clientInformation);
+        CommonListenerCookie cookie = new CommonListenerCookie(profile, 0, clientInformation, false);
+        this.fakeListener = new FakeServerGamePacketListener(server, connection, this, cookie);
         this.connection = fakeListener;
     }
 
