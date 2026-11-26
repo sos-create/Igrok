@@ -169,7 +169,7 @@ final class LanguageProcessor {
         // Match standalone negation words only: "безопасность" must not
         // accidentally be interpreted as "без" (without).
         boolean negated = java.util.Arrays.stream(raw)
-                .anyMatch(word -> java.util.Set.of("не", "нет", "нельзя", "никогда", "ни", "без")
+                .anyMatch(word -> java.util.Set.of("не", "нет", "нельзя", "никогда", "ни")
                         .contains(word));
         int sentiment = 0;
         for (String token : words) {
@@ -186,11 +186,11 @@ final class LanguageProcessor {
         if (candidate.isBlank()) return false;
         if (candidate.matches("(?iu)^(?:(?:ну|а|и|слушай|подскажи|скажи|расскажи|объясни)\\s+)*"
                 + "(?:(?:ты|вы)\\s+)?(?:как|что|кто|где|куда|откуда|когда|почему|зачем|сколько|"
-                + "какой|какая|какие|чей|чья|чье|чьи)\\b.*")) return true;
+                + "какой|какая|какие|чей|чья|чье|чьи)(?![\\p{L}\\p{N}_]).*")) return true;
         return candidate.matches("(?iu)^(?:можешь|можете|мог бы|могла бы|не знаешь|знаешь)\\s+"
-                + "(?:ли\\s+)?(?:ты\\s+)?(?:сказать\\s+)?(?:как|что|где|куда|почему|зачем|сколько)\\b.*")
-                || candidate.matches("(?iu).*(?:интересно|не знаешь|подскажи|скажи|объясни|расскажи)\\s+"
-                + "(?:мне\\s+)?(?:ли\\s+)?(?:как|что|где|куда|почему|зачем|сколько)\\b.*");
+                + "(?:ли\\s+)?(?:ты\\s+)?(?:сказать\\s+)?(?:как|что|где|куда|почему|зачем|сколько)(?![\\p{L}\\p{N}_]).*")
+                || candidate.matches("(?iu).*(?:интересно|не знаешь|подскажи|скажи|спросить|объясни|расскажи)\\s+"
+                + "(?:мне\\s+)?(?:ли\\s+)?(?:как|что|где|куда|почему|зачем|сколько)(?![\\p{L}\\p{N}_]).*");
     }
 
     private static boolean isImperative(String word) {
