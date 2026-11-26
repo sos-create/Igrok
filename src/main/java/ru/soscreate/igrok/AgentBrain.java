@@ -11,7 +11,9 @@ import org.bukkit.inventory.ItemStack;
 import org.bukkit.util.Vector;
 import org.bukkit.configuration.file.YamlConfiguration;
 
+import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.List;
 import java.util.HashMap;
 import java.util.Locale;
 import java.util.Map;
@@ -57,6 +59,13 @@ final class AgentBrain {
     private int nextIdleWanderTick;
     private int idlePauseUntilTick;
     private Location idleWanderTarget;
+    private final List<String> learnedDangerZones = new ArrayList<>();
+    private boolean learnedCombatCaution;
+    private boolean learnedFoodCaution;
+    private int combatDeaths;
+    private int starvationDeaths;
+    private int combatRetreatUntilTick;
+    private String lastLesson = "Пока не было смертельных ошибок.";
 
     AgentBrain(IgrokPlugin plugin, AgentMemory memory) {
         this.plugin = plugin;
@@ -89,6 +98,12 @@ final class AgentBrain {
             data.set("brain.explore-y", exploreTarget.getY());
             data.set("brain.explore-z", exploreTarget.getZ());
         }
+        data.set("learning.danger-zones", new ArrayList<>(learnedDangerZones));
+        data.set("learning.combat-caution", learnedCombatCaution);
+        data.set("learning.food-caution", learnedFoodCaution);
+        data.set("learning.combat-deaths", combatDeaths);
+        data.set("learning.starvation-deaths", starvationDeaths);
+        data.set("learning.last-lesson", lastLesson);
     }
 
     void loadState(YamlConfiguration data) {
@@ -109,6 +124,23 @@ final class AgentBrain {
             exploreTarget = new Location(world, data.getDouble("brain.explore-x"),
                     data.getDouble("brain.explore-y"), data.getDouble("brain.explore-z"));
         }
+        learnedDangerZones.clear();
+        long now = System.currentTimeMillis();
+        for (String entry : data.getStringList("learning.danger-zones")) {
+            String[] parts = entry.split("\\|", 4);
+            if (parts.length != 4) continue;
+            try {
+                long learnedAt = Long.parseLong(parts[3]);
+                if (now - learnedAt <= 7L * 24L * 60L * 60L * 1000L) learnedDangerZones.add(entry);
+            } catch (NumberFormatException ignored) { }
+        }
+        while (learnedDangerZones.size() > 12) learnedDangerZones.remove(0);
+        learnedCombatCaution = data.getBoolean("learning.combat-caution", false);
+        learnedFoodCaution = data.getBoolean("learning.food-caution", false);
+        combatDeaths = Math.max(0, data.getInt("learning.combat-deaths", 0));
+        starvationDeaths = Math.max(0, data.getInt("learning.starvation-deaths", 0));
+        lastLesson = data.getString("learning.last-lesson", "Пока не было смертельных ошибок.");
+        survival.setLearnedFoodCaution(learnedFoodCaution);
         if (goal == GoalPlanner.Goal.MINE) miningRequested = true;
         if (goal == GoalPlanner.Goal.DEFEND) { attackRequested = true; threat = null; }
         if (goal == GoalPlanner.Goal.FOLLOW && followTarget == null) goal = GoalPlanner.Goal.IDLE;
@@ -310,6 +342,59 @@ final class AgentBrain {
                 + " добытых блоков, файл " + memory.storedBytes() + " байт.");
     }
 
+    void learnFromDeath(Location deathLocation, String damageCause, String killerType) {
+        String cause = damageCause == null ? "UNKNOWN" : damageCause.toUpperCase(Locale.ROOT);
+        String killer = killerType == null ? "" : killerType.toUpperCase(Locale.ROOT);
+        if (deathLocation != null && deathLocation.getWorld() != null
+                && (cause.equals("FALL") || cause.equals("LAVA") || cause.equals("FIRE")
+                || cause.equals("FIRE_TICK") || cause.equals("HOT_FLOOR") || cause.equals("VOID")
+                || cause.equals("DROWNING") || cause.equals("SUFFOCATION"))) {
+            String zone = deathLocation.getWorld().getName() + "|" + deathLocation.getBlockX()
+                    + "|" + deathLocation.getBlockZ() + "|" + System.currentTimeMillis();
+            learnedDangerZones.add(zone);
+            while (learnedDangerZones.size() > 12) learnedDangerZones.remove(0);
+            lastLesson = switch (cause) {
+                case "FALL" -> "Погиб от падения: избегать опасных высот и маршрутов возле места гибели.";
+                case "LAVA", "FIRE", "FIRE_TICK", "HOT_FLOOR" -> "Погиб от огня или лавы: обходить опасный участок и не идти напрямик.";
+                case "VOID" -> "Погиб в пустоте: не приближаться к краю и опасным обрывам.";
+                case "DROWNING" -> "Погиб под водой: избегать долгого пребывания под водой.";
+                default -> "Погиб из-за опасного окружения: обходить место гибели.";
+            };
+        }
+        if (cause.startsWith("ENTITY_") || cause.equals("PROJECTILE") || cause.equals("MAGIC")
+                || cause.equals("POISON") || cause.equals("WITHER") || !killer.isBlank()) {
+            learnedCombatCaution = true;
+            learnedFoodCaution = true;
+            combatDeaths++;
+            survival.setLearnedFoodCaution(true);
+            lastLesson = "Погиб в бою" + (killer.isBlank() ? "" : " от " + killer.toLowerCase(Locale.ROOT))
+                    + ": раньше восстанавливать здоровье, держать дистанцию и отступать при опасности.";
+        } else if (cause.equals("STARVATION")) {
+            learnedFoodCaution = true;
+            starvationDeaths++;
+            survival.setLearnedFoodCaution(true);
+            lastLesson = "Погиб от голода: еда и её запас теперь имеют более высокий приоритет.";
+        }
+        plugin.getLogger().info("Igrok запомнил ошибку: " + lastLesson);
+    }
+
+    private boolean isLearnedDanger(Location candidate) {
+        if (candidate == null || candidate.getWorld() == null) return false;
+        long now = System.currentTimeMillis();
+        for (String entry : learnedDangerZones) {
+            String[] parts = entry.split("\\|", 4);
+            if (parts.length != 4 || !parts[0].equals(candidate.getWorld().getName())) continue;
+            try {
+                long learnedAt = Long.parseLong(parts[3]);
+                if (now - learnedAt > 7L * 24L * 60L * 60L * 1000L) continue;
+                double dx = candidate.getBlockX() - Integer.parseInt(parts[1]);
+                double dz = candidate.getBlockZ() - Integer.parseInt(parts[2]);
+                if (dx * dx + dz * dz <= 28.0 * 28.0) return true;
+            } catch (NumberFormatException ignored) { }
+        }
+        return false;
+    }
+
     private void chooseGoal(Player bot) {
         double health = bot.getHealth();
         double maxHealth = bot.getMaxHealth();
@@ -340,6 +425,15 @@ final class AgentBrain {
             chosen = GoalPlanner.Goal.FLEE;
             decisionReason = "Обнаружен крипер на опасном расстоянии — отойти, не вступая в ближний бой.";
             decisionConfidence = 0.98;
+        }
+        if (threat != null && learnedCombatCaution
+                && bot.getHealth() <= bot.getMaxHealth() * 0.68) {
+            combatRetreatUntilTick = Math.max(combatRetreatUntilTick, tickCounter + 100);
+        }
+        if (threat != null && learnedCombatCaution && tickCounter < combatRetreatUntilTick) {
+            chosen = GoalPlanner.Goal.FLEE;
+            decisionReason = "Учитываю прошлую гибель в бою: отступаю, пока не восстановлюсь.";
+            decisionConfidence = 0.97;
         }
 
         // Autonomous survival goals are considered only when no player directive is active.
@@ -738,7 +832,8 @@ final class AgentBrain {
                 Block head = bot.getWorld().getBlockAt(x, y + 1, z);
                 if (floor.getType().isSolid() && !floor.isLiquid()
                         && feet.isPassable() && !feet.isLiquid()
-                        && head.isPassable() && !head.isLiquid()) {
+                        && head.isPassable() && !head.isLiquid()
+                        && !isLearnedDanger(candidate)) {
                     exploreTarget = candidate;
                     break;
                 }

@@ -12,6 +12,7 @@ import org.bukkit.event.player.PlayerInteractEntityEvent;
 import org.bukkit.event.block.BlockBreakEvent;
 import org.bukkit.event.block.BlockPlaceEvent;
 import org.bukkit.event.entity.EntityDeathEvent;
+import org.bukkit.event.entity.EntityDamageEvent;
 import org.bukkit.event.player.PlayerMoveEvent;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.scheduler.BukkitTask;
@@ -198,6 +199,11 @@ public final class IgrokPlugin extends JavaPlugin implements Listener {
         event.setKeepLevel(true);
         event.setDroppedExp(0);
         controller.saveInventory();
+        EntityDamageEvent lastDamage = event.getEntity().getLastDamageCause();
+        String cause = lastDamage == null ? "UNKNOWN" : lastDamage.getCause().name();
+        String killerType = lastDamage != null && lastDamage instanceof EntityDamageByEntityEvent byEntity
+                ? byEntity.getDamager().getType().name() : "";
+        brain.learnFromDeath(event.getEntity().getLocation(), cause, killerType);
         brain.stop();
         houseBuilder.cancel(false);
         if (!getConfig().getBoolean("auto-respawn", true)) return;

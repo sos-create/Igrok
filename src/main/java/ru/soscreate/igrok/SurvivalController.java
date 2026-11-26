@@ -60,9 +60,14 @@ final class SurvivalController {
     private int nextFarmTick;
     private Location knownBed;
     private Location knownChest;
+    private boolean learnedFoodCaution;
 
     SurvivalController(IgrokPlugin plugin) {
         this.plugin = plugin;
+    }
+
+    void setLearnedFoodCaution(boolean enabled) {
+        learnedFoodCaution = enabled;
     }
 
     void tick(Player bot, int tick) {
@@ -70,8 +75,10 @@ final class SurvivalController {
             pickupNearby(bot);
             nextPickupTick = tick + 10;
         }
-        if (tick % 10 == 0 && (bot.getFoodLevel() <= 17
-                || (bot.getHealth() < bot.getMaxHealth() - 2.0 && bot.getFoodLevel() <= 19))) {
+        int foodReserve = learnedFoodCaution ? 19 : 17;
+        int recoveryReserve = learnedFoodCaution ? 20 : 19;
+        if (tick % 10 == 0 && (bot.getFoodLevel() <= foodReserve
+                || (bot.getHealth() < bot.getMaxHealth() - 2.0 && bot.getFoodLevel() <= recoveryReserve))) {
             eatFromInventory(bot);
         }
         if (tick >= nextCraftTick) {
