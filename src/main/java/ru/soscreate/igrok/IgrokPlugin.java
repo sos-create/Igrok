@@ -3,8 +3,6 @@ package ru.soscreate.igrok;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.World;
-import org.bukkit.command.Command;
-import org.bukkit.command.CommandSender;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
@@ -21,7 +19,6 @@ import org.bukkit.scheduler.BukkitTask;
 import java.io.File;
 import java.io.IOException;
 import org.bukkit.configuration.file.YamlConfiguration;
-import java.util.Locale;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
@@ -70,7 +67,7 @@ public final class IgrokPlugin extends JavaPlugin implements Listener {
                 houseBuilder.resumeSavedState(stateData);
             });
         }
-        getLogger().info("Igrok 0.9.5 autonomous survival agent enabled for Paper 1.21.4.");
+        getLogger().info("Igrok 0.9.6 autonomous survival agent enabled for Paper 1.21.4.");
     }
 
     @Override
@@ -139,89 +136,6 @@ public final class IgrokPlugin extends JavaPlugin implements Listener {
         spawn.setZ(spawn.getBlockZ() + 0.5);
         return controller.spawn(spawn, getConfig().getString("bot-name", "Igrok"));
     }
-
-    @Override
-    public boolean onCommand(CommandSender sender, Command command, String label, String[] args) {
-        if (!command.getName().equalsIgnoreCase("igrok")) return false;
-        if (!sender.hasPermission("igrok.admin")) {
-            sender.sendMessage("§cНедостаточно прав.");
-            return true;
-        }
-        if (args.length == 0 || args[0].equalsIgnoreCase("status")) {
-            String status = controller.isSpawned() ? "§aIgrok находится в мире." : "§eIgrok сейчас не создан.";
-            if (houseBuilder.isBuilding()) status += " §6Он строит дом.";
-            status += " §7Мозг: " + brain.state();
-            sender.sendMessage(status);
-            return true;
-        }
-        switch (args[0].toLowerCase(Locale.ROOT)) {
-            case "spawn" -> {
-                if (controller.isSpawned()) sender.sendMessage("§eIgrok уже находится в мире.");
-                else if (spawnAtDefaultWorldSpawn()) sender.sendMessage("§aIgrok появился на точке возрождения мира.");
-                else sender.sendMessage("§cНе удалось создать Igrok. Подробности в консоли.");
-            }
-            case "remove" -> {
-                brain.stop();
-                houseBuilder.cancel(false);
-                controller.remove();
-                sender.sendMessage("§aIgrok удалён.");
-            }
-            case "build" -> {
-                if (!controller.isSpawned()) {
-                    sender.sendMessage("§cСначала создай бота: /igrok spawn");
-                    return true;
-                }
-                Location anchor = sender instanceof Player player ? player.getLocation() : controller.location();
-                Player actor = sender instanceof Player player ? player : controller.bukkitPlayer();
-                if (houseBuilder.start(anchor, actor)) {
-                    sender.sendMessage("§aIgrok начал строить дом. Прогресс будет виден в чате.");
-                } else {
-                    sender.sendMessage("§eIgrok не смог начать строительство. Проверь сообщение в чате.");
-                }
-            }
-            case "cancelbuild" -> {
-                if (!houseBuilder.isBuilding()) sender.sendMessage("§eСейчас строительство не выполняется.");
-                else {
-                    houseBuilder.cancel(true);
-                    sender.sendMessage("§aСтроительство остановлено.");
-                }
-            }
-            case "brain" -> {
-                sender.sendMessage("§6Характер Igrok: §f" + brain.personalityDescription());
-                brain.memoryStats(sender instanceof Player player ? player : null);
-                sender.sendMessage("§6Состояние: §f" + brain.state());
-                sender.sendMessage("§7Почему выбрано это действие: §f" + brain.decisionReason());
-                sender.sendMessage("§7Уверенность оценки: §f" + Math.round(brain.decisionConfidence() * 100) + "%");
-            }
-            case "follow" -> {
-                if (!(sender instanceof Player player)) {
-                    sender.sendMessage("§cИз консоли используйте /igrok follow <ник>.");
-                    return true;
-                }
-                brain.follow(player);
-                sender.sendMessage("§aIgrok будет следовать за тобой.");
-            }
-            case "mine" -> {
-                String mode = args.length > 1 ? args[1].toLowerCase(Locale.ROOT) : "wood";
-                if (!brain.requestMining(mode)) sender.sendMessage("§cИспользование: /igrok mine <wood|stone>");
-                else sender.sendMessage("§aIgrok отправился добывать ресурсы.");
-            }
-            case "attack" -> {
-                if (!brain.attackNearest()) sender.sendMessage("§eПодходящих враждебных мобов поблизости нет.");
-            }
-            case "explore" -> {
-                brain.exploreNow();
-                sender.sendMessage("§aIgrok отправился исследовать окрестности.");
-            }
-            case "stop" -> {
-                brain.stop();
-                sender.sendMessage("§aIgrok остановился.");
-            }
-            default -> sender.sendMessage("§eИспользование: /igrok <spawn|remove|status|build|cancelbuild|brain|follow|mine|attack|explore|stop>");
-        }
-        return true;
-    }
-
 
     @EventHandler
     public void onPlayerBlockBreak(BlockBreakEvent event) {

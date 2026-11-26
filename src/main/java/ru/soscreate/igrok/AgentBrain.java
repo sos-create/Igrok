@@ -430,6 +430,10 @@ final class AgentBrain {
         }
     }
 
+    private int nextCombatMoveTick;
+    private int combatMoveUntilTick;
+    private int combatStrafeDirection = 1;
+
     private void defend(Player bot) {
         if (threat == null || threat.isDead() || !threat.isValid()) {
             attackRequested = false;
@@ -440,19 +444,44 @@ final class AgentBrain {
         }
         Location target = threat.getLocation();
         double distance = bot.getLocation().distance(target);
-        if (distance > 3.0) {
-            state = "Приближаюсь к " + threat.getName();
-            navigator.moveTo(target);
-            return;
-        }
-        navigator.stop();
         survival.equipBestWeapon(bot);
-        face(bot, target);
-        state = "Защищаюсь от " + threat.getName();
-        if (tickCounter >= nextAttackTick) {
+        face(bot, threat.getEyeLocation());
+
+        // Avoid standing still in front of an enemy: keep a little distance,
+        // sidestep unpredictably, and retreat briefly when the enemy gets too close.
+        if (distance > 4.0) {
+            state = "Сближаюсь с противником";
+            navigator.moveTo(target);
+        } else {
+            navigator.stop();
+            if (tickCounter >= nextCombatMoveTick) {
+                combatStrafeDirection = ThreadLocalRandom.current().nextBoolean() ? 1 : -1;
+                combatMoveUntilTick = tickCounter + ThreadLocalRandom.current().nextInt(8, 19);
+                nextCombatMoveTick = tickCounter + ThreadLocalRandom.current().nextInt(24, 42);
+            }
+            if (distance < 2.0) {
+                Vector away = bot.getLocation().toVector().subtract(target.toVector());
+                away.setY(0);
+                if (away.lengthSquared() > 0.001) {
+                    away.normalize().multiply(0.16);
+                    bot.setVelocity(new Vector(away.getX(), bot.isOnGround() ? 0.0 : bot.getVelocity().getY(), away.getZ()));
+                }
+            } else if (tickCounter < combatMoveUntilTick) {
+                Vector toward = target.toVector().subtract(bot.getLocation().toVector());
+                toward.setY(0);
+                if (toward.lengthSquared() > 0.001) {
+                    toward.normalize();
+                    Vector side = new Vector(-toward.getZ(), 0, toward.getX()).multiply(0.14 * combatStrafeDirection);
+                    bot.setVelocity(new Vector(side.getX(), bot.isOnGround() ? 0.0 : bot.getVelocity().getY(), side.getZ()));
+                }
+            }
+            state = "Маневрирую в бою с " + threat.getName();
+        }
+
+        if (distance <= 3.4 && tickCounter >= nextAttackTick) {
             bot.swingMainHand();
             bot.attack(threat);
-            nextAttackTick = tickCounter + 12;
+            nextAttackTick = tickCounter + ThreadLocalRandom.current().nextInt(10, 16);
         }
     }
 
@@ -517,13 +546,18 @@ final class AgentBrain {
             state = "Жду возвращения игрока, за которым следую";
             return;
         }
+        Location behind = target.getLocation().clone();
+        Vector facing = target.getLocation().getDirection();
+        facing.setY(0);
+        if (facing.lengthSquared() > 0.001) behind.subtract(facing.normalize().multiply(2.4));
         double distance = bot.getLocation().distance(target.getLocation());
-        if (distance <= 3.0) {
+        if (distance <= 2.8) {
             navigator.stop();
-            state = "Рядом с " + target.getName();
+            if (tickCounter % 50 == 0) face(bot, target.getEyeLocation());
+            state = "Держусь рядом с " + target.getName();
         } else {
-            state = "Следую за " + target.getName();
-            navigator.moveTo(target.getLocation());
+            state = "Иду рядом с " + target.getName();
+            navigator.moveTo(behind);
         }
     }
 
