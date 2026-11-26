@@ -46,7 +46,6 @@ final class ChatDialogue implements Listener {
         this.composer = new DialogueComposer(plugin);
     }
 
-    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     @EventHandler(priority = EventPriority.HIGHEST)
     public void onChat(AsyncChatEvent event) {
         if (!plugin.isEnabled()) return;
