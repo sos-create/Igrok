@@ -8,6 +8,7 @@ import org.bukkit.block.Block;
 import org.bukkit.entity.Monster;
 import org.bukkit.entity.Player;
 import org.bukkit.util.Vector;
+import org.bukkit.configuration.file.YamlConfiguration;
 
 import java.util.Comparator;
 import java.util.HashMap;
@@ -57,6 +58,47 @@ final class AgentBrain {
     AgentMemory memory() { return memory; }
     String state() { return state; }
     String personalityDescription() { return personality.describe(); }
+
+
+    void saveState(YamlConfiguration data) {
+        data.set("brain.goal", goal.name());
+        data.set("brain.follow-target", followTarget == null ? null : followTarget.toString());
+        data.set("brain.mining-requested", miningRequested);
+        data.set("brain.mining-mode", miningMode);
+        data.set("brain.mined-this-task", minedThisTask);
+        data.set("brain.attack-requested", attackRequested);
+        data.set("brain.exploration-requested", explorationRequested);
+        if (exploreTarget != null && exploreTarget.getWorld() != null) {
+            data.set("brain.explore-world", exploreTarget.getWorld().getName());
+            data.set("brain.explore-x", exploreTarget.getX());
+            data.set("brain.explore-y", exploreTarget.getY());
+            data.set("brain.explore-z", exploreTarget.getZ());
+        }
+    }
+
+    void loadState(YamlConfiguration data) {
+        try { goal = GoalPlanner.Goal.valueOf(data.getString("brain.goal", "IDLE")); }
+        catch (IllegalArgumentException ignored) { goal = GoalPlanner.Goal.IDLE; }
+        String id = data.getString("brain.follow-target", "");
+        try { followTarget = id.isBlank() ? null : UUID.fromString(id); }
+        catch (IllegalArgumentException ignored) { followTarget = null; }
+        miningRequested = data.getBoolean("brain.mining-requested", false);
+        miningMode = data.getString("brain.mining-mode", "wood");
+        if (!miningMode.equals("wood") && !miningMode.equals("stone")) miningMode = "wood";
+        minedThisTask = Math.max(0, data.getInt("brain.mined-this-task", 0));
+        attackRequested = data.getBoolean("brain.attack-requested", false);
+        explorationRequested = data.getBoolean("brain.exploration-requested", false);
+        String worldName = data.getString("brain.explore-world", "");
+        World world = worldName.isBlank() ? null : Bukkit.getWorld(worldName);
+        if (world != null && data.contains("brain.explore-x")) {
+            exploreTarget = new Location(world, data.getDouble("brain.explore-x"),
+                    data.getDouble("brain.explore-y"), data.getDouble("brain.explore-z"));
+        }
+        if (goal == GoalPlanner.Goal.MINE) miningRequested = true;
+        if (goal == GoalPlanner.Goal.DEFEND) { attackRequested = true; threat = null; }
+        if (goal == GoalPlanner.Goal.FOLLOW && followTarget == null) goal = GoalPlanner.Goal.IDLE;
+        state = "Восстанавливаю прежний план: " + goal.name();
+    }
 
     void tick() {
         tickCounter++;
@@ -210,10 +252,7 @@ final class AgentBrain {
         if (threat != null) threatDistance = threat.getLocation().distance(bot.getLocation());
 
         Player followed = followTarget == null ? null : Bukkit.getPlayer(followTarget);
-        if (followed == null || !followed.isOnline() || followed.getWorld() != bot.getWorld()) {
-            followTarget = null;
-            followed = null;
-        }
+        if (followed != null && (!followed.isOnline() || followed.getWorld() != bot.getWorld())) followed = null;
 
         boolean explore = explorationRequested;
         if (!explore && plugin.getConfig().getBoolean("brain.exploration.enabled", true)
@@ -226,6 +265,7 @@ final class AgentBrain {
                 followed != null, miningRequested, explore,
                 personality.bravery(), personality.curiosity()));
 
+        if (followTarget != null) chosen = GoalPlanner.Goal.FOLLOW;
         if (attackRequested && threat != null) chosen = GoalPlanner.Goal.DEFEND;
         if (chosen != goal) {
             navigator.stop();
@@ -297,9 +337,8 @@ final class AgentBrain {
     private void followTarget(Player bot) {
         Player target = followTarget == null ? null : Bukkit.getPlayer(followTarget);
         if (target == null || !target.isOnline() || target.getWorld() != bot.getWorld()) {
-            followTarget = null;
-            goal = GoalPlanner.Goal.IDLE;
             navigator.stop();
+            state = "Жду возвращения игрока, за которым следую";
             return;
         }
         double distance = bot.getLocation().distance(target.getLocation());
