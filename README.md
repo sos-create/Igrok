@@ -1,45 +1,49 @@
-# Igrok 0.9.0
+# Igrok 0.9.3
 
-Paper 1.21.4 server-side player agent (Java 21).
+Paper 1.21.4 server-side player agent (Java 21). Igrok is a lightweight autonomous survival agent built around a fake server-side Player, bounded pathfinding, utility-based goals, associative cognition and compact persistent memory.
 
-## Compact memory format
-All persistent memory is stored in the dedicated folder plugins/Igrok/memory/.
+## Autonomous survival loop
 
-- memory.dat — one compressed GZIP container holding a shared word dictionary, phrase table, player profiles and a sparse 2D phrase-transition matrix.
-- cognition.yml — learned cognitive-network weights; written only after the weights change.
-- The word dictionary maps each unique token to a numeric ID. Repeated words are not copied into every sentence.
-- The phrase table maps each unique sentence to a sequence of word IDs. If a sentence repeats, history stores only its phrase ID.
-- The two-dimensional matrix uses X = previous phrase ID and Y = current phrase ID. It counts which sentence sequences commonly follow one another. It is sparse, so unused coordinates consume no storage.
-- IDs use variable-length integer encoding; the full payload is GZIP-compressed.
-- The player cap is 50. Up to 24 recent phrase references are kept per player. Oldest profiles are removed first when the cap is exceeded.
-- Word IDs, phrase IDs and matrix coordinates are bounded to prevent unbounded storage growth.
+- Chooses between collecting resources, exploring, hunting for food, sleeping, fighting nearby hostiles, following a player or resting.
+- Uses its own inventory: picks up nearby item drops and experience, eats suitable food, selects tools from the full inventory and equips better armor when available.
+- Crafts useful items using recipes registered by the running server: planks, sticks, crafting tables, tools, swords, shields, doors, bread, torches, furnaces, chests and beds when ingredients and a suitable work area are available.
+- Places and uses a furnace to smelt raw meat, fish, potatoes and supported ores; collects output and supplies fuel from coal, charcoal or surplus planks.
+- Finds nearby chests, creates one when possible, and stores surplus wood, stone, ores and selected farming supplies while retaining working materials in its personal inventory.
+- Harvests mature nearby wheat, carrots, potatoes and beetroot, then replants only when it already has the appropriate seed or crop item.
+- Looks for a bed at night and sleeps when one is available. If it has enough materials, it plans and builds one compact shelter from its own inventory. The builder checks the full material bill first and consumes one item for every block placed.
+- Avoids searching or building through unloaded chunks. Creepers within a larger danger radius trigger retreat rather than closing into melee range.
 
-## Low disk activity and migration
-- Files are read once at plugin startup and kept in memory during gameplay.
-- The memory pack is written every five minutes only if something changed, and once on normal shutdown.
-- Cognitive weights are also saved only when changed, on the same five-minute schedule and during shutdown.
-- A write uses a temporary file and atomic replacement where supported; one compressed memory pack avoids many tiny disk writes.
-- Existing plugins/Igrok/memory.bin, memory.yml and root cognition.yml are read as legacy sources and copied into the new folder format. Old files are left untouched as backups.
-- Existing 0.8.0 memory is converted to shared word and phrase IDs at first startup after the upgrade.
+## Decision and cognition
 
-## Cognitive architecture
-- Russian/English normalization, common word endings, synonym groups, question/command detection, negation and sentiment.
-- Concept neurons, associative links, intent neurons and two shallow propagation passes.
-- Hebbian-style link adaptation based on conversation context and player reactions.
-- DialogueComposer creates varied replies using topic-specific reasoning, memory and personality.
-- Player profiles learn mining, building, combat, exploration and social interaction patterns.
+- The goal planner compares risk, food and material needs, curiosity, personality and active tasks.
+- Critical survival decisions can interrupt voluntary activities. Player orders are proposals, not commands that override the bot's own survival.
+- The associative cognitive network links language concepts and intentions and learns weighted associations from observed interactions.
+- Dialogue memory uses shared word IDs, phrase IDs and a sparse transition matrix.
 
-This is an algorithmic cognitive simulation, not a pretrained large language model. It performs bounded calculations only for relevant events and addressed messages, not on every game tick.
+This is an algorithmic simulation. It does not provide human-level intelligence, general world knowledge or a pretrained LLM.
 
-## Chat and actions
-- Igrok responds when addressed by its configured name or Игрок; recent direct dialogue can continue without repeating the name.
+## Persistence and performance
+
+- Player profiles are capped at 50; up to 24 recent phrase references are kept per profile.
+- Compact memory and cognitive weights load once and save every five minutes only when changed.
+- Inventory, equipment, food, health, XP and player position/task state are persisted separately. Inventory is saved every five minutes and on normal shutdown.
+- Scans for furnaces, chests, crops, beds and crafting are throttled; pathfinding is bounded and only reads already-loaded chunks.
+
+## Chat and commands
+
+- Igrok replies when addressed by its configured name or Игрок; recent direct conversation can continue without repeating the name.
 - Unrelated player-to-player chat is ignored.
 - Requests require igrok.control or igrok.build; permission does not force the bot to accept.
 - TNT and ignition remain forbidden.
 
-## Commands
-- /igrok status, /igrok brain, /igrok follow
-- /igrok mine wood, /igrok mine stone, /igrok attack, /igrok explore, /igrok stop
+Commands:
+- /igrok status, /igrok brain
+- /igrok follow, /igrok mine wood, /igrok mine stone
+- /igrok attack, /igrok explore, /igrok stop
 - /igrok build, /igrok cancelbuild, /igrok spawn, /igrok remove
+
+## Notes
+
+The plugin is compiled against Paper 1.21.4. A successful CI build verifies source compilation and artifact packaging, but actual movement, crop interaction, furnace behavior and protection-plugin compatibility must still be tested on the target live server.
 
 The fake-player architecture is adapted from https://github.com/skylhcss/my-bot-mod, distributed under MIT; see UPSTREAM-LICENSE.

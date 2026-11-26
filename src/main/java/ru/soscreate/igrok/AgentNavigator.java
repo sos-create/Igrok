@@ -28,6 +28,9 @@ final class AgentNavigator {
     private int stuckTicks;
     private int retryCooldown;
     private Location previousPosition;
+    private Location lastRequestedDestination;
+    private Node cachedGoal;
+    private int goalLookupCooldown;
 
     AgentNavigator(Player bot) {
         this.bot = bot;
@@ -44,7 +47,19 @@ final class AgentNavigator {
             return false;
         }
 
-        Node goal = findGoal(destination);
+        boolean destinationChanged = lastRequestedDestination == null
+                || lastRequestedDestination.getWorld() != destination.getWorld()
+                || lastRequestedDestination.getBlockX() != destination.getBlockX()
+                || lastRequestedDestination.getBlockY() != destination.getBlockY()
+                || lastRequestedDestination.getBlockZ() != destination.getBlockZ();
+        if (destinationChanged || cachedGoal == null || goalLookupCooldown <= 0) {
+            cachedGoal = findGoal(destination);
+            lastRequestedDestination = destination.clone();
+            goalLookupCooldown = 5;
+        } else {
+            goalLookupCooldown--;
+        }
+        Node goal = cachedGoal;
         if (goal == null) {
             failPath();
             return false;
@@ -122,6 +137,9 @@ final class AgentNavigator {
         stuckTicks = 0;
         retryCooldown = 0;
         previousPosition = null;
+        lastRequestedDestination = null;
+        cachedGoal = null;
+        goalLookupCooldown = 0;
     }
 
     private void failPath() {

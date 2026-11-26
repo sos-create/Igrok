@@ -7,6 +7,9 @@ import org.bukkit.World;
 import org.bukkit.block.Block;
 import org.bukkit.block.BlockFace;
 import org.bukkit.block.BlockState;
+import org.bukkit.block.Furnace;
+import org.bukkit.block.Chest;
+import org.bukkit.block.data.Ageable;
 import org.bukkit.block.data.type.Bed;
 import org.bukkit.entity.Animals;
 import org.bukkit.entity.Entity;
@@ -17,6 +20,7 @@ import org.bukkit.entity.Monster;
 import org.bukkit.entity.Player;
 import org.bukkit.event.block.BlockPlaceEvent;
 import org.bukkit.inventory.EquipmentSlot;
+import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.PlayerInventory;
 import org.bukkit.inventory.Recipe;
@@ -48,7 +52,11 @@ final class SurvivalController {
     private int nextHuntDecisionTick;
     private int nextWoodGoalTick;
     private int nextStoneGoalTick;
+    private int nextFurnaceTick;
+    private int nextChestScanTick;
+    private int nextFarmTick;
     private Location knownBed;
+    private Location knownChest;
 
     SurvivalController(IgrokPlugin plugin) {
         this.plugin = plugin;
@@ -59,15 +67,30 @@ final class SurvivalController {
             pickupNearby(bot);
             nextPickupTick = tick + 10;
         }
-        if (bot.getFoodLevel() <= 17 && tick % 10 == 0) eatFromInventory(bot);
+        if (tick % 10 == 0 && (bot.getFoodLevel() <= 17
+                || (bot.getHealth() < bot.getMaxHealth() - 2.0 && bot.getFoodLevel() <= 19))) {
+            eatFromInventory(bot);
+        }
         if (tick >= nextCraftTick) {
             craftUsefulItems(bot, tick);
             equipBestArmor(bot);
             nextCraftTick = tick + 100;
         }
+        if (tick >= nextFurnaceTick) {
+            maintainFurnace(bot);
+            nextFurnaceTick = tick + 100;
+        }
+        if (tick >= nextFarmTick) {
+            harvestNearbyCrops(bot);
+            nextFarmTick = tick + 100;
+        }
+        if (tick % 100 == 0) manageStorage(bot, tick);
         if (tick % 100 == 0) {
             if (!hasNearbyCraftingTable(bot)) placeCraftingTable(bot);
-            if (!hasNearbyBed(bot, tick) && hasBedItem(bot)) placeBed(bot);
+            if (findNearbyBlock(bot, Material.FURNACE, 8) == null && count(bot, Material.FURNACE) > 0) {
+                placeFurnace(bot);
+            }
+            if (isNight(bot) && !hasNearbyBed(bot, tick) && hasBedItem(bot)) placeBed(bot);
         }
         if (bot.isSleeping() && !isNight(bot)) {
             try { bot.wakeup(false); } catch (IllegalStateException ignored) { }
@@ -87,13 +110,15 @@ final class SurvivalController {
 
         int logs = countBySuffix(bot, "_LOG") + countBySuffix(bot, "_WOOD");
         int planks = countBySuffix(bot, "_PLANKS");
-        if (logs + planks < 8 && tick >= nextWoodGoalTick) {
+        int woodReserve = plugin.houseBuilder().hasCompleted() ? 40 : 112;
+        if (logs + planks < woodReserve && tick >= nextWoodGoalTick) {
             return new AutonomyDecision(GoalPlanner.Goal.MINE, 0.82,
                     "Запас древесины мал — добыть брёвна для досок, инструментов и убежища.", "wood");
         }
 
-        int stone = count(bot, Material.COBBLESTONE) + count(bot, Material.STONE);
-        if (stone < 8 && hasTool(bot, "PICKAXE") && tick >= nextStoneGoalTick) {
+        int stone = count(bot, Material.COBBLESTONE);
+        int stoneReserve = plugin.houseBuilder().hasCompleted() ? 16 : 17;
+        if (stone < stoneReserve && hasTool(bot, "PICKAXE") && tick >= nextStoneGoalTick) {
             return new AutonomyDecision(GoalPlanner.Goal.MINE, 0.74,
                     "Каменных материалов мало — пополнить запас для печи и улучшенных инструментов.", "stone");
         }
@@ -126,14 +151,17 @@ final class SurvivalController {
             knownBed = null;
             return false;
         }
-        if (knownBed == null || !knownBed.getBlock().getType().name().endsWith("_BED")) {
+        boolean bedLoaded = knownBed != null && knownBed.getWorld() == bot.getWorld()
+                && bot.getWorld().isChunkLoaded(knownBed.getBlockX() >> 4, knownBed.getBlockZ() >> 4);
+        if (!bedLoaded || !knownBed.getBlock().getType().name().endsWith("_BED")) {
+            knownBed = null;
             if (hasBedItem(bot)) {
                 placeBed(bot);
                 knownBed = findNearbyBed(bot, 5);
             }
             if (knownBed == null) {
                 if (tick < nextBedScanTick) return false;
-                knownBed = findNearbyBed(bot, 24);
+                knownBed = findNearbyBed(bot, 16);
                 nextBedScanTick = tick + 100;
             }
         }
@@ -194,41 +222,39 @@ final class SurvivalController {
     private void equipBest(Player bot, String... kinds) {
         PlayerInventory inventory = bot.getInventory();
         int bestSlot = -1;
-        int bestScore = -1;
-        for (int slot = 0; slot < 9; slot++) {
+        int bestScore = Integer.MIN_VALUE;
+        for (int slot = 0; slot < 36; slot++) {
             ItemStack item = inventory.getItem(slot);
             if (item == null || item.getType().isAir()) continue;
             String name = item.getType().name();
             boolean accepted = false;
             for (String kind : kinds) if (name.endsWith("_" + kind)) accepted = true;
             if (!accepted) continue;
-            int score = tier(name) * 100;
-            if (item.getItemMeta() instanceof org.bukkit.inventory.meta.Damageable damageable
-                    && item.getType().getMaxDurability() > 0) {
-                score -= damageable.getDamage() / 5;
-                if (damageable.getDamage() >= item.getType().getMaxDurability() - 1) score -= 1000;
-            }
+            int score = tier(name) * 1000 + durabilityScore(item);
             if (score > bestScore) {
                 bestScore = score;
                 bestSlot = slot;
             }
         }
+        if (bestSlot < 0) return;
         if (bestSlot >= 9) {
-            int hotbarSlot = -1;
-            for (int slot = 0; slot < 9; slot++) {
-                ItemStack candidate = inventory.getItem(slot);
-                if (candidate == null || candidate.getType().isAir()) {
-                    hotbarSlot = slot;
-                    break;
-                }
-            }
-            if (hotbarSlot < 0) return;
-            ItemStack chosen = inventory.getItem(bestSlot);
-            inventory.setItem(bestSlot, inventory.getItem(hotbarSlot));
-            inventory.setItem(hotbarSlot, chosen);
+            int hotbarSlot = inventory.getHeldItemSlot();
+            ItemStack selected = inventory.getItem(hotbarSlot);
+            inventory.setItem(hotbarSlot, inventory.getItem(bestSlot));
+            inventory.setItem(bestSlot, selected);
             bestSlot = hotbarSlot;
         }
-        if (bestSlot >= 0) inventory.setHeldItemSlot(bestSlot);
+        inventory.setHeldItemSlot(bestSlot);
+    }
+
+    private int durabilityScore(ItemStack item) {
+        int maximum = item.getType().getMaxDurability();
+        if (maximum <= 0 || !(item.getItemMeta() instanceof org.bukkit.inventory.meta.Damageable damageable)) {
+            return 0;
+        }
+        int remaining = Math.max(0, maximum - damageable.getDamage());
+        if (remaining <= 1) return -100_000;
+        return (int) (remaining * 100.0 / maximum);
     }
 
     private int tier(String materialName) {
@@ -237,6 +263,8 @@ final class SurvivalController {
         if (materialName.startsWith("IRON_")) return 4;
         if (materialName.startsWith("STONE_")) return 3;
         if (materialName.startsWith("GOLDEN_")) return 2;
+        if (materialName.startsWith("CHAINMAIL_")) return 2;
+        if (materialName.startsWith("LEATHER_")) return 1;
         if (materialName.startsWith("WOODEN_")) return 1;
         return 0;
     }
@@ -265,13 +293,14 @@ final class SurvivalController {
             case 2 -> inventory.getLeggings();
             default -> inventory.getBoots();
         };
-        int currentScore = current == null || current.getType().isAir() ? -1 : tier(current.getType().name()) * 100;
+        int currentScore = current == null || current.getType().isAir() ? -1
+                : tier(current.getType().name()) * 1000 + durabilityScore(current);
         int bestSlot = -1;
         int bestScore = currentScore;
         for (int i = 0; i < 36; i++) {
             ItemStack item = inventory.getItem(i);
             if (item == null || !item.getType().name().endsWith(suffix)) continue;
-            int score = tier(item.getType().name()) * 100;
+            int score = tier(item.getType().name()) * 1000 + durabilityScore(item);
             if (score > bestScore) {
                 bestScore = score;
                 bestSlot = i;
@@ -309,18 +338,42 @@ final class SurvivalController {
     private void eatFromInventory(Player bot) {
         if (bot.getFoodLevel() >= 20) return;
         PlayerInventory inventory = bot.getInventory();
+        int bestSlot = -1;
+        int bestScore = Integer.MIN_VALUE;
         for (int slot = 0; slot < 36; slot++) {
             ItemStack item = inventory.getItem(slot);
             if (item == null || item.getType().isAir()) continue;
             int nutrition = foodValue(item.getType());
             if (nutrition <= 0) continue;
-            item.setAmount(item.getAmount() - 1);
-            if (item.getAmount() <= 0) inventory.setItem(slot, null);
-            else inventory.setItem(slot, item);
-            bot.setFoodLevel(Math.min(20, bot.getFoodLevel() + nutrition));
-            bot.setSaturation(Math.min(20.0F, bot.getSaturation() + nutrition * 0.6F));
-            return;
+            String name = item.getType().name();
+            int score = nutrition * 100;
+            if (name.startsWith("COOKED_") || name.equals("BREAD")
+                    || name.equals("BAKED_POTATO") || name.equals("GOLDEN_CARROT")) score += 30;
+            if (isRawFood(name)) score -= bot.getFoodLevel() > 7 ? 60 : 10;
+            if (name.equals("ROTTEN_FLESH") || name.equals("POISONOUS_POTATO")
+                    || name.equals("PUFFERFISH") || name.equals("SPIDER_EYE")) continue;
+            if (score > bestScore) {
+                bestScore = score;
+                bestSlot = slot;
+            }
         }
+        if (bestSlot < 0) return;
+        ItemStack item = inventory.getItem(bestSlot);
+        int nutrition = foodValue(item.getType());
+        int amount = item.getAmount() - 1;
+        if (amount <= 0) inventory.setItem(bestSlot, null);
+        else {
+            item.setAmount(amount);
+            inventory.setItem(bestSlot, item);
+        }
+        bot.setFoodLevel(Math.min(20, bot.getFoodLevel() + nutrition));
+        bot.setSaturation(Math.min(20.0F, bot.getSaturation() + nutrition * 0.6F));
+    }
+
+    private boolean isRawFood(String name) {
+        return name.equals("BEEF") || name.equals("PORKCHOP") || name.equals("CHICKEN")
+                || name.equals("MUTTON") || name.equals("RABBIT")
+                || name.equals("COD") || name.equals("SALMON");
     }
 
     private int foodValue(Material material) {
@@ -328,16 +381,17 @@ final class SurvivalController {
         if (name.startsWith("COOKED_BEEF") || name.startsWith("COOKED_PORKCHOP")) return 8;
         if (name.equals("PUMPKIN_PIE") || name.equals("RABBIT_STEW")) return 8;
         if (name.equals("COOKED_MUTTON") || name.equals("COOKED_CHICKEN")
-                || name.equals("COOKED_SALMON") || name.equals("MUSHROOM_STEW")
-                || name.equals("BEETROOT_SOUP")) return 6;
+                || name.equals("COOKED_SALMON") || name.equals("COOKED_COD")
+                || name.equals("MUSHROOM_STEW") || name.equals("BEETROOT_SOUP")) return 6;
         if (name.equals("BREAD") || name.equals("BAKED_POTATO") || name.equals("COOKED_COD")
                 || name.equals("COOKED_RABBIT") || name.equals("GOLDEN_CARROT")) return 5;
         if (name.equals("APPLE") || name.equals("CARROT") || name.equals("POTATO")
                 || name.equals("MELON_SLICE") || name.equals("SWEET_BERRIES")
                 || name.equals("GLOW_BERRIES") || name.equals("COOKIE") || name.equals("BEETROOT")
-                || name.equals("RAW_CHICKEN") || name.equals("RAW_MUTTON")) return 2;
-        if (name.equals("RAW_BEEF") || name.equals("RAW_PORKCHOP")
-                || name.equals("RAW_RABBIT")) return 3;
+                || name.equals("CHICKEN") || name.equals("MUTTON")) return 2;
+        if (name.equals("BEEF") || name.equals("PORKCHOP")
+                || name.equals("RABBIT") || name.equals("COD")
+                || name.equals("SALMON")) return 3;
         if (name.equals("DRIED_KELP")) return 1;
         return 0;
     }
@@ -345,7 +399,9 @@ final class SurvivalController {
     private void craftUsefulItems(Player bot, int tick) {
         if (bot.getNearbyEntities(10, 6, 10).stream().anyMatch(entity -> entity instanceof Monster)) return;
         int planks = countBySuffix(bot, "_PLANKS");
-        if (planks < 8 && countBySuffix(bot, "_LOG") + countBySuffix(bot, "_WOOD") > 0) {
+        int logs = countBySuffix(bot, "_LOG") + countBySuffix(bot, "_WOOD");
+        int plankReserve = plugin.houseBuilder().hasCompleted() ? 32 : 112;
+        if (planks < plankReserve && logs > 0) {
             if (craftMatching(bot, type -> type.name().endsWith("_PLANKS"))) return;
         }
         if (count(bot, Material.STICK) < 8 && planks >= 2) {
@@ -354,19 +410,42 @@ final class SurvivalController {
         if (count(bot, Material.CRAFTING_TABLE) == 0 && planks >= 4) {
             if (craftResult(bot, Material.CRAFTING_TABLE)) return;
         }
-        if (!hasTool(bot, "PICKAXE") && hasNearbyCraftingTable(bot)) {
-            if (craftResult(bot, Material.IRON_PICKAXE)) return;
-            if (craftResult(bot, Material.STONE_PICKAXE)) return;
-            if (craftResult(bot, Material.WOODEN_PICKAXE)) return;
+        if (count(bot, Material.CHEST) == 0 && planks >= 8 && hasNearbyCraftingTable(bot)) {
+            if (craftResult(bot, Material.CHEST)) return;
         }
-        if (!hasTool(bot, "SWORD") && hasNearbyCraftingTable(bot)) {
-            if (craftResult(bot, Material.IRON_SWORD)) return;
-            if (craftResult(bot, Material.STONE_SWORD)) return;
-            if (craftResult(bot, Material.WOODEN_SWORD)) return;
-        }
-        if (bot.getFoodLevel() < 16 && count(bot, Material.BREAD) < 8
-                && count(bot, Material.WHEAT) >= 3 && hasNearbyCraftingTable(bot)) {
-            if (craftResult(bot, Material.BREAD)) return;
+        if (hasNearbyCraftingTable(bot)) {
+            int pickTier = bestToolTier(bot, "PICKAXE");
+            if (pickTier < 4 && count(bot, Material.IRON_INGOT) >= 3) {
+                if (craftResult(bot, Material.IRON_PICKAXE)) return;
+            }
+            if (pickTier < 3 && count(bot, Material.COBBLESTONE) >= 3) {
+                if (craftResult(bot, Material.STONE_PICKAXE)) return;
+            }
+            if (pickTier < 1 && planks >= 3) {
+                if (craftResult(bot, Material.WOODEN_PICKAXE)) return;
+            }
+
+            int swordTier = bestToolTier(bot, "SWORD");
+            if (swordTier < 4 && count(bot, Material.IRON_INGOT) >= 2) {
+                if (craftResult(bot, Material.IRON_SWORD)) return;
+            }
+            if (swordTier < 3 && count(bot, Material.COBBLESTONE) >= 2) {
+                if (craftResult(bot, Material.STONE_SWORD)) return;
+            }
+            if (swordTier < 1 && planks >= 2) {
+                if (craftResult(bot, Material.WOODEN_SWORD)) return;
+            }
+
+            if (count(bot, Material.SHIELD) == 0 && count(bot, Material.IRON_INGOT) >= 1
+                    && planks >= 6) {
+                if (craftResult(bot, Material.SHIELD)) return;
+            }
+            if (countBySuffix(bot, "_DOOR") == 0 && planks >= 6) {
+                if (craftMatching(bot, type -> type.name().endsWith("_DOOR"))) return;
+            }
+            if (count(bot, Material.BREAD) < 8 && count(bot, Material.WHEAT) >= 3) {
+                if (craftResult(bot, Material.BREAD)) return;
+            }
         }
         if (count(bot, Material.TORCH) < 16 && count(bot, Material.STICK) > 0
                 && (count(bot, Material.COAL) > 0 || count(bot, Material.CHARCOAL) > 0)) {
@@ -380,6 +459,26 @@ final class SurvivalController {
                 && planks >= 3 && hasNearbyCraftingTable(bot)) {
             craftMatching(bot, type -> type.name().endsWith("_BED"));
         }
+    }
+
+    private int bestToolTier(Player bot, String suffix) {
+        int best = -1;
+        for (int slot = 0; slot < 36; slot++) {
+            ItemStack item = bot.getInventory().getItem(slot);
+            if (item == null || !item.getType().name().endsWith("_" + suffix)) continue;
+            if (durabilityScore(item) <= -100_000) continue;
+            best = Math.max(best, tier(item.getType().name()));
+        }
+        return best;
+    }
+
+    int breakTicks(Player bot, Material block, int baseTicks) {
+        String tool = block.name().endsWith("_LOG") || block.name().endsWith("_WOOD")
+                ? "AXE" : "PICKAXE";
+        int level = bestToolTier(bot, tool);
+        double speed = 1.0 + Math.max(0, level) * 0.32;
+        if (block.name().endsWith("_ORE") && level < 3) speed *= 0.72;
+        return Math.max(6, (int) Math.ceil(baseTicks / speed));
     }
 
     private boolean craftResult(Player bot, Material output) {
@@ -396,6 +495,227 @@ final class SurvivalController {
             if (ingredients == null || ingredients.isEmpty()) continue;
             if (requiresCraftingTable(recipe, ingredients.size()) && !hasNearbyCraftingTable(bot)) continue;
             if (consumeAndCraft(bot, recipe, ingredients)) return true;
+        }
+        return false;
+    }
+
+    private void manageStorage(Player bot, int tick) {
+        if (knownChest == null || knownChest.getWorld() != bot.getWorld()
+                || !bot.getWorld().isChunkLoaded(knownChest.getBlockX() >> 4, knownChest.getBlockZ() >> 4)
+                || knownChest.getBlock().getType() != Material.CHEST) {
+            knownChest = null;
+            if (tick < nextChestScanTick) return;
+            knownChest = findNearbyChest(bot, 8);
+            nextChestScanTick = tick + 200;
+        }
+        if (knownChest == null && count(bot, Material.CHEST) > 0) {
+            placeChest(bot);
+            knownChest = findNearbyChest(bot, 4);
+        }
+        if (knownChest == null) return;
+
+        Block block = knownChest.getBlock();
+        if (!bot.getWorld().isChunkLoaded(block.getX() >> 4, block.getZ() >> 4)) return;
+        BlockState state = block.getState();
+        if (!(state instanceof Chest chest)) return;
+        Inventory storage = chest.getInventory();
+        PlayerInventory inventory = bot.getInventory();
+
+        for (int slot = 0; slot < 36; slot++) {
+            ItemStack item = inventory.getItem(slot);
+            if (item == null || item.getType().isAir()) continue;
+            int keep = keepInPersonalInventory(item.getType());
+            if (keep < 0 || item.getAmount() <= keep) continue;
+            int surplus = item.getAmount() - keep;
+            ItemStack deposit = item.clone();
+            deposit.setAmount(surplus);
+            Map<Integer, ItemStack> leftovers = storage.addItem(deposit);
+            int remaining = leftovers.values().stream().mapToInt(ItemStack::getAmount).sum();
+            int moved = surplus - remaining;
+            if (moved <= 0) continue;
+            int leftInSlot = item.getAmount() - moved;
+            if (leftInSlot <= 0) inventory.setItem(slot, null);
+            else {
+                item.setAmount(leftInSlot);
+                inventory.setItem(slot, item);
+            }
+        }
+        chest.update(true, false);
+    }
+
+    private int keepInPersonalInventory(Material material) {
+        String name = material.name();
+        if (name.endsWith("_LOG") || name.endsWith("_WOOD")) return 16;
+        if (name.endsWith("_PLANKS")) return 32;
+        if (material == Material.COBBLESTONE || material == Material.STONE) return 32;
+        if (name.endsWith("_ORE") || name.equals("RAW_IRON") || name.equals("RAW_GOLD")
+                || name.equals("RAW_COPPER")) return 16;
+        if (material == Material.WHEAT || material == Material.WHEAT_SEEDS
+                || material == Material.CARROT || material == Material.POTATO
+                || material == Material.BEETROOT_SEEDS) return 16;
+        return -1;
+    }
+
+    private Location findNearbyChest(Player bot, int radius) {
+        Location origin = bot.getLocation();
+        World world = bot.getWorld();
+        Location best = null;
+        double bestDistance = Double.POSITIVE_INFINITY;
+        for (int x = origin.getBlockX() - radius; x <= origin.getBlockX() + radius; x++) {
+            for (int z = origin.getBlockZ() - radius; z <= origin.getBlockZ() + radius; z++) {
+                if (!world.isChunkLoaded(x >> 4, z >> 4)) continue;
+                for (int y = origin.getBlockY() - 3; y <= origin.getBlockY() + 4; y++) {
+                    if (y <= world.getMinHeight() || y >= world.getMaxHeight()) continue;
+                    Block block = world.getBlockAt(x, y, z);
+                    if (block.getType() != Material.CHEST) continue;
+                    double distance = block.getLocation().distanceSquared(origin);
+                    if (distance < bestDistance) {
+                        bestDistance = distance;
+                        best = block.getLocation();
+                    }
+                }
+            }
+        }
+        return best;
+    }
+
+    private boolean placeChest(Player bot) {
+        if (count(bot, Material.CHEST) <= 0) return false;
+        Block target = findPlacementSpot(bot, 2);
+        if (target == null) return false;
+        ItemStack item = firstItem(bot, Material.CHEST);
+        if (item == null) return false;
+        BlockPlaceEvent event = new BlockPlaceEvent(target, target.getState(),
+                target.getRelative(BlockFace.DOWN), item.clone(), bot, true, EquipmentSlot.HAND);
+        Bukkit.getPluginManager().callEvent(event);
+        if (event.isCancelled() || !event.canBuild()) return false;
+        target.setType(Material.CHEST);
+        consumeOne(bot, Material.CHEST);
+        knownChest = target.getLocation();
+        return true;
+    }
+
+    private void harvestNearbyCrops(Player bot) {
+        World world = bot.getWorld();
+        Location origin = bot.getLocation();
+        int radius = 6;
+        for (int x = origin.getBlockX() - radius; x <= origin.getBlockX() + radius; x++) {
+            for (int z = origin.getBlockZ() - radius; z <= origin.getBlockZ() + radius; z++) {
+                if (!world.isChunkLoaded(x >> 4, z >> 4)) continue;
+                for (int y = origin.getBlockY() - 2; y <= origin.getBlockY() + 2; y++) {
+                    if (y <= world.getMinHeight() || y >= world.getMaxHeight()) continue;
+                    Block crop = world.getBlockAt(x, y, z);
+                    if (!(crop.getBlockData() instanceof Ageable age)
+                            || age.getAge() < age.getMaximumAge()) continue;
+                    Material seed = replantItem(crop.getType());
+                    if (seed == null || count(bot, seed) <= 0) continue;
+                    Block soil = crop.getRelative(BlockFace.DOWN);
+                    if (soil.getType() != Material.FARMLAND && soil.getType() != Material.SOUL_SAND) continue;
+                    Material cropType = crop.getType();
+                    if (!bot.breakBlock(crop)) continue;
+
+                    // Replant only with an item the bot already owns; dropped crop yield is picked up
+                    // during the next inventory pass, so this never creates free seeds.
+                    BlockPlaceEvent event = new BlockPlaceEvent(crop, crop.getState(), soil,
+                            new ItemStack(seed), bot, true, EquipmentSlot.HAND);
+                    Bukkit.getPluginManager().callEvent(event);
+                    if (event.isCancelled() || !event.canBuild()) continue;
+                    BlockData newData = cropType.createBlockData();
+                    if (newData instanceof Ageable replanted) replanted.setAge(0);
+                    crop.setBlockData(newData, false);
+                    consumeOne(bot, seed);
+                    return;
+                }
+            }
+        }
+    }
+
+    private Material replantItem(Material crop) {
+        return switch (crop) {
+            case WHEAT -> Material.WHEAT_SEEDS;
+            case CARROTS -> Material.CARROT;
+            case POTATOES -> Material.POTATO;
+            case BEETROOTS -> Material.BEETROOT_SEEDS;
+            default -> null;
+        };
+    }
+
+    private boolean placeFurnace(Player bot) {
+        if (count(bot, Material.FURNACE) <= 0 || findNearbyBlock(bot, Material.FURNACE, 8) != null) return false;
+        Block target = findPlacementSpot(bot, 2);
+        if (target == null) return false;
+        ItemStack item = firstItem(bot, Material.FURNACE);
+        if (item == null) return false;
+        BlockPlaceEvent event = new BlockPlaceEvent(target, target.getState(),
+                target.getRelative(BlockFace.DOWN), item.clone(), bot, true, EquipmentSlot.HAND);
+        Bukkit.getPluginManager().callEvent(event);
+        if (event.isCancelled() || !event.canBuild()) return false;
+        target.setType(Material.FURNACE);
+        consumeOne(bot, Material.FURNACE);
+        return true;
+    }
+
+    private void maintainFurnace(Player bot) {
+        Block block = findNearbyBlock(bot, Material.FURNACE, 8);
+        if (block == null) return;
+        BlockState state = block.getState();
+        if (!(state instanceof Furnace furnace)) return;
+        org.bukkit.inventory.FurnaceInventory inventory = furnace.getInventory();
+
+        ItemStack result = inventory.getResult();
+        if (result != null && !result.getType().isAir()) {
+            Map<Integer, ItemStack> leftovers = bot.getInventory().addItem(result.clone());
+            if (leftovers.isEmpty()) {
+                inventory.setResult(null);
+            } else {
+                ItemStack left = leftovers.values().iterator().next();
+                inventory.setResult(left);
+            }
+        }
+
+        ItemStack input = inventory.getSmelting();
+        if (input == null || input.getType().isAir()) {
+            Material smeltable = findSmeltable(bot);
+            if (smeltable != null) {
+                ItemStack one = new ItemStack(smeltable, 1);
+                if (removeOne(bot, smeltable)) inventory.setSmelting(one);
+            }
+        }
+
+        ItemStack fuel = inventory.getFuel();
+        if ((fuel == null || fuel.getType().isAir()) && inventory.getSmelting() != null
+                && !inventory.getSmelting().getType().isAir()) {
+            Material fuelType = count(bot, Material.COAL) > 0 ? Material.COAL
+                    : count(bot, Material.CHARCOAL) > 0 ? Material.CHARCOAL
+                    : countBySuffix(bot, "_PLANKS") > 16 ? firstMaterialBySuffix(bot, "_PLANKS") : null;
+            if (fuelType != null && removeOne(bot, fuelType)) inventory.setFuel(new ItemStack(fuelType, 1));
+        }
+        furnace.update(true, false);
+    }
+
+    private Material findSmeltable(Player bot) {
+        Material[] priority = {
+                Material.BEEF, Material.PORKCHOP, Material.MUTTON,
+                Material.CHICKEN, Material.RABBIT, Material.COD,
+                Material.SALMON, Material.POTATO,
+                Material.IRON_ORE, Material.DEEPSLATE_IRON_ORE,
+                Material.COPPER_ORE, Material.DEEPSLATE_COPPER_ORE,
+                Material.GOLD_ORE, Material.DEEPSLATE_GOLD_ORE
+        };
+        for (Material material : priority) if (count(bot, material) > 0) return material;
+        return null;
+    }
+
+    private boolean removeOne(Player bot, Material material) {
+        for (int slot = 0; slot < 36; slot++) {
+            ItemStack item = bot.getInventory().getItem(slot);
+            if (item == null || item.getType() != material) continue;
+            if (item.getAmount() <= 1) bot.getInventory().setItem(slot, null);
+            else {
+                item.setAmount(item.getAmount() - 1);
+                bot.getInventory().setItem(slot, item);
+            }
+            return true;
         }
         return false;
     }
@@ -498,9 +818,10 @@ final class SurvivalController {
 
     private boolean hasNearbyBed(Player bot, int tick) {
         if (knownBed != null && knownBed.getWorld() == bot.getWorld()
+                && bot.getWorld().isChunkLoaded(knownBed.getBlockX() >> 4, knownBed.getBlockZ() >> 4)
                 && knownBed.getBlock().getType().name().endsWith("_BED")) return true;
-        if (tick < nextBedScanTick) return false;
-        knownBed = findNearbyBed(bot, 24);
+        if (!isNight(bot) || tick < nextBedScanTick) return false;
+        knownBed = findNearbyBed(bot, 16);
         nextBedScanTick = tick + 100;
         return knownBed != null;
     }

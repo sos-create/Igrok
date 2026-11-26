@@ -51,6 +51,7 @@ final class AgentBrain {
     private boolean manualOrderActive;
     private org.bukkit.entity.Animals foodTarget;
     private int nextHuntAttackTick;
+    private int nextBuildAttemptTick;
 
     AgentBrain(IgrokPlugin plugin, AgentMemory memory) {
         this.plugin = plugin;
@@ -281,6 +282,14 @@ final class AgentBrain {
         decisionReason = decision.reason();
         decisionConfidence = decision.confidence();
 
+        // Creepers are handled as a spacing threat: do not close into melee range.
+        if (threat != null && threat.getType().name().equals("CREEPER")
+                && threat.getLocation().distanceSquared(bot.getLocation()) <= 64.0) {
+            chosen = GoalPlanner.Goal.FLEE;
+            decisionReason = "Обнаружен крипер на опасном расстоянии — отойти, не вступая в ближний бой.";
+            decisionConfidence = 0.98;
+        }
+
         // Autonomous survival goals are considered only when no player directive is active.
         // Immediate combat and fleeing from a critical threat always retain priority.
         if (!manualOrderActive && chosen != GoalPlanner.Goal.FLEE
@@ -308,6 +317,23 @@ final class AgentBrain {
             chosen = GoalPlanner.Goal.DEFEND;
             decisionReason = "Запрошена защита, а противник обнаружен; риск проверен правилом безопасности.";
         }
+
+        // Once resources are sufficient, Igrok spends his own inventory on one permanent shelter.
+        if (!manualOrderActive && chosen != GoalPlanner.Goal.FLEE
+                && chosen != GoalPlanner.Goal.DEFEND && !plugin.houseBuilder().isBuilding()
+                && !plugin.houseBuilder().hasCompleted() && tickCounter >= nextBuildAttemptTick) {
+            nextBuildAttemptTick = tickCounter + 600;
+            if (plugin.houseBuilder().canBuild(bot)
+                    && plugin.houseBuilder().start(bot.getLocation(), bot)) {
+                navigator.stop();
+                goal = GoalPlanner.Goal.IDLE;
+                state = "Строю собственное убежище";
+                decisionReason = "Собрал достаточно досок и камня; начал строить постоянное убежище за собственные ресурсы.";
+                decisionConfidence = 0.96;
+                return;
+            }
+        }
+
         if (chosen != goal) {
             navigator.stop();
             goal = chosen;
@@ -326,7 +352,9 @@ final class AgentBrain {
                 .map(entity -> (Monster) entity)
                 .filter(entity -> !entity.isDead() && entity.getWorld() == bot.getWorld())
                 .filter(entity -> aggressive || entity.getTarget() == bot
-                        || entity.getLocation().distanceSquared(bot.getLocation()) <= 20.25)
+                        || (entity.getType().name().equals("CREEPER")
+                            ? entity.getLocation().distanceSquared(bot.getLocation()) <= 64.0
+                            : entity.getLocation().distanceSquared(bot.getLocation()) <= 20.25))
                 .min(Comparator.comparingDouble(entity -> entity.getLocation().distanceSquared(bot.getLocation())))
                 .orElse(null);
     }
@@ -459,7 +487,7 @@ final class AgentBrain {
                 return;
             }
             miningTarget = findMiningTarget(bot);
-            nextSearchTick = tickCounter + 20;
+            nextSearchTick = tickCounter + 40;
             miningTicks = 0;
         }
         if (miningTarget == null) {
@@ -489,7 +517,8 @@ final class AgentBrain {
         survival.equipBestTool(bot, miningMode.equals("wood") ? "AXE" : "PICKAXE");
         face(bot, blockLocation);
         int baseTicks = Math.max(12, plugin.getConfig().getInt("brain.mining.break-ticks", 28));
-        int requiredTicks = miningMode.equals("stone") ? baseTicks * 2 : baseTicks;
+        int requiredTicks = survival.breakTicks(bot, miningTarget.getType(),
+                miningMode.equals("stone") ? baseTicks * 2 : baseTicks);
         miningTicks++;
         float progress = Math.min(0.95F, miningTicks / (float) requiredTicks);
         if (tickCounter % 4 == 0) {
@@ -543,7 +572,7 @@ final class AgentBrain {
                     double distance = center.distanceSquared(origin);
                     if (distance >= bestDistance || distance > (radius + 2.0) * (radius + 2.0)) continue;
                     if (miningMode.equals("wood") && !hasNearbyLeaves(block)) continue;
-                    if (!bot.hasLineOfSight(center)) continue;
+                    if (!miningMode.equals("wood") && !bot.hasLineOfSight(center)) continue;
                     best = block;
                     bestDistance = distance;
                 }
@@ -598,8 +627,12 @@ final class AgentBrain {
                 }
                 int y = groundY + 1;
                 Location candidate = new Location(bot.getWorld(), x + 0.5, y, z + 0.5);
-                if (bot.getWorld().getBlockAt(x, y, z).isPassable()
-                        && bot.getWorld().getBlockAt(x, y + 1, z).isPassable()) {
+                Block floor = bot.getWorld().getBlockAt(x, y - 1, z);
+                Block feet = bot.getWorld().getBlockAt(x, y, z);
+                Block head = bot.getWorld().getBlockAt(x, y + 1, z);
+                if (floor.getType().isSolid() && !floor.isLiquid()
+                        && feet.isPassable() && !feet.isLiquid()
+                        && head.isPassable() && !head.isLiquid()) {
                     exploreTarget = candidate;
                     break;
                 }
