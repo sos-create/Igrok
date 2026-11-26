@@ -4,6 +4,7 @@ import io.papermc.paper.event.player.AsyncChatEvent;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer;
 import org.bukkit.Bukkit;
+import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
 
@@ -41,6 +42,17 @@ final class ChatDialogue implements Listener {
             if (now - previous < cooldown) return;
             lastReply.put(senderId, now);
 
+            Player sender = Bukkit.getPlayer(senderId);
+            if (sender != null && sender.hasPermission("igrok.build")
+                    && plugin.getConfig().getBoolean("building.chat-trigger", true)
+                    && contains(message, "построй дом", "построй мне дом", "построй домик", "строй дом")) {
+                Bukkit.broadcast(Component.text("Igrok: Сейчас найду свободную ровную площадку и построю дом."));
+                if (!plugin.houseBuilder().start(sender.getLocation(), sender)) {
+                    Bukkit.broadcast(Component.text("Igrok: Не удалось начать строительство. Возможно, нет подходящей площадки или я уже занят."));
+                }
+                return;
+            }
+
             Bukkit.broadcast(Component.text("Igrok: " + response(message)));
         });
     }
@@ -51,7 +63,7 @@ final class ChatDialogue implements Listener {
         if (contains(message, "что делаешь", "чем занят")) return "Пока осматриваюсь и общаюсь с игроками.";
         if (contains(message, "кто ты", "ты кто")) return "Я Igrok — искусственный игрок этого мира.";
         if (contains(message, "где ты", "ты где")) return "Я появился на стандартной точке возрождения этого мира.";
-        if (contains(message, "помоги", "помощь")) return "Пока я умею общаться и отвечать на простые вопросы. Игровые задачи добавим следующим этапом.";
+        if (contains(message, "помоги", "помощь")) return "Пока я умею общаться и строить небольшой дом по просьбе игрока.";
         if (contains(message, "спасибо", "благодарю")) return "Всегда пожалуйста!";
         if (contains(message, "пока", "до встречи")) return "До встречи! Я останусь здесь.";
         if (message.contains("?")) return "Интересный вопрос. Расскажи немного подробнее.";
