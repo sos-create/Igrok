@@ -45,17 +45,14 @@ final class HouseBuilder {
     boolean start(Location anchor, Player placingPlayer) {
         if (isBuilding()) return false;
         if (!plugin.getConfig().getBoolean("building.enabled", true)) {
-            say("Строительство отключено в конфигурации.");
             return false;
         }
         if (anchor == null || anchor.getWorld() == null) {
-            say("Не могу найти место, от которого искать площадку.");
             return false;
         }
 
         Location site = findSite(anchor);
         if (site == null) {
-            say("Не нашёл ровную свободную площадку рядом. Освободи место и попробуй снова.");
             return false;
         }
 
@@ -64,7 +61,6 @@ final class HouseBuilder {
             chosenActor = plugin.controller().bukkitPlayer();
         }
         if (chosenActor == null) {
-            say("Не получилось определить игрока для проверки прав на строительство.");
             return false;
         }
 
@@ -76,7 +72,6 @@ final class HouseBuilder {
         createCabinPlan();
 
         int interval = Math.max(1, plugin.getConfig().getInt("building.block-interval-ticks", 2));
-        say("Начинаю строить небольшой деревянный дом рядом с площадкой. Блоки будут ставиться постепенно.");
         this.task = Bukkit.getScheduler().runTaskTimer(plugin, this::placeNextBlock, 1L, interval);
         return true;
     }
