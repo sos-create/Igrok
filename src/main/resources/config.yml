@@ -1,4 +1,4 @@
-# Igrok 0.4.0 configuration
+# Igrok 0.5.0 configuration
 bot-name: Igrok
 spawn-world: ""
 auto-spawn: true
@@ -8,6 +8,7 @@ chat:
   enabled: true
   cooldown-seconds: 3
   listen-radius: 10
+  # Bot reacts only when directly addressed; ambient player chat is ignored.
   social:
     enabled: true
     radius: 7
@@ -32,3 +33,8 @@ brain:
     search-radius: 10
     break-ticks: 28
     blocks-per-order: 4
+
+autonomy:
+  # Player requests are proposals, never guaranteed orders.
+  refuse-all-player-orders: false
+  # TNT and ignition blocks are hard-banned in code, not configurable.
