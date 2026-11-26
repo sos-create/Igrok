@@ -38,6 +38,11 @@ final class AgentBrain {
     private GoalPlanner.Goal goal = GoalPlanner.Goal.IDLE;
     private UUID followTarget;
     private Monster threat;
+    private UUID defensivePlayerId;
+    private int defensiveUntilTick;
+    private int nextDefensiveMoveTick;
+    private Location defensiveDestination;
+    private int nextCombatMessageTick;
     private boolean miningRequested;
     private boolean attackRequested;
     private boolean explorationRequested;
@@ -179,6 +184,10 @@ final class AgentBrain {
         if (bot == null || !bot.isOnline() || bot.isDead()) return;
         if (navigator == null) navigator = new AgentNavigator(bot);
         survival.tick(bot, tickCounter);
+
+        // A recent player attack temporarily overrides every voluntary activity.
+        // This keeps an attack from behind from being overwritten by IDLE/MINE/FOLLOW.
+        if (handlePlayerDefense(bot)) return;
 
         if (plugin.houseBuilder().isBuilding()) {
             // HouseBuilder controls movement with its own navigator. Stopping the
@@ -334,14 +343,24 @@ final class AgentBrain {
         rememberBotMessage(playerId, reply);
         say(reply);
     }
-
     void onPlayerAttack(Player player) {
         if (player == null || !player.isOnline()) return;
         UUID playerId = player.getUniqueId();
         long now = System.currentTimeMillis();
 
-        // Repeated hit packets are common during combat. Learn and respond at a
-        // controlled rate so one sword combo cannot spam the chat or reputation.
+        Player bot = plugin.controller().bukkitPlayer();
+        if (bot != null && bot.isOnline() && player.getWorld() == bot.getWorld()) {
+            face(bot, player.getEyeLocation());
+            if (player.getLocation().distanceSquared(bot.getLocation()) <= 256.0) {
+                if (navigator == null) navigator = new AgentNavigator(bot);
+                defensivePlayerId = playerId;
+                defensiveUntilTick = tickCounter + 40;
+                defensiveDestination = findRetreatDestination(bot, player);
+                nextDefensiveMoveTick = tickCounter + 1;
+            }
+        }
+
+        // Turning and movement happen on every hit; chat and reputation are throttled.
         if (now - lastAttackPenaltyAt.getOrDefault(playerId, 0L) >= 5_000L) {
             memory.adjustReputation(playerId, -1);
             lastAttackPenaltyAt.put(playerId, now);
@@ -356,11 +375,119 @@ final class AgentBrain {
         plugin.cognition().observeBehavior("combat");
 
         String reply = memory.trust(playerId) <= -3
-                ? "Не надо меня бить, " + player.getName() + ". Я уже начинаю тебе не доверять."
-                : "Эй, " + player.getName() + "! Зачем ты меня ударил?";
+                ? "Не надо меня бить, " + player.getName() + ". Я отхожу и больше тебе не доверяю."
+                : "Эй, " + player.getName() + "! Не бей меня. Я пытаюсь отойти!";
         rememberBotMessage(playerId, reply);
         say(reply);
     }
+
+    void onMonsterAttack(Monster attacker) {
+        if (attacker == null || attacker.isDead() || !attacker.isValid()) return;
+        Player bot = plugin.controller().bukkitPlayer();
+        if (bot == null || !bot.isOnline() || attacker.getWorld() != bot.getWorld()) return;
+        if (navigator == null) navigator = new AgentNavigator(bot);
+
+        threat = attacker;
+        defensivePlayerId = null;
+        defensiveDestination = null;
+        attackRequested = false;
+        manualOrderActive = false;
+        nextAttackTick = tickCounter;
+        goal = "CREEPER".equals(attacker.getType().name())
+                ? GoalPlanner.Goal.FLEE : GoalPlanner.Goal.DEFEND;
+        face(bot, attacker.getEyeLocation());
+        state = "Отвечаю на атаку " + attacker.getName();
+
+        if (tickCounter >= nextCombatMessageTick) {
+            say("На меня напал " + attacker.getName() + "! Я защищаюсь.");
+            nextCombatMessageTick = tickCounter + 100;
+        }
+    }
+
+    private boolean handlePlayerDefense(Player bot) {
+        if (defensivePlayerId == null) return false;
+        Player attacker = Bukkit.getPlayer(defensivePlayerId);
+        if (attacker == null || !attacker.isOnline() || attacker.getWorld() != bot.getWorld()
+                || tickCounter > defensiveUntilTick) {
+            defensivePlayerId = null;
+            defensiveDestination = null;
+            defensiveUntilTick = 0;
+            if (navigator != null) navigator.stop();
+            return false;
+        }
+
+        if (plugin.houseBuilder().isBuilding()) plugin.houseBuilder().cancel(false);
+        if (navigator == null) navigator = new AgentNavigator(bot);
+
+        if (defensiveDestination == null && tickCounter >= nextDefensiveMoveTick) {
+            defensiveDestination = findRetreatDestination(bot, attacker);
+            nextDefensiveMoveTick = tickCounter + 8;
+        }
+
+        if (defensiveDestination != null) {
+            boolean travelling = navigator.moveTo(defensiveDestination);
+            if (!travelling || bot.getLocation().distanceSquared(defensiveDestination) <= 1.0) {
+                defensiveDestination = null;
+            }
+        } else if (tickCounter >= nextDefensiveMoveTick) {
+            Vector away = bot.getLocation().toVector().subtract(attacker.getLocation().toVector());
+            away.setY(0.0);
+            if (away.lengthSquared() < 0.0001) {
+                away = bot.getLocation().getDirection().multiply(-1.0);
+                away.setY(0.0);
+            }
+            if (!tryCombatMove(away, 0.17)) {
+                defensiveDestination = findRetreatDestination(bot, attacker);
+            }
+            nextDefensiveMoveTick = tickCounter + 8;
+        }
+
+        face(bot, attacker.getEyeLocation());
+        state = "Отступаю от атакующего игрока " + attacker.getName();
+        decisionReason = "Получил удар от игрока — повернулся к нему и ищу безопасное направление для отхода.";
+        decisionConfidence = 1.0;
+        return true;
+    }
+
+    private Location findRetreatDestination(Player bot, Player attacker) {
+        if (bot == null || attacker == null || bot.getWorld() != attacker.getWorld()) return null;
+        if (navigator == null) navigator = new AgentNavigator(bot);
+        Vector away = bot.getLocation().toVector().subtract(attacker.getLocation().toVector());
+        away.setY(0.0);
+        if (away.lengthSquared() < 0.0001) away = new Vector(1.0, 0.0, 0.0);
+        away.normalize();
+
+        Location best = null;
+        double bestScore = Double.NEGATIVE_INFINITY;
+        for (int direction = 0; direction < 8; direction++) {
+            Vector offset = away.clone().rotateAroundY(direction * Math.PI / 4.0);
+            for (double distance : new double[]{2.5, 3.5, 4.5}) {
+                double x = Math.floor(bot.getLocation().getX() + offset.getX() * distance) + 0.5;
+                double z = Math.floor(bot.getLocation().getZ() + offset.getZ() * distance) + 0.5;
+                Location candidate = new Location(bot.getWorld(), x, bot.getLocation().getY(), z);
+                if (!navigator.canStandAt(candidate)) continue;
+                double score = candidate.distanceSquared(attacker.getLocation())
+                        - candidate.distanceSquared(bot.getLocation()) * 0.12;
+                if (score > bestScore) {
+                    bestScore = score;
+                    best = candidate;
+                }
+            }
+        }
+        return best;
+    }
+
+    private boolean tryCombatMove(Vector preferred, double speed) {
+        if (preferred == null) return false;
+        Vector direction = preferred.clone();
+        direction.setY(0.0);
+        if (direction.lengthSquared() < 0.0001) return false;
+        if (navigator.moveVector(direction, speed)) return true;
+        Vector side = new Vector(-direction.getZ(), 0.0, direction.getX());
+        if (navigator.moveVector(side, speed)) return true;
+        return navigator.moveVector(side.multiply(-1.0), speed);
+    }
+
 
     private void trimInteractionCooldowns(long now) {
         if (lastInteractionReplyAt.size() > 512) {
@@ -599,9 +726,9 @@ final class AgentBrain {
     private int nextCombatMoveTick;
     private int combatMoveUntilTick;
     private int combatStrafeDirection = 1;
-
     private void defend(Player bot) {
-        if (threat == null || threat.isDead() || !threat.isValid()) {
+        if (threat == null || threat.isDead() || !threat.isValid()
+                || threat.getWorld() != bot.getWorld()) {
             attackRequested = false;
             manualOrderActive = false;
             goal = GoalPlanner.Goal.IDLE;
@@ -611,45 +738,53 @@ final class AgentBrain {
         Location target = threat.getLocation();
         double distance = bot.getLocation().distance(target);
         survival.equipBestWeapon(bot);
-        face(bot, threat.getEyeLocation());
 
-        // Avoid standing still in front of an enemy: keep a little distance,
-        // sidestep unpredictably, and retreat briefly when the enemy gets too close.
         if (distance > 4.0) {
             state = "Сближаюсь с противником";
-            navigator.moveTo(target);
+            boolean travelling = navigator.moveTo(target);
+            if (!travelling) {
+                Vector toward = target.toVector().subtract(bot.getLocation().toVector());
+                toward.setY(0.0);
+                tryCombatMove(toward, 0.15);
+            }
         } else {
-            navigator.stop();
             if (tickCounter >= nextCombatMoveTick) {
                 combatStrafeDirection = ThreadLocalRandom.current().nextBoolean() ? 1 : -1;
-                combatMoveUntilTick = tickCounter + ThreadLocalRandom.current().nextInt(8, 19);
-                nextCombatMoveTick = tickCounter + ThreadLocalRandom.current().nextInt(24, 42);
+                combatMoveUntilTick = tickCounter + ThreadLocalRandom.current().nextInt(10, 19);
+                nextCombatMoveTick = tickCounter + ThreadLocalRandom.current().nextInt(18, 31);
             }
+
             if (distance < 2.0) {
                 Vector away = bot.getLocation().toVector().subtract(target.toVector());
-                away.setY(0);
-                if (away.lengthSquared() > 0.001) {
-                    away.normalize();
-                    navigator.moveVector(away, 0.16);
-                }
+                away.setY(0.0);
+                if (!tryCombatMove(away, 0.17)) navigator.stop();
             } else if (tickCounter < combatMoveUntilTick) {
                 Vector toward = target.toVector().subtract(bot.getLocation().toVector());
-                toward.setY(0);
+                toward.setY(0.0);
                 if (toward.lengthSquared() > 0.001) {
                     toward.normalize();
-                    Vector side = new Vector(-toward.getZ(), 0, toward.getX()).multiply(combatStrafeDirection);
-                    navigator.moveVector(side, 0.14);
+                    Vector side = new Vector(-toward.getZ(), 0.0, toward.getX())
+                            .multiply(combatStrafeDirection);
+                    if (!tryCombatMove(side, 0.14)) navigator.stop();
                 }
+            } else if (distance > 2.7) {
+                Vector toward = target.toVector().subtract(bot.getLocation().toVector());
+                toward.setY(0.0);
+                if (!tryCombatMove(toward, 0.09)) navigator.stop();
+            } else {
+                navigator.stop();
             }
             state = "Маневрирую в бою с " + threat.getName();
         }
 
+        face(bot, threat.getEyeLocation());
         if (distance <= 3.4 && tickCounter >= nextAttackTick) {
             bot.swingMainHand();
             bot.attack(threat);
             nextAttackTick = tickCounter + ThreadLocalRandom.current().nextInt(10, 16);
         }
     }
+
 
     private void hunt(Player bot) {
         if (bot.getFoodLevel() >= 14 && survival.hasFood(bot)) {
@@ -1007,7 +1142,6 @@ final class AgentBrain {
         goal = GoalPlanner.Goal.EXPLORE;
         if (navigator != null) navigator.stop();
     }
-
     void stop() {
         manualOrderActive = false;
         foodTarget = null;
@@ -1019,25 +1153,35 @@ final class AgentBrain {
         idlePauseUntilTick = 0;
         miningTarget = null;
         exploreTarget = null;
+        defensivePlayerId = null;
+        defensiveDestination = null;
+        defensiveUntilTick = 0;
         if (navigator != null) navigator.stop();
         goal = GoalPlanner.Goal.IDLE;
         state = "Остановился";
         // Confirmation is sent by the command/chat layer.
     }
 
+
     String opinion(String message, UUID player) {
         return personality.opinion(message, memory.trust(player));
     }
-
     private void face(Player bot, Location target) {
+        if (bot == null || target == null || target.getWorld() != bot.getWorld()) return;
         double dx = target.getX() - bot.getLocation().getX();
         double dy = target.getY() - (bot.getLocation().getY() + 1.6);
         double dz = target.getZ() - bot.getLocation().getZ();
         double horizontal = Math.sqrt(dx * dx + dz * dz);
         float yaw = (float) Math.toDegrees(Math.atan2(-dx, dz));
         float pitch = (float) -Math.toDegrees(Math.atan2(dy, horizontal));
-        bot.setRotation(yaw, Math.max(-75.0F, Math.min(75.0F, pitch)));
+        pitch = Math.max(-75.0F, Math.min(75.0F, pitch));
+        bot.setRotation(yaw, pitch);
+        org.bukkit.craftbukkit.entity.CraftPlayer craftPlayer =
+                (org.bukkit.craftbukkit.entity.CraftPlayer) bot;
+        craftPlayer.getHandle().setYHeadRot(yaw);
+        craftPlayer.getHandle().setYBodyRot(yaw);
     }
+
 
     private void say(String message) {
         String botName = plugin.getConfig().getString("bot-name", "Igrok");

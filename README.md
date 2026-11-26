@@ -1,4 +1,4 @@
-# Igrok 0.9.18
+# Igrok 0.9.19
 
 Paper 1.21.4 server-side player agent (Java 21). Igrok is a lightweight autonomous survival agent built around a fake server-side Player, bounded pathfinding, utility-based goals, associative cognition and compact persistent memory.
 

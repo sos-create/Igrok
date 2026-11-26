@@ -4,6 +4,8 @@ import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.World;
 import org.bukkit.entity.Player;
+import org.bukkit.entity.LivingEntity;
+import org.bukkit.entity.Monster;
 import org.bukkit.entity.Projectile;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
@@ -74,7 +76,7 @@ public final class IgrokPlugin extends JavaPlugin implements Listener {
         if (getConfig().getBoolean("auto-spawn", true)) {
             Bukkit.getScheduler().runTask(this, this::spawnWithConfiguredSkin);
         }
-        getLogger().info("Igrok 0.9.15 survival player agent enabled for Paper 1.21.4.");
+        getLogger().info("Igrok 0.9.19 survival player agent enabled for Paper 1.21.4.");
     }
 
     @Override
@@ -342,15 +344,24 @@ public final class IgrokPlugin extends JavaPlugin implements Listener {
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void onBotHit(EntityDamageByEntityEvent event) {
         if (!(event.getEntity() instanceof Player target) || !controller.isBot(target)) return;
-        Player attacker = null;
-        if (event.getDamager() instanceof Player directPlayer) {
-            attacker = directPlayer;
-        } else if (event.getDamager() instanceof Projectile projectile
-                && projectile.getShooter() instanceof Player shooter) {
-            attacker = shooter;
+        try {
+            LivingEntity attacker = null;
+            if (event.getDamager() instanceof LivingEntity living) {
+                attacker = living;
+            } else if (event.getDamager() instanceof Projectile projectile
+                    && projectile.getShooter() instanceof LivingEntity shooter) {
+                attacker = shooter;
+            }
+            if (attacker instanceof Player player) {
+                brain.onPlayerAttack(player);
+            } else if (attacker instanceof Monster monster) {
+                brain.onMonsterAttack(monster);
+            }
+        } catch (RuntimeException error) {
+            reportRuntimeError("combat-event", error);
         }
-        if (attacker != null) brain.onPlayerAttack(attacker);
     }
+
 
     @EventHandler
     public void onBotDeath(PlayerDeathEvent event) {
