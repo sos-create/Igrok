@@ -1,16 +1,19 @@
 name: Igrok
-version: 0.1.0
+version: 0.2.0
 main: ru.soscreate.igrok.IgrokPlugin
 api-version: '1.21'
 load: POSTWORLD
 authors: [sos-create]
-description: Server-side fake player with scripted Russian chat dialogue.
+description: Server-side fake player with Russian chat and a gradual house-building routine.
 commands:
   igrok:
     description: Manage the Igrok fake player.
-    usage: /igrok <spawn|remove|status>
+    usage: /igrok <spawn|remove|status|build|cancelbuild>
     permission: igrok.admin
 permissions:
   igrok.admin:
     description: Allows managing the Igrok fake player.
+    default: op
+  igrok.build:
+    description: Allows asking Igrok to build a house in chat.
     default: op
