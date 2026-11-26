@@ -55,7 +55,6 @@ final class FakePlayerController {
         }
         IgrokServerPlayer created = null;
         EmbeddedChannel channel = null;
-        IgrokServerPlayer created = null;
         try {
             MinecraftServer server = ((CraftServer) Bukkit.getServer()).getServer();
             ServerLevel level = ((CraftWorld) location.getWorld()).getHandle();
@@ -65,7 +64,7 @@ final class FakePlayerController {
             // PlayerList.placeNewPlayer expects an active channel. A bare Connection has
             // no channel and crashes in setupInboundProtocol. EmbeddedChannel provides
             // a local, socket-free channel for this server-side fake player.
-            EmbeddedChannel fakeChannel = new EmbeddedChannel(networkConnection);
+            channel = new EmbeddedChannel(networkConnection);
             created = new IgrokServerPlayer(server, level, profile, networkConnection);
             created.setPos(location.getX(), location.getY(), location.getZ());
             created.setYRot(location.getYaw());
@@ -195,15 +194,18 @@ final class FakePlayerController {
         saveInventory();
         IgrokServerPlayer current = bot;
         bot = null;
-        if (current == null || current.isRemoved()) return;
+        EmbeddedChannel channel = fakeChannel;
+        fakeChannel = null;
         try {
-            current.connection.onDisconnect(new DisconnectionDetails(Component.literal("Igrok removed")));
-        } catch (Throwable error) {
-            plugin.getLogger().warning("Could not cleanly remove Igrok: " + error.getMessage());
-            current.remove(net.minecraft.world.entity.Entity.RemovalReason.DISCARDED);
+            if (current != null && !current.isRemoved()) {
+                try {
+                    current.connection.onDisconnect(new DisconnectionDetails(Component.literal("Igrok removed")));
+                } catch (Throwable error) {
+                    plugin.getLogger().warning("Could not cleanly remove Igrok: " + error.getMessage());
+                    current.remove(net.minecraft.world.entity.Entity.RemovalReason.DISCARDED);
+                }
+            }
         } finally {
-            EmbeddedChannel channel = fakeChannel;
-            fakeChannel = null;
             if (channel != null) {
                 try { channel.finishAndReleaseAll(); }
                 catch (Throwable error) {
