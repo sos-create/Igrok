@@ -1,6 +1,6 @@
 # Igrok
 
-Paper 1.21.4 server-side player agent (Java 21), version 0.5.0.
+Paper 1.21.4 server-side player agent (Java 21), version 0.6.0.
 
 ## Independent decisions and safety
 - Player chat is processed only when the message directly addresses Igrok by name or says "Игрок"; unrelated player chat is ignored.
@@ -15,6 +15,13 @@ Paper 1.21.4 server-side player agent (Java 21), version 0.5.0.
 - Right-clicking the bot starts a short social interaction.
 - It reacts to being hit by a player and remembers the event; it does not retaliate against real players.
 - Replies can refer to recent conversation lines, player name, remembered interests and approximate trust/reputation.
+
+## Persistent online presence and restart recovery
+- With `auto-spawn: true`, Igrok automatically joins as a fake online player whenever the Paper server starts. It remains online only while the server is running and disconnects with it at shutdown.
+- The last world, coordinates and rotation are stored in `plugins/Igrok/agent-state.yml`; Igrok returns to that location after restart.
+- Its active goal, mining mode/progress, follow target UUID, exploration intent and unfinished cabin-building cursor are saved every 30 seconds and on normal shutdown.
+- On restart it resumes the previous task. If the followed player is offline, it waits for that player to return.
+- A crash or power loss may lose changes since the last periodic save.
 
 ## Compact memory
 - Stored in `plugins/Igrok/memory.bin`: versioned binary stream compressed with GZIP.
