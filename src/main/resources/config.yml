@@ -1,4 +1,4 @@
-# Igrok 0.9.4 configuration
+# Igrok 0.9.5 configuration
 bot-name: Igrok
 spawn-world: ""
 auto-spawn: true
@@ -36,6 +36,7 @@ brain:
     search-radius: 10
     break-ticks: 28
     blocks-per-order: 4
+    # Automatic priorities: survival > iron upgrades > wood/stone/coal > exploration.
 
 autonomy:
   # Player requests are proposals, never guaranteed orders.

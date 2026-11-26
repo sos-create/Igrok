@@ -53,6 +53,8 @@ final class SurvivalController {
     private int nextHuntDecisionTick;
     private int nextWoodGoalTick;
     private int nextStoneGoalTick;
+    private int nextCoalGoalTick;
+    private int nextIronGoalTick;
     private int nextFurnaceTick;
     private int nextChestScanTick;
     private int nextFarmTick;
@@ -100,34 +102,76 @@ final class SurvivalController {
 
     AutonomyDecision chooseAutonomousGoal(Player bot, AgentPersonality personality,
                                            GoalPlanner.Goal current, int tick) {
+        // Food and sleep are hard needs and outrank all economic plans.
         if (bot.getFoodLevel() <= 12 && !hasFood(bot) && tick >= nextHuntDecisionTick) {
-            return new AutonomyDecision(GoalPlanner.Goal.HUNT, 0.92,
-                    "Потребность в пище высокая, а запас еды закончился — найти животное и добыть пищу.", "");
+            return new AutonomyDecision(GoalPlanner.Goal.HUNT, 0.98,
+                    "Срочная потребность: еды нет, голод высокий — сначала добыть пищу.", "");
         }
         if (isNight(bot) && (hasNearbyBed(bot, tick) || hasBedItem(bot))) {
             return new AutonomyDecision(GoalPlanner.Goal.SLEEP, 0.96,
-                    "Наступила ночь и поблизости есть или можно поставить кровать — лечь спать.", "");
+                    "Наступила ночь; доступна кровать — сон важнее обычной добычи и строительства.", "");
         }
 
-        int logs = countBySuffix(bot, "_LOG") + countBySuffix(bot, "_WOOD");
-        int planks = countBySuffix(bot, "_PLANKS");
-        int woodReserve = plugin.houseBuilder().hasCompleted() ? 40 : 112;
-        if (logs + planks < woodReserve && tick >= nextWoodGoalTick) {
-            return new AutonomyDecision(GoalPlanner.Goal.MINE, 0.82,
-                    "Запас древесины мал — добыть брёвна для досок, инструментов и убежища.", "wood");
+        // Score independent resource needs and choose the most valuable one now.
+        double bestScore = 0.0;
+        String bestMode = "";
+        String bestReason = "";
+
+        int wood = countBySuffix(bot, "_LOG") + countBySuffix(bot, "_WOOD")
+                + countBySuffix(bot, "_PLANKS");
+        int woodTarget = plugin.houseBuilder().hasCompleted() ? 40 : 112;
+        if (wood < woodTarget && tick >= nextWoodGoalTick) {
+            double score = 0.58 + 0.22 * (1.0 - (double) wood / Math.max(1, woodTarget));
+            if (score > bestScore) {
+                bestScore = score;
+                bestMode = "wood";
+                bestReason = "Не хватает древесины (" + wood + "/" + woodTarget
+                        + ") для инструментов, верстака, сундука и строительства.";
+            }
         }
 
-        int stone = count(bot, Material.COBBLESTONE);
-        int stoneReserve = plugin.houseBuilder().hasCompleted() ? 16 : 17;
-        if (stone < stoneReserve && hasTool(bot, "PICKAXE") && tick >= nextStoneGoalTick) {
-            return new AutonomyDecision(GoalPlanner.Goal.MINE, 0.74,
-                    "Каменных материалов мало — пополнить запас для печи и улучшенных инструментов.", "stone");
+        int cobble = count(bot, Material.COBBLESTONE);
+        int stoneTarget = plugin.houseBuilder().hasCompleted() ? 16 : 24;
+        if (cobble < stoneTarget && hasTool(bot, "PICKAXE") && tick >= nextStoneGoalTick) {
+            double score = 0.54 + 0.20 * (1.0 - (double) cobble / Math.max(1, stoneTarget));
+            if (score > bestScore) {
+                bestScore = score;
+                bestMode = "stone";
+                bestReason = "Камня мало (" + cobble + "/" + stoneTarget
+                        + ") — добыть материал для печи, каменных инструментов и убежища.";
+            }
+        }
+
+        int coal = count(bot, Material.COAL) + count(bot, Material.CHARCOAL);
+        if (coal < 8 && hasTool(bot, "PICKAXE") && tick >= nextCoalGoalTick) {
+            double score = 0.53 + 0.18 * (1.0 - coal / 8.0);
+            if (score > bestScore) {
+                bestScore = score;
+                bestMode = "coal";
+                bestReason = "Заканчивается топливо (" + coal + "/8) — добыть уголь для плавки и факелов.";
+            }
+        }
+
+        int iron = count(bot, Material.IRON_INGOT) + count(bot, Material.RAW_IRON);
+        if (iron < 6 && bestToolTier(bot, "PICKAXE") >= 3 && tick >= nextIronGoalTick) {
+            double score = 0.61 + 0.20 * (1.0 - iron / 6.0);
+            if (bestToolTier(bot, "PICKAXE") >= 4) score += 0.03;
+            if (score > bestScore) {
+                bestScore = score;
+                bestMode = "iron";
+                bestReason = "Железа недостаточно (" + iron + "/6) — добыть руду для улучшения инструментов и защиты.";
+            }
+        }
+
+        if (!bestMode.isEmpty()) {
+            return new AutonomyDecision(GoalPlanner.Goal.MINE, Math.min(0.95, bestScore),
+                    bestReason, bestMode);
         }
         if (current == GoalPlanner.Goal.EXPLORE) return null;
         if (personality.curiosity() > 0.38) {
             return new AutonomyDecision(GoalPlanner.Goal.EXPLORE,
                     0.55 + personality.curiosity() * 0.25,
-                    "Основные запасы достаточны — исследовать неизвестную часть окрестностей.", "");
+                    "Основные потребности закрыты — исследовать окрестности и искать новые ресурсы.", "");
         }
         return null;
     }
@@ -188,8 +232,12 @@ final class SurvivalController {
     }
 
     void deferMining(String mode, int tick) {
-        if ("wood".equals(mode)) nextWoodGoalTick = tick + 400;
-        else nextStoneGoalTick = tick + 400;
+        switch (mode) {
+            case "wood" -> nextWoodGoalTick = tick + 400;
+            case "coal" -> nextCoalGoalTick = tick + 500;
+            case "iron" -> nextIronGoalTick = tick + 600;
+            default -> nextStoneGoalTick = tick + 400;
+        }
     }
 
     Animals findFoodAnimal(Player bot, double radius) {

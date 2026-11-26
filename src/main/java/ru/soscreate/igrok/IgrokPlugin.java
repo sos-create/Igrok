@@ -70,7 +70,7 @@ public final class IgrokPlugin extends JavaPlugin implements Listener {
                 houseBuilder.resumeSavedState(stateData);
             });
         }
-        getLogger().info("Igrok 0.9.3 autonomous survival agent enabled for Paper 1.21.4.");
+        getLogger().info("Igrok 0.9.5 autonomous survival agent enabled for Paper 1.21.4.");
     }
 
     @Override

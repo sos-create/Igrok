@@ -7,6 +7,7 @@ import org.bukkit.World;
 import org.bukkit.block.Block;
 import org.bukkit.entity.Monster;
 import org.bukkit.entity.Player;
+import org.bukkit.inventory.ItemStack;
 import org.bukkit.util.Vector;
 import org.bukkit.configuration.file.YamlConfiguration;
 
@@ -98,7 +99,7 @@ final class AgentBrain {
         catch (IllegalArgumentException ignored) { followTarget = null; }
         miningRequested = data.getBoolean("brain.mining-requested", false);
         miningMode = data.getString("brain.mining-mode", "wood");
-        if (!miningMode.equals("wood") && !miningMode.equals("stone")) miningMode = "wood";
+        if (!java.util.Set.of("wood", "stone", "coal", "iron").contains(miningMode)) miningMode = "wood";
         minedThisTask = Math.max(0, data.getInt("brain.mined-this-task", 0));
         attackRequested = data.getBoolean("brain.attack-requested", false);
         explorationRequested = data.getBoolean("brain.exploration-requested", false);
@@ -569,7 +570,7 @@ final class AgentBrain {
         face(bot, blockLocation);
         int baseTicks = Math.max(12, plugin.getConfig().getInt("brain.mining.break-ticks", 28));
         int requiredTicks = survival.breakTicks(bot, miningTarget.getType(),
-                miningMode.equals("stone") ? baseTicks * 2 : baseTicks);
+                miningMode.equals("wood") ? baseTicks : baseTicks * 2);
         miningTicks++;
         float progress = Math.min(0.95F, miningTicks / (float) requiredTicks);
         if (tickCounter % 4 == 0) {
@@ -614,11 +615,13 @@ final class AgentBrain {
         for (int x = origin.getBlockX() - radius; x <= origin.getBlockX() + radius; x++) {
             for (int z = origin.getBlockZ() - radius; z <= origin.getBlockZ() + radius; z++) {
                 if (!world.isChunkLoaded(x >> 4, z >> 4)) continue;
-                for (int y = Math.max(world.getMinHeight() + 1, origin.getBlockY() - 5);
+                for (int y = Math.max(world.getMinHeight() + 1, origin.getBlockY() - (miningMode.equals("wood") ? 5 : 16));
                      y <= Math.min(world.getMaxHeight() - 2, origin.getBlockY() + 8); y++) {
                     Block block = world.getBlockAt(x, y, z);
                     Material type = block.getType();
                     if (!isWantedResource(type)) continue;
+                    if (!miningMode.equals("wood")
+                            && survivalToolTier(bot, "PICKAXE") < (miningMode.equals("iron") ? 3 : 1)) continue;
                     Location center = block.getLocation().add(0.5, 0.5, 0.5);
                     double distance = center.distanceSquared(origin);
                     if (distance >= bestDistance || distance > (radius + 2.0) * (radius + 2.0)) continue;
@@ -634,13 +637,31 @@ final class AgentBrain {
 
     private boolean isWantedResource(Material type) {
         String name = type.name();
-        if (miningMode.equals("wood")) {
-            return (name.endsWith("_LOG") || name.endsWith("_WOOD")) && !name.startsWith("STRIPPED_");
+        return switch (miningMode) {
+            case "wood" -> (name.endsWith("_LOG") || name.endsWith("_WOOD"))
+                    && !name.startsWith("STRIPPED_");
+            case "coal" -> name.endsWith("_COAL_ORE");
+            case "iron" -> name.endsWith("_IRON_ORE");
+            case "stone" -> name.equals("STONE") || name.equals("COBBLESTONE");
+            default -> false;
+        };
+    }
+
+    private int survivalToolTier(Player bot, String suffix) {
+        int best = -1;
+        for (int slot = 0; slot < 36; slot++) {
+            ItemStack item = bot.getInventory().getItem(slot);
+            if (item == null || !item.getType().name().endsWith("_" + suffix)) continue;
+            if (item.getType().getMaxDurability() <= 0) continue;
+            if (item.getItemMeta() instanceof org.bukkit.inventory.meta.Damageable damageable
+                    && item.getType().getMaxDurability() - damageable.getDamage() <= 1) continue;
+            String name = item.getType().name();
+            int tier = name.startsWith("NETHERITE_") ? 6 : name.startsWith("DIAMOND_") ? 5
+                    : name.startsWith("IRON_") ? 4 : name.startsWith("STONE_") ? 3
+                    : name.startsWith("GOLDEN_") ? 2 : 1;
+            best = Math.max(best, tier);
         }
-        return name.equals("STONE") || name.equals("COBBLESTONE")
-                || name.endsWith("_COAL_ORE") || name.endsWith("_IRON_ORE")
-                || name.endsWith("_COPPER_ORE")
-                || name.endsWith("_REDSTONE_ORE") || name.endsWith("_LAPIS_ORE");
+        return best;
     }
 
     private boolean hasNearbyLeaves(Block log) {
@@ -715,7 +736,7 @@ final class AgentBrain {
 
     boolean requestMining(String mode) {
         String value = mode == null ? "wood" : mode.toLowerCase(Locale.ROOT);
-        if (!value.equals("wood") && !value.equals("stone")) return false;
+        if (!java.util.Set.of("wood", "stone", "coal", "iron").contains(value)) return false;
         miningMode = value;
         manualOrderActive = true;
         miningRequested = true;
