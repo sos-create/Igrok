@@ -24,7 +24,9 @@ final class IgrokServerPlayer extends ServerPlayer {
     @Override
     public void tick() {
         if (isRemoved()) return;
+        // ServerPlayer.tick() already invokes doTick(). Calling it again here
+        // advanced player state twice per server tick and could desynchronize
+        // movement, hunger, inventory and world interactions.
         super.tick();
-        doTick();
     }
 }
