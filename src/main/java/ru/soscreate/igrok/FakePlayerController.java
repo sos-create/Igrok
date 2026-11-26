@@ -33,6 +33,14 @@ final class FakePlayerController {
         return isSpawned() && player.getUniqueId().equals(bot.getUUID());
     }
 
+    Location location() {
+        return isSpawned() ? bot.getBukkitEntity().getLocation().clone() : null;
+    }
+
+    Player bukkitPlayer() {
+        return isSpawned() ? bot.getBukkitEntity() : null;
+    }
+
     boolean spawn(Location location, String configuredName) {
         if (isSpawned()) return true;
         String name = configuredName == null || configuredName.isBlank() ? "Igrok" : configuredName.trim();
