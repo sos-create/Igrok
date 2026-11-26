@@ -65,6 +65,7 @@ final class AgentBrain {
     private int combatDeaths;
     private int starvationDeaths;
     private int combatRetreatUntilTick;
+    private int pauseAfterFailureUntilTick;
     private String lastLesson = "Пока не было смертельных ошибок.";
 
     AgentBrain(IgrokPlugin plugin, AgentMemory memory) {
@@ -150,6 +151,25 @@ final class AgentBrain {
 
     void tick() {
         tickCounter++;
+        if (tickCounter < pauseAfterFailureUntilTick) return;
+        try {
+            tickInternal();
+        } catch (RuntimeException error) {
+            pauseAfterFailureUntilTick = tickCounter + 100;
+            if (navigator != null) {
+                try {
+                    navigator.stop();
+                } catch (RuntimeException stopError) {
+                    plugin.reportRuntimeError("navigator-stop", stopError);
+                }
+            }
+            state = "Временно приостановил действие после внутренней ошибки";
+            decisionReason = "Остановил текущее действие для защиты мира и повторю попытку через несколько секунд.";
+            plugin.reportRuntimeError("brain", error);
+        }
+    }
+
+    private void tickInternal() {
         if (!plugin.getConfig().getBoolean("brain.enabled", true) || !plugin.controller().isSpawned()) return;
         Player bot = plugin.controller().bukkitPlayer();
         if (bot == null || !bot.isOnline() || bot.isDead()) return;
@@ -311,6 +331,7 @@ final class AgentBrain {
         if (normalized.contains("tnt") || normalized.contains("динамит")
                 || normalized.contains("подж") || normalized.contains("взорв")) return false;
         if (plugin.getConfig().getBoolean("autonomy.refuse-all-player-orders", false)) return false;
+        if ("stop".equals(normalized)) return true;
 
         int trust = memory.trust(playerId);
         double willingness = 0.28 + personality.sociability() * 0.24

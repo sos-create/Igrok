@@ -85,7 +85,7 @@ final class HouseBuilder {
         cursor = Math.max(0, Math.min(plan.size(), data.getInt("builder.cursor", 0)));
         placed = Math.max(0, data.getInt("builder.placed", cursor));
         int interval = Math.max(1, plugin.getConfig().getInt("building.block-interval-ticks", 2));
-        task = Bukkit.getScheduler().runTaskTimer(plugin, this::placeNextBlock, 20L, interval);
+        task = Bukkit.getScheduler().runTaskTimer(plugin, this::runPlacementSafely, 20L, interval);
         say("Я продолжил строительство с того места, где остановился.");
     }
 
@@ -134,7 +134,7 @@ final class HouseBuilder {
         cursor = 0;
         placed = 0;
         int interval = Math.max(1, plugin.getConfig().getInt("building.block-interval-ticks", 2));
-        task = Bukkit.getScheduler().runTaskTimer(plugin, this::placeNextBlock, 1L, interval);
+        task = Bukkit.getScheduler().runTaskTimer(plugin, this::runPlacementSafely, 1L, interval);
         return true;
     }
 
@@ -172,6 +172,19 @@ final class HouseBuilder {
             if (material.name().endsWith("_DOOR") && count(actor, material) >= 1) return material;
         }
         return null;
+    }
+
+    private void runPlacementSafely() {
+        try {
+            placeNextBlock();
+        } catch (RuntimeException error) {
+            plugin.reportRuntimeError("builder", error);
+            if (task != null) {
+                task.cancel();
+                task = null;
+            }
+            plan.clear();
+        }
     }
 
     private void placeNextBlock() {

@@ -7,6 +7,7 @@ import org.bukkit.Bukkit;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
+import org.bukkit.plugin.IllegalPluginAccessException;
 
 import java.util.Locale;
 import java.util.Map;
@@ -16,6 +17,7 @@ import java.util.regex.Pattern;
 
 /** Filters addressed chat, sends it to the cognition layers and publishes replies. */
 final class ChatDialogue implements Listener {
+    private static final int MAX_CHAT_CHARS = 256;
     private final IgrokPlugin plugin;
     private final Map<UUID, Long> lastReply = new ConcurrentHashMap<>();
     private final Map<UUID, CognitiveNetwork.Analysis> pendingThoughts = new ConcurrentHashMap<>();
@@ -28,12 +30,32 @@ final class ChatDialogue implements Listener {
 
     @EventHandler
     public void onChat(AsyncChatEvent event) {
+        if (!plugin.isEnabled()) return;
         String raw = PlainTextComponentSerializer.plainText().serialize(event.message());
+        String safeMessage = raw.length() > MAX_CHAT_CHARS
+                ? raw.substring(0, MAX_CHAT_CHARS) : raw;
         UUID senderId = event.getPlayer().getUniqueId();
-        Bukkit.getScheduler().runTask(plugin, () -> processMessage(senderId, raw));
+        try {
+            Bukkit.getScheduler().runTask(plugin, () -> processMessage(senderId, safeMessage));
+        } catch (IllegalPluginAccessException ignored) {
+            // The server is shutting down; do not schedule work on a disabled plugin.
+        }
     }
 
     private void processMessage(UUID senderId, String rawMessage) {
+        try {
+            processMessageInternal(senderId, rawMessage);
+        } catch (RuntimeException error) {
+            plugin.reportRuntimeError("chat-processing", error);
+            Player sender = Bukkit.getPlayer(senderId);
+            if (sender != null) {
+                sender.sendMessage("§6Igrok§7: §fНе смог безопасно обработать это сообщение. "
+                        + "Я остановил действие и попробую снова позже.");
+            }
+        }
+    }
+
+    private void processMessageInternal(UUID senderId, String rawMessage) {
         if (!plugin.isEnabled() || !plugin.getConfig().getBoolean("chat.enabled", true)
                 || !plugin.controller().isSpawned() || rawMessage == null || rawMessage.isBlank()) return;
         Player sender = Bukkit.getPlayer(senderId);
@@ -53,6 +75,7 @@ final class ChatDialogue implements Listener {
 
         long now = System.currentTimeMillis();
         if (pendingThoughts.size() > 512) pendingThoughts.keySet().removeIf(id -> Bukkit.getPlayer(id) == null);
+        if (pendingThoughts.size() > 1024) pendingThoughts.clear();
         if (lastReply.size() > 512) lastReply.entrySet().removeIf(entry -> now - entry.getValue() > 300_000L);
         long cooldown = Math.max(1L, plugin.getConfig().getLong("chat.cooldown-seconds", 2)) * 1000L;
         if (now - lastReply.getOrDefault(senderId, 0L) < cooldown) return;

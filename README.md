@@ -1,4 +1,4 @@
-# Igrok 0.9.12
+# Igrok 0.9.13
 
 Paper 1.21.4 server-side player agent (Java 21). Igrok is a lightweight autonomous survival agent built around a fake server-side Player, bounded pathfinding, utility-based goals, associative cognition and compact persistent memory.
 
@@ -49,4 +49,4 @@ This is an algorithmic simulation. It does not provide human-level intelligence,
 
 The plugin is compiled against Paper 1.21.4. Version 0.9.12 includes the safe stuck-recovery check and world-border guard; version 0.9.11 corrected the ServerPlayer constructor settings; the 0.9.10 post-login-only distance restriction was insufficient by itself. A successful CI build verifies source compilation and artifact packaging, but actual movement, crop interaction, furnace behavior and protection-plugin compatibility must still be tested on the target live server.
 
-The fake-player architecture is adapted from https://github.com/skylhcss/my-bot-mod, distributed under MIT; see UPSTREAM-LICENSE.
+Unexpected runtime failures in chat, the brain and construction are isolated: a failed construction step cancels that build, a failed brain tick pauses and retries instead of cancelling the scheduler, and duplicate stack traces are rate-limited. Chat input is length-limited before parsing. These safeguards prevent cascading errors; they do not repair invalid chunk data already stored in a world region file.\n\nThe fake-player architecture is adapted from https://github.com/skylhcss/my-bot-mod, distributed under MIT; see UPSTREAM-LICENSE.

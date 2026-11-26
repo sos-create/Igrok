@@ -25,6 +25,8 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.logging.Level;
 import com.destroystokyo.paper.profile.ProfileProperty;
 
 public final class IgrokPlugin extends JavaPlugin implements Listener {
@@ -44,6 +46,7 @@ public final class IgrokPlugin extends JavaPlugin implements Listener {
     private File stateFile;
     private YamlConfiguration stateData;
     private final Map<UUID, Long> lastExplorationObservation = new HashMap<>();
+    private final Map<String, Long> runtimeErrorLogTimes = new ConcurrentHashMap<>();
 
     @Override
     public void onEnable() {
@@ -60,16 +63,16 @@ public final class IgrokPlugin extends JavaPlugin implements Listener {
         dialogue = new ChatDialogue(this);
         Bukkit.getPluginManager().registerEvents(this, this);
         Bukkit.getPluginManager().registerEvents(dialogue, this);
-        brainTask = Bukkit.getScheduler().runTaskTimer(this, brain::tick, 1L, 1L);
-        memorySaveTask = Bukkit.getScheduler().runTaskTimer(this, memory::save, 6000L, 6000L);
-        stateSaveTask = Bukkit.getScheduler().runTaskTimer(this, this::savePersistentState, 600L, 600L);
-        cognitionSaveTask = Bukkit.getScheduler().runTaskTimer(this, cognition::save, 6000L, 6000L);
-        inventorySaveTask = Bukkit.getScheduler().runTaskTimer(this, controller::saveInventory, 6000L, 6000L);
+        brainTask = Bukkit.getScheduler().runTaskTimer(this, () -> runSafely("brain", brain::tick), 1L, 1L);
+        memorySaveTask = Bukkit.getScheduler().runTaskTimer(this, () -> runSafely("memory-save", memory::save), 6000L, 6000L);
+        stateSaveTask = Bukkit.getScheduler().runTaskTimer(this, () -> runSafely("state-save", this::savePersistentState), 600L, 600L);
+        cognitionSaveTask = Bukkit.getScheduler().runTaskTimer(this, () -> runSafely("cognition-save", cognition::save), 6000L, 6000L);
+        inventorySaveTask = Bukkit.getScheduler().runTaskTimer(this, () -> runSafely("inventory-save", controller::saveInventory), 6000L, 6000L);
 
         if (getConfig().getBoolean("auto-spawn", true)) {
             Bukkit.getScheduler().runTask(this, this::spawnWithConfiguredSkin);
         }
-        getLogger().info("Igrok 0.9.12 autonomous survival agent enabled for Paper 1.21.4.");
+        getLogger().info("Igrok 0.9.13 autonomous survival agent enabled for Paper 1.21.4.");
     }
 
     @Override
@@ -89,6 +92,36 @@ public final class IgrokPlugin extends JavaPlugin implements Listener {
         if (controller != null) controller.remove();
     }
 
+
+    /**
+     * Keeps an unexpected plugin exception from cancelling a repeating Bukkit task.
+     * Identical stack traces are logged at most once per component every 30 seconds.
+     */
+    private void runSafely(String component, Runnable operation) {
+        if (!isEnabled()) return;
+        try {
+            operation.run();
+        } catch (RuntimeException error) {
+            reportRuntimeError(component, error);
+        }
+    }
+
+    void reportRuntimeError(String component, RuntimeException error) {
+        if (error == null) return;
+        long now = System.currentTimeMillis();
+        String key = component + ":" + error.getClass().getName();
+        long previous = runtimeErrorLogTimes.getOrDefault(key, 0L);
+        if (now - previous >= 30_000L) {
+            runtimeErrorLogTimes.put(key, now);
+            getLogger().log(Level.SEVERE,
+                    "[Igrok] Ошибка в модуле '" + component
+                            + "'. Повтор этой ошибки будет ограничен; стек ниже нужен для диагностики.",
+                    error);
+        }
+        if (runtimeErrorLogTimes.size() > 128) {
+            runtimeErrorLogTimes.entrySet().removeIf(entry -> now - entry.getValue() > 120_000L);
+        }
+    }
 
     private void spawnWithConfiguredSkin() {
         String skinOwner = getConfig().getString("skin-owner", "").trim();
