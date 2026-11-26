@@ -11,6 +11,10 @@ import org.bukkit.event.Listener;
 import org.bukkit.event.entity.EntityDamageByEntityEvent;
 import org.bukkit.event.entity.PlayerDeathEvent;
 import org.bukkit.event.player.PlayerInteractEntityEvent;
+import org.bukkit.event.block.BlockBreakEvent;
+import org.bukkit.event.block.BlockPlaceEvent;
+import org.bukkit.event.entity.EntityDeathEvent;
+import org.bukkit.event.player.PlayerMoveEvent;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.scheduler.BukkitTask;
 
@@ -18,6 +22,9 @@ import java.io.File;
 import java.io.IOException;
 import org.bukkit.configuration.file.YamlConfiguration;
 import java.util.Locale;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.UUID;
 
 public final class IgrokPlugin extends JavaPlugin implements Listener {
     private FakePlayerController controller;
@@ -31,6 +38,7 @@ public final class IgrokPlugin extends JavaPlugin implements Listener {
     private BukkitTask stateSaveTask;
     private File stateFile;
     private YamlConfiguration stateData;
+    private final Map<UUID, Long> lastExplorationObservation = new HashMap<>();
 
     @Override
     public void onEnable() {
@@ -56,7 +64,7 @@ public final class IgrokPlugin extends JavaPlugin implements Listener {
                 houseBuilder.resumeSavedState(stateData);
             });
         }
-        getLogger().info("Igrok 0.6.0 persistent agent enabled for Paper 1.21.4.");
+        getLogger().info("Igrok 0.7.0 social learning agent enabled for Paper 1.21.4.");
     }
 
     @Override
@@ -200,6 +208,37 @@ public final class IgrokPlugin extends JavaPlugin implements Listener {
             default -> sender.sendMessage("§eИспользование: /igrok <spawn|remove|status|build|cancelbuild|brain|follow|mine|attack|explore|stop>");
         }
         return true;
+    }
+
+
+    @EventHandler
+    public void onPlayerBlockBreak(BlockBreakEvent event) {
+        memory.observeAction(event.getPlayer().getUniqueId(), "mine");
+    }
+
+    @EventHandler
+    public void onPlayerBlockPlace(BlockPlaceEvent event) {
+        memory.observeAction(event.getPlayer().getUniqueId(), "build");
+    }
+
+    @EventHandler
+    public void onMobKilled(EntityDeathEvent event) {
+        Player killer = event.getEntity().getKiller();
+        if (killer != null) memory.observeAction(killer.getUniqueId(), "combat");
+    }
+
+    @EventHandler
+    public void onPlayerExplore(PlayerMoveEvent event) {
+        if (event.getTo() == null || event.getFrom().getWorld() != event.getTo().getWorld()) return;
+        if ((event.getFrom().getBlockX() >> 4) == (event.getTo().getBlockX() >> 4)
+                && (event.getFrom().getBlockZ() >> 4) == (event.getTo().getBlockZ() >> 4)) return;
+        long now = System.currentTimeMillis();
+        UUID id = event.getPlayer().getUniqueId();
+        long previous = lastExplorationObservation.getOrDefault(id, 0L);
+        if (now - previous >= 15_000L) {
+            memory.observeAction(id, "explore");
+            lastExplorationObservation.put(id, now);
+        }
     }
 
     @EventHandler
