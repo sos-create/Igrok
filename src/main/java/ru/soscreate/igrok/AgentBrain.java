@@ -77,7 +77,7 @@ final class AgentBrain {
         switch (goal) {
             case FLEE -> flee(bot);
             case DEFEND -> defend(bot);
-            case FOLLOW -> follow(bot);
+            case FOLLOW -> followTarget(bot);
             case MINE -> mine(bot);
             case EXPLORE -> explore(bot);
             case IDLE -> {
@@ -116,8 +116,8 @@ final class AgentBrain {
             navigator.stop();
             goal = chosen;
         }
-        if (chosen == GoalPlanner.Goal.EXPLORE && exploreTarget == null) {
-            explorationRequested = false;
+        if (chosen == GoalPlanner.Goal.EXPLORE && exploreTarget == null && !explorationRequested) {
+            explorationRequested = true;
             nextExploreTick = tickCounter + 20 * (18 + (int) (personality.patience() * 25));
         }
     }
@@ -178,7 +178,7 @@ final class AgentBrain {
         }
     }
 
-    private void follow(Player bot) {
+    private void followTarget(Player bot) {
         Player target = followTarget == null ? null : Bukkit.getPlayer(followTarget);
         if (target == null || !target.isOnline() || target.getWorld() != bot.getWorld()) {
             followTarget = null;
@@ -202,7 +202,11 @@ final class AgentBrain {
             navigator.stop();
             return;
         }
-        if (miningTarget == null || miningTarget.getType().isAir() || tickCounter >= nextSearchTick) {
+        if (miningTarget == null || miningTarget.getType().isAir()) {
+            if (tickCounter < nextSearchTick) {
+                state = "Ищу ресурсы";
+                return;
+            }
             miningTarget = findMiningTarget(bot);
             nextSearchTick = tickCounter + 20;
             miningTicks = 0;
@@ -314,7 +318,7 @@ final class AgentBrain {
 
     private void explore(Player bot) {
         if (exploreTarget == null || bot.getLocation().distanceSquared(exploreTarget) < 2.0) {
-            if (!explorationRequested && personality.curiosity() < 0.75) {
+            if (!explorationRequested) {
                 goal = GoalPlanner.Goal.IDLE;
                 navigator.stop();
                 return;
@@ -337,6 +341,7 @@ final class AgentBrain {
                 explorationRequested = false;
                 return;
             }
+            explorationRequested = false;
         }
         state = "Исследую окрестности";
         if (!navigator.moveTo(exploreTarget)) {
