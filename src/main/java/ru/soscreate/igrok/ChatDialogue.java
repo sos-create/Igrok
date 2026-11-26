@@ -217,13 +217,14 @@ final class ChatDialogue implements Listener {
             return;
         }
         if (action != null) {
-            handleAction(sender, action);
+            handleAction(sender, action, thought);
             return;
         }
         sendReply(senderId, composer.reply(sender, rawMessage, thought));
     }
 
-    private void handleAction(Player sender, String action) {
+    private void handleAction(Player sender, String action, CognitiveNetwork.Analysis thought) {
+        boolean thoughtDirectOrder = thought != null && thought.directOrder();
         UUID id = sender.getUniqueId();
         boolean permitted = switch (action) {
             case "build" -> sender.hasPermission("igrok.build")
@@ -234,8 +235,8 @@ final class ChatDialogue implements Listener {
             sendReply(id, "Я услышал просьбу, но у тебя нет разрешения на такие действия. Можем пока поговорить.");
             return;
         }
-        if (!plugin.brain().considerRequest(id, action)) {
-            sendReply(id, plugin.brain().refusalReason(id));
+        if (!plugin.brain().considerRequest(id, action, thoughtDirectOrder)) {
+            sendReply(id, plugin.brain().refusalReason(id, thoughtDirectOrder));
             return;
         }
 
