@@ -52,6 +52,10 @@ final class AgentBrain {
     private org.bukkit.entity.Animals foodTarget;
     private int nextHuntAttackTick;
     private int nextBuildAttemptTick;
+    private int nextIdleLookTick;
+    private int nextIdleWanderTick;
+    private int idlePauseUntilTick;
+    private Location idleWanderTarget;
 
     AgentBrain(IgrokPlugin plugin, AgentMemory memory) {
         this.plugin = plugin;
@@ -136,14 +140,61 @@ final class AgentBrain {
             case HUNT -> hunt(bot);
             case SLEEP -> sleep(bot);
             case EXPLORE -> explore(bot);
-            case IDLE -> {
-                navigator.stop();
-                state = "Отдыхаю и наблюдаю";
-            }
+            case IDLE -> idle(bot);
         }
 
         int socialInterval = Math.max(10, plugin.getConfig().getInt("chat.social.scan-interval-ticks", 20));
         if (tickCounter % socialInterval == 0) socialize(bot);
+    }
+
+
+    private void idle(Player bot) {
+        if (idleWanderTarget != null) {
+            if (bot.getLocation().distanceSquared(idleWanderTarget) <= 2.25) {
+                idleWanderTarget = null;
+                idlePauseUntilTick = tickCounter + ThreadLocalRandom.current().nextInt(30, 91);
+                nextIdleWanderTick = tickCounter + ThreadLocalRandom.current().nextInt(240, 601);
+                navigator.stop(); state = "Остановился осмотреться"; return;
+            }
+            state = "Неспешно прогуливаюсь"; navigator.moveTo(idleWanderTarget); return;
+        }
+        navigator.stop();
+        if (tickCounter < idlePauseUntilTick) { state = "Немного отдыхаю"; return; }
+        Player nearby = bot.getNearbyEntities(6.0, 3.0, 6.0).stream()
+                .filter(entity -> entity instanceof Player).map(entity -> (Player) entity)
+                .filter(player -> player.isOnline() && !player.getUniqueId().equals(bot.getUniqueId()))
+                .min(Comparator.comparingDouble(player -> player.getLocation().distanceSquared(bot.getLocation())))
+                .orElse(null);
+        if (nearby != null && tickCounter >= nextIdleLookTick) {
+            face(bot, nearby.getEyeLocation());
+            nextIdleLookTick = tickCounter + ThreadLocalRandom.current().nextInt(35, 81);
+            state = "Наблюдаю за " + nearby.getName(); return;
+        }
+        if (tickCounter >= nextIdleLookTick) {
+            float yaw = bot.getLocation().getYaw() + ThreadLocalRandom.current().nextInt(-75, 76);
+            float pitch = ThreadLocalRandom.current().nextInt(-12, 13);
+            bot.setRotation(yaw, pitch);
+            nextIdleLookTick = tickCounter + ThreadLocalRandom.current().nextInt(40, 101);
+        }
+        if (plugin.getConfig().getBoolean("brain.idle-wander.enabled", true)
+                && tickCounter >= nextIdleWanderTick && ThreadLocalRandom.current().nextDouble() < 0.0025) {
+            int dx = ThreadLocalRandom.current().nextInt(-6, 7), dz = ThreadLocalRandom.current().nextInt(-6, 7);
+            if (dx * dx + dz * dz >= 9) {
+                Location candidate = bot.getLocation().getBlock().getLocation().add(dx, 0, dz);
+                World world = bot.getWorld();
+                if (world.isChunkLoaded(candidate.getBlockX() >> 4, candidate.getBlockZ() >> 4)) {
+                    int y = world.getHighestBlockYAt(candidate.getBlockX(), candidate.getBlockZ());
+                    Block floor = world.getBlockAt(candidate.getBlockX(), y, candidate.getBlockZ());
+                    if (floor.getType().isSolid() && !floor.isLiquid()
+                            && floor.getRelative(0, 1, 0).isPassable() && floor.getRelative(0, 2, 0).isPassable()) {
+                        idleWanderTarget = new Location(world, candidate.getBlockX() + 0.5, y + 1.0, candidate.getBlockZ() + 0.5);
+                        state = "Решил немного прогуляться"; return;
+                    }
+                }
+            }
+            nextIdleWanderTick = tickCounter + ThreadLocalRandom.current().nextInt(120, 241);
+        }
+        state = "Отдыхаю и наблюдаю";
     }
 
     private void socialize(Player bot) {
@@ -723,6 +774,8 @@ final class AgentBrain {
         miningRequested = false;
         attackRequested = false;
         explorationRequested = false;
+        idleWanderTarget = null;
+        idlePauseUntilTick = 0;
         miningTarget = null;
         exploreTarget = null;
         if (navigator != null) navigator.stop();

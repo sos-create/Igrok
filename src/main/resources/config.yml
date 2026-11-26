@@ -1,4 +1,4 @@
-# Igrok 0.9.3 configuration
+# Igrok 0.9.4 configuration
 bot-name: Igrok
 spawn-world: ""
 auto-spawn: true
@@ -26,6 +26,8 @@ brain:
   enabled: true
   think-interval-ticks: 10
   exploration:
+    enabled: true
+  idle-wander:
     enabled: true
   combat:
     aggressive: false

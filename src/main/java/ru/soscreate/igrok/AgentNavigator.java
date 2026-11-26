@@ -95,7 +95,7 @@ final class AgentNavigator {
         dz /= horizontal;
         float yaw = (float) Math.toDegrees(Math.atan2(-dx, dz));
         bot.setRotation(yaw, 0.0F);
-        bot.setSprinting(true);
+        bot.setSprinting(false);
 
         double vertical = bot.getVelocity().getY();
         if (bot.isOnGround()) {
