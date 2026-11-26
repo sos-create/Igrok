@@ -47,10 +47,15 @@ final class AgentBrain {
     private String state = "Наблюдаю за миром";
     private String decisionReason = "Пока нет достаточных наблюдений.";
     private double decisionConfidence;
+    private final SurvivalController survival;
+    private boolean manualOrderActive;
+    private org.bukkit.entity.Animals foodTarget;
+    private int nextHuntAttackTick;
 
     AgentBrain(IgrokPlugin plugin, AgentMemory memory) {
         this.plugin = plugin;
         this.memory = memory;
+        this.survival = new SurvivalController(plugin);
         String name = plugin.getConfig().getString("bot-name", "Igrok");
         UUID id = UUID.nameUUIDFromBytes(("OfflinePlayer:" + name).getBytes(java.nio.charset.StandardCharsets.UTF_8));
         this.personality = new AgentPersonality(id);
@@ -101,6 +106,7 @@ final class AgentBrain {
         if (goal == GoalPlanner.Goal.MINE) miningRequested = true;
         if (goal == GoalPlanner.Goal.DEFEND) { attackRequested = true; threat = null; }
         if (goal == GoalPlanner.Goal.FOLLOW && followTarget == null) goal = GoalPlanner.Goal.IDLE;
+        manualOrderActive = followTarget != null || miningRequested || attackRequested || explorationRequested;
         state = "Восстанавливаю прежний план: " + goal.name();
     }
 
@@ -110,6 +116,7 @@ final class AgentBrain {
         Player bot = plugin.controller().bukkitPlayer();
         if (bot == null || !bot.isOnline() || bot.isDead()) return;
         if (navigator == null) navigator = new AgentNavigator(bot);
+        survival.tick(bot, tickCounter);
 
         if (plugin.houseBuilder().isBuilding()) {
             navigator.stop();
@@ -125,6 +132,8 @@ final class AgentBrain {
             case DEFEND -> defend(bot);
             case FOLLOW -> followTarget(bot);
             case MINE -> mine(bot);
+            case HUNT -> hunt(bot);
+            case SLEEP -> sleep(bot);
             case EXPLORE -> explore(bot);
             case IDLE -> {
                 navigator.stop();
@@ -272,7 +281,25 @@ final class AgentBrain {
         decisionReason = decision.reason();
         decisionConfidence = decision.confidence();
 
-        // A critical survival rule is stronger than a follow/attack request.
+        // Autonomous survival goals are considered only when no player directive is active.
+        // Immediate combat and fleeing from a critical threat always retain priority.
+        if (!manualOrderActive && chosen != GoalPlanner.Goal.FLEE
+                && chosen != GoalPlanner.Goal.DEFEND) {
+            SurvivalController.AutonomyDecision autonomous =
+                    survival.chooseAutonomousGoal(bot, personality, goal, tickCounter);
+            if (autonomous != null) {
+                chosen = autonomous.goal();
+                decisionReason = autonomous.reason();
+                decisionConfidence = autonomous.confidence();
+                if (chosen == GoalPlanner.Goal.MINE && !miningRequested) {
+                    miningMode = autonomous.miningMode();
+                    miningRequested = true;
+                    minedThisTask = 0;
+                }
+            }
+        }
+
+        // A critical survival rule is stronger than follow/attack requests.
         if (chosen != GoalPlanner.Goal.FLEE && followTarget != null) {
             chosen = GoalPlanner.Goal.FOLLOW;
             decisionReason = "Есть активная цель сопровождения; угрозы сейчас не требуют отступления.";
@@ -326,6 +353,7 @@ final class AgentBrain {
     private void defend(Player bot) {
         if (threat == null || threat.isDead() || !threat.isValid()) {
             attackRequested = false;
+            manualOrderActive = false;
             goal = GoalPlanner.Goal.IDLE;
             navigator.stop();
             return;
@@ -338,7 +366,7 @@ final class AgentBrain {
             return;
         }
         navigator.stop();
-        bot.getInventory().setHeldItemSlot(2);
+        survival.equipBestWeapon(bot);
         face(bot, target);
         state = "Защищаюсь от " + threat.getName();
         if (tickCounter >= nextAttackTick) {
@@ -346,6 +374,60 @@ final class AgentBrain {
             bot.attack(threat);
             nextAttackTick = tickCounter + 12;
         }
+    }
+
+    private void hunt(Player bot) {
+        if (bot.getFoodLevel() >= 14 && survival.hasFood(bot)) {
+            foodTarget = null;
+            goal = GoalPlanner.Goal.IDLE;
+            navigator.stop();
+            return;
+        }
+        if (foodTarget == null || foodTarget.isDead() || !foodTarget.isValid()) {
+            foodTarget = survival.findFoodAnimal(bot, 24.0);
+        }
+        if (foodTarget == null) {
+            survival.deferHunt(tickCounter);
+            state = "Ищу животных и пищу";
+            goal = GoalPlanner.Goal.EXPLORE;
+            explorationRequested = true;
+            exploreTarget = null;
+            return;
+        }
+        Location target = foodTarget.getLocation();
+        if (bot.getLocation().distanceSquared(target) > 9.0) {
+            state = "Иду на охоту за пищей";
+            navigator.moveTo(target);
+            return;
+        }
+        navigator.stop();
+        survival.equipBestWeapon(bot);
+        face(bot, foodTarget.getEyeLocation());
+        state = "Добываю пищу";
+        if (tickCounter >= nextHuntAttackTick) {
+            bot.swingMainHand();
+            bot.attack(foodTarget);
+            nextHuntAttackTick = tickCounter + 14;
+        }
+    }
+
+    private void sleep(Player bot) {
+        if (!survival.isNight(bot)) {
+            if (bot.isSleeping()) {
+                try { bot.wakeup(false); } catch (IllegalStateException ignored) { }
+            }
+            navigator.stop();
+            state = "Проснулся; продолжаю свои дела";
+            goal = GoalPlanner.Goal.IDLE;
+            return;
+        }
+        if (survival.sleepTick(bot, navigator, tickCounter)) {
+            state = bot.isSleeping() ? "Сплю и восстанавливаю силы" : "Ищу место для сна";
+            return;
+        }
+        goal = GoalPlanner.Goal.EXPLORE;
+        explorationRequested = true;
+        exploreTarget = null;
     }
 
     private void followTarget(Player bot) {
@@ -381,9 +463,17 @@ final class AgentBrain {
             miningTicks = 0;
         }
         if (miningTarget == null) {
-            if (tickCounter % 100 == 0) say("Поблизости не нашёл подходящего блока. Попробую поискать в другом месте.");
+            if (tickCounter % 100 == 0) {
+                say("Поблизости не нашёл подходящего блока. Перейду в другое место.");
+                survival.deferMining(miningMode, tickCounter);
+                miningRequested = false;
+                manualOrderActive = false;
+                minedThisTask = 0;
+                goal = GoalPlanner.Goal.EXPLORE;
+                explorationRequested = true;
+                exploreTarget = null;
+            }
             state = "Ищу ресурсы";
-            if (miningMode.equals("wood")) goal = GoalPlanner.Goal.EXPLORE;
             return;
         }
 
@@ -396,7 +486,7 @@ final class AgentBrain {
         }
 
         navigator.stop();
-        bot.getInventory().setHeldItemSlot(miningMode.equals("wood") ? 0 : 1);
+        survival.equipBestTool(bot, miningMode.equals("wood") ? "AXE" : "PICKAXE");
         face(bot, blockLocation);
         int baseTicks = Math.max(12, plugin.getConfig().getInt("brain.mining.break-ticks", 28));
         int requiredTicks = miningMode.equals("stone") ? baseTicks * 2 : baseTicks;
@@ -422,6 +512,7 @@ final class AgentBrain {
                 int limit = Math.max(1, plugin.getConfig().getInt("brain.mining.blocks-per-order", 4));
                 if (minedThisTask >= limit) {
                     miningRequested = false;
+                    manualOrderActive = false;
                     minedThisTask = 0;
                     goal = GoalPlanner.Goal.IDLE;
                     say("Закончил добычу. Теперь у меня в памяти " + memory.totalMined() + " добытых блоков.");
@@ -488,6 +579,7 @@ final class AgentBrain {
     private void explore(Player bot) {
         if (exploreTarget == null || bot.getLocation().distanceSquared(exploreTarget) < 2.0) {
             if (!explorationRequested) {
+                manualOrderActive = false;
                 goal = GoalPlanner.Goal.IDLE;
                 navigator.stop();
                 return;
@@ -529,6 +621,7 @@ final class AgentBrain {
     void follow(Player player) {
         if (player == null) return;
         followTarget = player.getUniqueId();
+        manualOrderActive = true;
         miningRequested = false;
         attackRequested = false;
         goal = GoalPlanner.Goal.FOLLOW;
@@ -540,6 +633,7 @@ final class AgentBrain {
         String value = mode == null ? "wood" : mode.toLowerCase(Locale.ROOT);
         if (!value.equals("wood") && !value.equals("stone")) return false;
         miningMode = value;
+        manualOrderActive = true;
         miningRequested = true;
         minedThisTask = 0;
         followTarget = null;
@@ -553,11 +647,13 @@ final class AgentBrain {
 
     boolean attackNearest() {
         attackRequested = true;
+        manualOrderActive = true;
         followTarget = null;
         miningRequested = false;
         threat = plugin.controller().bukkitPlayer() == null ? null : findNearestMonster(plugin.controller().bukkitPlayer(), 20);
         if (threat == null) {
             attackRequested = false;
+            manualOrderActive = false;
             // Caller reports the missing target.
             return false;
         }
@@ -577,6 +673,7 @@ final class AgentBrain {
     }
 
     void exploreNow() {
+        manualOrderActive = true;
         explorationRequested = true;
         followTarget = null;
         miningRequested = false;
@@ -587,6 +684,8 @@ final class AgentBrain {
     }
 
     void stop() {
+        manualOrderActive = false;
+        foodTarget = null;
         followTarget = null;
         miningRequested = false;
         attackRequested = false;

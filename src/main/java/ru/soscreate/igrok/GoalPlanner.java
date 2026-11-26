@@ -15,7 +15,7 @@ import java.util.Map;
  * this class reasons over facts perceived in the Minecraft world.
  */
 final class GoalPlanner {
-    enum Goal { IDLE, FLEE, DEFEND, FOLLOW, MINE, EXPLORE }
+    enum Goal { IDLE, FLEE, DEFEND, FOLLOW, MINE, HUNT, SLEEP, EXPLORE }
 
     record Situation(double health, double maxHealth, double threatDistance,
                      boolean threatVisible, boolean followRequested,
@@ -98,6 +98,8 @@ final class GoalPlanner {
             case DEFEND -> "Оценка угрозы и готовности к бою выше остальных вариантов — защищаться.";
             case FOLLOW -> "Есть активная цель сопровождения — идти за игроком.";
             case MINE -> "Запрошена добыча, а более важной угрозы или цели нет — добывать.";
+            case HUNT -> "Нужна пища, поэтому следует добыть её охотой.";
+            case SLEEP -> "Наступила ночь и есть доступная кровать — восстановить силы.";
             case EXPLORE -> "Любопытство и интерес к исследованию перевесили другие варианты — исследовать.";
         };
         double confidence = clamp(bestScore * 0.72

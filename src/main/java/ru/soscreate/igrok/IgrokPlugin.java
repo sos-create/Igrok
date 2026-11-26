@@ -38,6 +38,7 @@ public final class IgrokPlugin extends JavaPlugin implements Listener {
     private BukkitTask memorySaveTask;
     private BukkitTask stateSaveTask;
     private BukkitTask cognitionSaveTask;
+    private BukkitTask inventorySaveTask;
     private File stateFile;
     private YamlConfiguration stateData;
     private final Map<UUID, Long> lastExplorationObservation = new HashMap<>();
@@ -61,6 +62,7 @@ public final class IgrokPlugin extends JavaPlugin implements Listener {
         memorySaveTask = Bukkit.getScheduler().runTaskTimer(this, memory::save, 6000L, 6000L);
         stateSaveTask = Bukkit.getScheduler().runTaskTimer(this, this::savePersistentState, 600L, 600L);
         cognitionSaveTask = Bukkit.getScheduler().runTaskTimer(this, cognition::save, 6000L, 6000L);
+        inventorySaveTask = Bukkit.getScheduler().runTaskTimer(this, controller::saveInventory, 6000L, 6000L);
 
         if (getConfig().getBoolean("auto-spawn", true)) {
             Bukkit.getScheduler().runTask(this, () -> {
@@ -77,6 +79,8 @@ public final class IgrokPlugin extends JavaPlugin implements Listener {
         if (brainTask != null) brainTask.cancel();
         if (stateSaveTask != null) stateSaveTask.cancel();
         if (cognitionSaveTask != null) cognitionSaveTask.cancel();
+        if (inventorySaveTask != null) inventorySaveTask.cancel();
+        if (controller != null) controller.saveInventory();
         savePersistentState();
         if (memorySaveTask != null) memorySaveTask.cancel();
         if (houseBuilder != null) houseBuilder.cancel(false);
@@ -279,6 +283,7 @@ public final class IgrokPlugin extends JavaPlugin implements Listener {
         event.setKeepInventory(true);
         event.setKeepLevel(true);
         event.setDroppedExp(0);
+        controller.saveInventory();
         brain.stop();
         houseBuilder.cancel(false);
         if (!getConfig().getBoolean("auto-respawn", true)) return;

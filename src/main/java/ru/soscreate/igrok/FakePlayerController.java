@@ -15,6 +15,14 @@ import org.bukkit.craftbukkit.CraftServer;
 import org.bukkit.craftbukkit.CraftWorld;
 import org.bukkit.entity.Player;
 import org.bukkit.inventory.ItemStack;
+import org.bukkit.inventory.PlayerInventory;
+import org.bukkit.configuration.file.YamlConfiguration;
+import java.io.File;
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.StandardCopyOption;
+import java.util.Arrays;
+import java.util.List;
 
 import java.nio.charset.StandardCharsets;
 import java.util.UUID;
@@ -63,11 +71,13 @@ final class FakePlayerController {
             created.setHealth(created.getMaxHealth());
 
             Player bukkitBot = created.getBukkitEntity();
-            bukkitBot.getInventory().setItem(0, new ItemStack(Material.STONE_AXE));
-            bukkitBot.getInventory().setItem(1, new ItemStack(Material.STONE_PICKAXE));
-            bukkitBot.getInventory().setItem(2, new ItemStack(Material.WOODEN_SWORD));
-            bukkitBot.getInventory().setItem(3, new ItemStack(Material.BREAD, 8));
-            bukkitBot.getInventory().setHeldItemSlot(2);
+            if (!loadInventory(bukkitBot)) {
+                bukkitBot.getInventory().setItem(0, new ItemStack(Material.STONE_AXE));
+                bukkitBot.getInventory().setItem(1, new ItemStack(Material.STONE_PICKAXE));
+                bukkitBot.getInventory().setItem(2, new ItemStack(Material.WOODEN_SWORD));
+                bukkitBot.getInventory().setItem(3, new ItemStack(Material.BREAD, 8));
+                bukkitBot.getInventory().setHeldItemSlot(2);
+            }
 
             bot = created;
             plugin.getLogger().info("Igrok spawned at " + location.getWorld().getName()
@@ -80,7 +90,63 @@ final class FakePlayerController {
         }
     }
 
+    void saveInventory() {
+        Player player = bukkitPlayer();
+        if (player == null) return;
+        File file = new File(plugin.getDataFolder(), "bot-inventory.yml");
+        File temporary = new File(plugin.getDataFolder(), "bot-inventory.yml.tmp");
+        YamlConfiguration yaml = new YamlConfiguration();
+        PlayerInventory inventory = player.getInventory();
+        yaml.set("storage", Arrays.asList(inventory.getStorageContents()));
+        yaml.set("armor", Arrays.asList(inventory.getArmorContents()));
+        yaml.set("extra", Arrays.asList(inventory.getExtraContents()));
+        yaml.set("health", player.getHealth());
+        yaml.set("food", player.getFoodLevel());
+        yaml.set("saturation", player.getSaturation());
+        yaml.set("level", player.getLevel());
+        yaml.set("exp", player.getExp());
+        try {
+            if (!plugin.getDataFolder().exists() && !plugin.getDataFolder().mkdirs()) return;
+            yaml.save(temporary);
+            try {
+                Files.move(temporary.toPath(), file.toPath(), StandardCopyOption.REPLACE_EXISTING,
+                        StandardCopyOption.ATOMIC_MOVE);
+            } catch (java.nio.file.AtomicMoveNotSupportedException ignored) {
+                Files.move(temporary.toPath(), file.toPath(), StandardCopyOption.REPLACE_EXISTING);
+            }
+        } catch (IOException error) {
+            plugin.getLogger().warning("Could not save Igrok inventory: " + error.getMessage());
+        }
+    }
+
+    private boolean loadInventory(Player player) {
+        File file = new File(plugin.getDataFolder(), "bot-inventory.yml");
+        if (!file.isFile()) return false;
+        YamlConfiguration yaml = YamlConfiguration.loadConfiguration(file);
+        PlayerInventory inventory = player.getInventory();
+        setItems(inventory.getStorageContents().length, yaml.getList("storage"), inventory::setStorageContents);
+        setItems(inventory.getArmorContents().length, yaml.getList("armor"), inventory::setArmorContents);
+        setItems(inventory.getExtraContents().length, yaml.getList("extra"), inventory::setExtraContents);
+        player.setHealth(Math.max(1.0, Math.min(player.getMaxHealth(), yaml.getDouble("health", player.getMaxHealth()))));
+        player.setFoodLevel(Math.max(0, Math.min(20, yaml.getInt("food", 20))));
+        player.setSaturation(Math.max(0.0F, Math.min(20.0F, (float) yaml.getDouble("saturation", 5.0))));
+        player.setLevel(Math.max(0, yaml.getInt("level", 0)));
+        player.setExp(Math.max(0.0F, Math.min(1.0F, (float) yaml.getDouble("exp", 0.0))));
+        return true;
+    }
+
+    private void setItems(int size, List<?> saved, java.util.function.Consumer<ItemStack[]> setter) {
+        if (saved == null) return;
+        ItemStack[] contents = new ItemStack[size];
+        for (int i = 0; i < Math.min(size, saved.size()); i++) {
+            Object item = saved.get(i);
+            if (item instanceof ItemStack stack) contents[i] = stack.clone();
+        }
+        setter.accept(contents);
+    }
+
     void remove() {
+        saveInventory();
         IgrokServerPlayer current = bot;
         bot = null;
         if (current == null || current.isRemoved()) return;
