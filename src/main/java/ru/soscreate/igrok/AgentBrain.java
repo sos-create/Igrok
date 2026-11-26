@@ -448,7 +448,7 @@ final class AgentBrain {
         attackRequested = false;
         goal = GoalPlanner.Goal.FOLLOW;
         if (navigator != null) navigator.stop();
-        say("Хорошо, буду держаться рядом с " + player.getName() + ".");
+        // Confirmation is sent by the command/chat layer.
     }
 
     boolean requestMining(String mode) {
@@ -462,7 +462,7 @@ final class AgentBrain {
         goal = GoalPlanner.Goal.MINE;
         nextSearchTick = 0;
         if (navigator != null) navigator.stop();
-        say(value.equals("wood") ? "Поищу дерево и добуду несколько брёвен." : "Поищу камень или руду для добычи.");
+        // Confirmation is sent by the command/chat layer.
         return true;
     }
 
@@ -473,12 +473,12 @@ final class AgentBrain {
         threat = plugin.controller().bukkitPlayer() == null ? null : findNearestMonster(plugin.controller().bukkitPlayer(), 20);
         if (threat == null) {
             attackRequested = false;
-            say("Поблизости нет подходящих враждебных мобов.");
+            // Caller reports the missing target.
             return false;
         }
         goal = GoalPlanner.Goal.DEFEND;
         if (navigator != null) navigator.stop();
-        say("Вижу угрозу. Иду к " + threat.getName() + ".");
+        // Caller reports the selected target.
         return true;
     }
 
@@ -511,7 +511,7 @@ final class AgentBrain {
         if (navigator != null) navigator.stop();
         goal = GoalPlanner.Goal.IDLE;
         state = "Остановился";
-        say("Ладно, пока остановлюсь.");
+        // Confirmation is sent by the command/chat layer.
     }
 
     String opinion(String message, UUID player) {
