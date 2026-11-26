@@ -100,6 +100,11 @@ final class HouseBuilder {
         }
 
         BlockStep step = plan.get(cursor);
+        // Absolute safety boundary: the builder can never place explosives or ignition blocks.
+        if (isForbiddenMaterial(step.material())) {
+            stopForSafety("Строительство остановлено: этот материал запрещён моими правилами безопасности.");
+            return;
+        }
         World world = base.getWorld();
         Block target = world.getBlockAt(base.getBlockX() + step.x(),
                 base.getBlockY() + step.y(), base.getBlockZ() + step.z());
@@ -201,6 +206,13 @@ final class HouseBuilder {
             }
         }
         return true;
+    }
+
+    private boolean isForbiddenMaterial(Material material) {
+        String name = material.name();
+        return name.equals("TNT") || name.equals("FIRE") || name.equals("SOUL_FIRE")
+                || name.equals("CAMPFIRE") || name.equals("SOUL_CAMPFIRE")
+                || name.equals("FIRE_CHARGE");
     }
 
     private void createCabinPlan() {
