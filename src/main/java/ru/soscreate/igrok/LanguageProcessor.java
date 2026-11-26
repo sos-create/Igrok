@@ -81,7 +81,7 @@ final class LanguageProcessor {
         put(Concept.GREETING, "привет", "здравств", "хай", "доброеутро", "добрыйдень", "hello", "hi", "hey");
         put(Concept.FAREWELL, "пока", "досвидан", "увидим", "встреч", "прощай", "bye", "goodbye", "later");
         put(Concept.GRATITUDE, "спасибо", "благодар", "мерси", "thanks", "thank", "appreciate");
-        put(Concept.IDENTITY, "кто", "имя", "зовут", "такое", "ты", "представ", "name", "who");
+        put(Concept.IDENTITY, "кто", "имя", "зовут", "называ", "представ", "личност", "умеешь", "способен", "name", "who");
         put(Concept.STATUS, "дела", "состоя", "занят", "делаешь", "работа", "сейчас", "state", "doing");
         put(Concept.MEMORY, "помн", "вспом", "обсужда", "говорили", "вчера", "прошлый", "истори", "memory", "remember");
         put(Concept.LEARNING, "науч", "узна", "замет", "обуч", "стиль", "привыч", "повед", "learn", "noticed");
@@ -104,7 +104,7 @@ final class LanguageProcessor {
         put(Concept.BOREDOM, "скуч", "нечегодел", "надоел", "однообраз", "bored", "boring");
         put(Concept.FOOD, "ед", "пищ", "голод", "хлеб", "мяс", "морков", "food", "hungry");
         put(Concept.SURVIVAL, "выжив", "здоров", "серд", "брон", "безопас", "жизн", "survive", "health");
-        put(Concept.PLAYER, "игрок", "человек", "ты", "теб", "тво", "я", "мной", "player", "you");
+        put(Concept.PLAYER, "игрок", "человек", "пользоват", "собеседник", "напарник", "товарищ", "player");
         put(Concept.FRIENDSHIP, "друг", "друж", "команд", "товарищ", "вместе", "friend", "team");
         put(Concept.TRUST, "довер", "чест", "обещ", "предал", "вер", "trust", "honest");
         put(Concept.AGREEMENT, "да", "соглас", "верно", "точно", "ок", "ладно", "okay", "yes", "agree");
@@ -125,41 +125,52 @@ final class LanguageProcessor {
 
     Parsed parse(String source) {
         String cleaned = source == null ? "" : source.toLowerCase(Locale.ROOT)
-                .replace('ё', 'е').replaceAll("(?i)https?://\\\\S+", " ");
-        String[] raw = cleaned.split("[^\\\\p{L}\\\\p{N}_@]+");
+                .replace('ё', 'е').replaceAll("(?i)https?://\\S+", " ");
+        String[] raw = cleaned.split("[^\\p{L}\\p{N}_@]+");
         Set<String> words = new HashSet<>();
-        for (String word : raw) if (!word.isBlank()) words.add(stem(word));
+        for (String word : raw) {
+            if (!word.isBlank()) words.add(stem(word));
+        }
 
+        String phraseText = " " + cleaned.replaceAll("[^\\p{L}\\p{N}_@]+", " ").trim() + " ";
         EnumMap<Concept, Double> signals = new EnumMap<>(Concept.class);
         for (Map.Entry<Concept, String[]> entry : LEXICON.entrySet()) {
-            double value = 0;
+            double value = 0.0;
             for (String root : entry.getValue()) {
-                String normalized = stem(root.trim());
-                if (cleaned.replace(" ", "").contains(root.replace(" ", ""))) value += 0.36;
+                String normalizedRoot = root.toLowerCase(Locale.ROOT).replace('ё', 'е')
+                        .replaceAll("\\s+", " ").trim();
+                if (normalizedRoot.isBlank()) continue;
+                if (normalizedRoot.contains(" ")) {
+                    if (phraseText.contains(" " + normalizedRoot + " ")) value += 0.48;
+                    continue;
+                }
+                String rootStem = stem(normalizedRoot);
                 for (String word : words) {
-                    if (word.equals(normalized)) value += 0.48;
-                    else if (word.length() >= 4 && (word.startsWith(normalized) || normalized.startsWith(word))) value += 0.24;
+                    boolean match = word.equals(rootStem)
+                            || (word.length() >= 4 && rootStem.length() >= 4
+                            && (word.startsWith(rootStem) || rootStem.startsWith(word)));
+                    if (match) {
+                        value += 0.48;
+                        break;
+                    }
                 }
             }
-            if (value > 0) signals.put(entry.getKey(), Math.min(1.0, value));
+            if (value > 0.0) signals.put(entry.getKey(), Math.min(1.0, value));
         }
 
-        boolean question = cleaned.contains("?") || containsAny(words, QUESTION_WORDS);
+        boolean question = cleaned.indexOf('?') >= 0 || looksLikeQuestion(cleaned);
         boolean command = false;
         for (String word : raw) {
-            String w = word.trim();
-            for (String root : COMMAND_ROOTS) {
-                String normalizedRoot = stem(root);
-                if (!w.isBlank() && (w.equals(root) || w.startsWith(normalizedRoot) && normalizedRoot.length() >= 4
-                        && (w.endsWith("и") || w.endsWith("ите") || w.endsWith("й") || w.endsWith("йте")
-                        || w.endsWith("ь") || w.equals(normalizedRoot)))) {
-                    command = true;
-                    break;
-                }
+            if (isImperative(word)) {
+                command = true;
+                break;
             }
-            if (command) break;
         }
-        boolean negated = containsAny(words, new String[]{"не", "нет", "нельзя", "никогда", "против"});
+        // Match standalone negation words only: "безопасность" must not
+        // accidentally be interpreted as "без" (without).
+        boolean negated = java.util.Arrays.stream(raw)
+                .anyMatch(word -> java.util.Set.of("не", "нет", "нельзя", "никогда", "ни", "без")
+                        .contains(word));
         int sentiment = 0;
         for (String token : words) {
             if (matches(token, POSITIVE)) sentiment++;
@@ -167,6 +178,35 @@ final class LanguageProcessor {
         }
         sentiment = Math.max(-3, Math.min(3, sentiment));
         return new Parsed(signals, words, question, command, negated, sentiment, cleaned);
+    }
+
+    private static boolean looksLikeQuestion(String cleaned) {
+        String candidate = cleaned.replaceAll("[^\\p{L}\\p{N}_@]+", " ").trim();
+        candidate = candidate.replaceFirst("^(?:@?igrok|игрок)\\s+", "");
+        if (candidate.isBlank()) return false;
+        if (candidate.matches("(?iu)^(?:(?:ну|а|и|слушай|подскажи|скажи|расскажи|объясни)\\s+)*"
+                + "(?:(?:ты|вы)\\s+)?(?:как|что|кто|где|куда|откуда|когда|почему|зачем|сколько|"
+                + "какой|какая|какие|чей|чья|чье|чьи)\\b.*")) return true;
+        return candidate.matches("(?iu)^(?:можешь|можете|мог бы|могла бы|не знаешь|знаешь)\\s+"
+                + "(?:ли\\s+)?(?:ты\\s+)?(?:сказать\\s+)?(?:как|что|где|куда|почему|зачем|сколько)\\b.*")
+                || candidate.matches("(?iu).*(?:интересно|не знаешь|подскажи|скажи|объясни|расскажи)\\s+"
+                + "(?:мне\\s+)?(?:ли\\s+)?(?:как|что|где|куда|почему|зачем|сколько)\\b.*");
+    }
+
+    private static boolean isImperative(String word) {
+        return switch (word) {
+            case "построй", "постройте", "сделай", "сделайте", "поставь", "поставьте",
+                    "добудь", "добудьте", "наруби", "нарубите", "сруби", "срубите",
+                    "копай", "копайте", "атакуй", "атакуйте", "напади", "нападите",
+                    "иди", "идите", "следуй", "следуйте", "остановись", "остановитесь",
+                    "стой", "стойте", "хватит", "исследуй", "исследуйте", "разведай",
+                    "разведайте", "принеси", "принесите", "найди", "найдите", "дай",
+                    "дайте", "возьми", "возьмите", "помоги", "помогите", "расскажи",
+                    "расскажите", "скажи", "скажите", "поговори", "поговорите",
+                    "собери", "соберите", "пойдём", "пойдем", "пойдёмте", "пойдемте",
+                    "mine", "build", "follow", "attack", "explore", "stop", "bring", "find", "get" -> true;
+            default -> false;
+        };
     }
 
     private static boolean containsAny(Set<String> words, String[] candidates) {

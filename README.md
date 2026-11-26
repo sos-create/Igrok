@@ -1,4 +1,4 @@
-# Igrok 0.9.14
+# Igrok 0.9.15
 
 Paper 1.21.4 server-side player agent (Java 21). Igrok is a lightweight autonomous survival agent built around a fake server-side Player, bounded pathfinding, utility-based goals, associative cognition and compact persistent memory.
 
@@ -51,6 +51,9 @@ The plugin is compiled against Paper 1.21.4. Version 0.9.12 includes the safe st
 
 Unexpected runtime failures in chat, the brain and construction are isolated: a failed construction step cancels that build, a failed brain tick pauses and retries instead of cancelling the scheduler, and duplicate stack traces are rate-limited. Chat input is length-limited before parsing. These safeguards prevent cascading errors; they do not repair invalid chunk data already stored in a world region file.\n\nIgrok is explicitly placed in Survival mode and is never an operator. It starts with an empty inventory, 20 health, 20 food and normal saturation; saved inventory and vitals are restored across restarts. Vanilla item entities handle pickup, so the bot no longer vacuums items from four blocks away. Mining, farming, container access and building are limited to ordinary player reach and line of sight; building walks to a legal standing position and respects BlockPlaceEvent cancellation. Death uses vanilla inventory and experience loss before automatic respawn.
 
-Chat messages are coalesced and duplicate text is ignored for one minute. Responses are intentionally delayed by a configurable 20–30 seconds after the last queued message. The autonomous planner runs at 10 Hz while the Minecraft player entity continues to receive normal server physics ticks. Crafting, farming, furnace, storage and bed scans run less frequently; A* has a smaller node budget and mining search radius.
+Chat messages are coalesced and duplicate text is ignored for one minute, except valid answers to a recent bot question. Unrelated chat cannot replace a pending message addressed to Igrok. Responses are intentionally delayed by a configurable 20–30 seconds after the last queued message. The autonomous planner runs at 10 Hz while the Minecraft player entity continues to receive normal server physics ticks. Crafting, farming, furnace, storage and bed scans run less frequently; A* has a smaller node budget and mining search radius.
 
 The fake-player architecture is adapted from https://github.com/skylhcss/my-bot-mod, distributed under MIT; see UPSTREAM-LICENSE.
+
+
+Dialogue parsing recognizes Russian and English words with Unicode-aware tokenization, uses sentence-level question detection instead of treating every occurrence of "what/how" as a question, and distinguishes imperative forms from ordinary conversation. Repeated identical answers are varied without forcing a question at the end of every reply. Interaction and attack reactions are rate-limited; cancelled server events do not affect memory or trust.

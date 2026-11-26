@@ -1,7 +1,15 @@
 name: Igrok
-version: 0.9.14
+version: 0.9.15
 main: ru.soscreate.igrok.IgrokPlugin
 api-version: '1.21'
 load: POSTWORLD
 authors: [sos-create]
 description: Adaptive autonomous Paper survival agent with persistent inventory, resource-aware shelter, farming, smelting, crafting, food, sleep, combat and exploration.
+
+permissions:
+  igrok.control:
+    description: Allows a player to request Igrok's normal actions.
+    default: op
+  igrok.build:
+    description: Allows a player to request Igrok to build.
+    default: op

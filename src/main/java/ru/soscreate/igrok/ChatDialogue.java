@@ -64,9 +64,23 @@ final class ChatDialogue implements Listener {
         if (!plugin.isEnabled() || rawMessage == null || rawMessage.isBlank()) return;
         long now = System.currentTimeMillis();
         String fingerprint = fingerprint(rawMessage);
+        String lower = rawMessage.toLowerCase(Locale.ROOT);
+        boolean addressed = mentionsBot(lower, plugin.getConfig().getString("bot-name", "Igrok"));
+        long followUpMillis = Math.max(10L,
+                plugin.getConfig().getLong("chat.follow-up-window-seconds", 90)) * 1000L;
+        long questionAt = lastBotQuestionAt.getOrDefault(senderId, 0L);
+        boolean continuation = questionAt > 0L && now - questionAt <= followUpMillis
+                && isConversationalFollowUp(lower);
+        if (questionAt > 0L && now - questionAt > followUpMillis) {
+            lastBotQuestionAt.remove(senderId);
+        }
+
         String previousFingerprint = lastIncomingFingerprint.get(senderId);
         long previousAt = lastIncomingAt.getOrDefault(senderId, 0L);
-        if (fingerprint.equals(previousFingerprint) && now - previousAt < DUPLICATE_WINDOW_MILLIS) return;
+        // "Да" or "нет" is a valid answer to a recent question even when the
+        // exact same word was sent earlier in the duplicate window.
+        if (!continuation && fingerprint.equals(previousFingerprint)
+                && now - previousAt < DUPLICATE_WINDOW_MILLIS) return;
 
         lastIncomingFingerprint.put(senderId, fingerprint);
         lastIncomingAt.put(senderId, now);
@@ -78,12 +92,13 @@ final class ChatDialogue implements Listener {
 
         PendingMessage pending = pendingMessages.get(senderId);
         if (pending != null) {
-            // Messages in one burst become a single thought. Reset the timer so the
-            // reply is still delayed 20-30 seconds from the most recent message.
-            pending.message = rawMessage;
+            // Keep the last addressed request. Unrelated chat can reset the burst timer,
+            // but may not overwrite the message the bot is actually expected to answer.
+            if (addressed || continuation) pending.message = rawMessage;
             scheduleReply(senderId, pending);
             return;
         }
+        if (!addressed && !continuation) return;
 
         PendingMessage created = new PendingMessage(rawMessage);
         pendingMessages.put(senderId, created);
@@ -113,6 +128,9 @@ final class ChatDialogue implements Listener {
         pendingMessages.clear();
         pendingThoughts.clear();
         lastBotQuestionAt.clear();
+        lastReply.clear();
+        lastIncomingFingerprint.clear();
+        lastIncomingAt.clear();
     }
 
     private String fingerprint(String message) {
@@ -127,7 +145,9 @@ final class ChatDialogue implements Listener {
             plugin.reportRuntimeError("chat-processing", error);
             Player sender = Bukkit.getPlayer(senderId);
             if (sender != null) {
-                sender.sendMessage("§6Igrok§7: §fНе смог безопасно обработать это сообщение. Я остановил действие.");
+                String botName = plugin.getConfig().getString("bot-name", "Igrok");
+                if (botName == null || botName.isBlank()) botName = "Igrok";
+                sender.sendMessage("§6" + botName + "§7: §fНе смог безопасно обработать это сообщение. Я остановил действие.");
             }
         }
     }
@@ -156,18 +176,26 @@ final class ChatDialogue implements Listener {
         if (pendingThoughts.size() > 512) pendingThoughts.keySet().removeIf(id -> Bukkit.getPlayer(id) == null);
         if (lastReply.size() > 512) lastReply.entrySet().removeIf(entry -> now - entry.getValue() > 300_000L);
         long cooldown = Math.max(1L, plugin.getConfig().getLong("chat.cooldown-seconds", 20)) * 1000L;
-        if (now - lastReply.getOrDefault(senderId, 0L) < cooldown) return;
+        if (!continuation && now - lastReply.getOrDefault(senderId, 0L) < cooldown) return;
         lastReply.put(senderId, now);
 
         CognitiveNetwork.Analysis thought = plugin.cognition().think(
                 rawMessage, plugin.brain().memory().lastTopic(senderId),
                 plugin.brain().memory().trust(senderId),
                 plugin.brain().memory().behaviorSignals(senderId));
-        CognitiveNetwork.Analysis previous = pendingThoughts.put(senderId, thought);
-        if (previous != null) {
-            double feedback = Math.max(-1.0, Math.min(1.0, thought.sentiment() / 2.0));
-            plugin.cognition().learn(previous, feedback);
+        CognitiveNetwork.Analysis previous = pendingThoughts.remove(senderId);
+        if (previous != null && continuation) {
+            // Only a genuine conversational reply can rate the previous thought.
+            // A later unrelated sentence must not reinforce or punish old associations.
+            double feedback = switch (thought.intent()) {
+                case THANKS, AGREEMENT -> 0.45;
+                case DISAGREEMENT -> -0.45;
+                default -> thought.sentiment() >= 2 ? 0.25
+                        : thought.sentiment() <= -2 ? -0.25 : 0.0;
+            };
+            if (feedback != 0.0) plugin.cognition().learn(previous, feedback);
         }
+        pendingThoughts.put(senderId, thought);
         plugin.cognition().learn(thought, 0.0);
         plugin.brain().onPlayerMessage(sender, rawMessage);
 
@@ -195,7 +223,7 @@ final class ChatDialogue implements Listener {
             return;
         }
         if (!plugin.brain().considerRequest(id, action)) {
-            sendReply(id, composer.actionReply(action, false, false, sender));
+            sendReply(id, plugin.brain().refusalReason(id));
             return;
         }
 
@@ -215,7 +243,11 @@ final class ChatDialogue implements Listener {
 
     private boolean mentionsBot(String message, String name) {
         String normalized = name == null ? "igrok" : name.toLowerCase(Locale.ROOT).trim();
-        return hasWord(message, normalized) || hasWord(message, "игрок") || message.contains("@игрок");
+        if (hasWord(message, normalized)) return true;
+        // The Russian alias is accepted as a form of address, not as any
+        // arbitrary mention of the noun "игрок" in unrelated chat.
+        return Pattern.compile("(?iu)(?:^|[.!?,:;]\\s*)@?(?:эй\\s+)?игрок(?![\\p{L}\\p{N}_])")
+                .matcher(message).find();
     }
 
     private boolean hasWord(String text, String word) {
@@ -237,10 +269,21 @@ final class ChatDialogue implements Listener {
         return false;
     }
 
+    void recordBotReply(UUID playerId, String response) {
+        if (playerId == null) return;
+        if (response != null && response.contains("?")) {
+            lastBotQuestionAt.put(playerId, System.currentTimeMillis());
+        } else {
+            lastBotQuestionAt.remove(playerId);
+        }
+    }
+
     private void sendReply(UUID playerId, String response) {
+        if (response == null || response.isBlank()) return;
         plugin.brain().rememberBotMessage(playerId, response);
-        if (response.contains("?")) lastBotQuestionAt.put(playerId, System.currentTimeMillis());
-        else lastBotQuestionAt.remove(playerId);
-        Bukkit.broadcast(Component.text("Igrok: " + response));
+        recordBotReply(playerId, response);
+        String botName = plugin.getConfig().getString("bot-name", "Igrok");
+        if (botName == null || botName.isBlank()) botName = "Igrok";
+        Bukkit.broadcast(Component.text(botName + ": " + response));
     }
 }

@@ -2,12 +2,16 @@ package ru.soscreate.igrok;
 
 import org.bukkit.entity.Player;
 
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ThreadLocalRandom;
 
 /** Builds varied, context-aware replies from intent, memory, personality and world state. */
 final class DialogueComposer {
     private final IgrokPlugin plugin;
+    private final Map<UUID, String> previousReplyBases = new LinkedHashMap<>(16, 0.75F, true);
+    private final Map<UUID, Integer> repeatedReplyCounts = new LinkedHashMap<>(16, 0.75F, true);
 
     DialogueComposer(IgrokPlugin plugin) {
         this.plugin = plugin;
@@ -19,13 +23,13 @@ final class DialogueComposer {
         LanguageProcessor.Parsed parsed = thought.parsed();
         String name = player.getName();
 
-        return switch (thought.intent()) {
+        String response = switch (thought.intent()) {
             case GREETING -> choose(
                     "Привет, " + name + "! Рад, что ты заглянул.",
-                    "О, " + name + ", привет! Как мир?",
-                    "Здорово! Я как раз думал, чем заняться.",
-                    "Привет! Хорошо, что ты рядом. Есть какие-нибудь новости?",
-                    "И тебе привет, " + name + ". Что интересного произошло?");
+                    "О, " + name + ", привет! Рад тебя видеть.",
+                    "Здорово, " + name + "! Хорошо, что ты рядом.",
+                    "Привет! Я как раз думал, чем заняться.",
+                    "И тебе привет, " + name + ". Хорошего дня в мире.");
             case FAREWELL -> choose(
                     "До встречи, " + name + "! Я пока займусь своими делами.",
                     "Увидимся. Не забудь заглянуть ещё.",
@@ -39,13 +43,13 @@ final class DialogueComposer {
             case IDENTITY -> choose(
                     "Я Igrok. Я живу в этом мире, исследую его, добываю ресурсы и строю собственные планы.",
                     "Меня зовут Igrok. У меня есть характер, память и простая система обучения на опыте.",
-                    "Я не просто табличка с командами. Я наблюдаю, выбираю цели и могу не соглашаться.",
-                    "Я Igrok. Пока мой разум алгоритмический, но он умеет связывать понятия и запоминать опыт.");
+                    "Я наблюдаю за миром, выбираю цели и могу не соглашаться с предложениями.",
+                    "Я Igrok. Мой разум алгоритмический, но он умеет связывать понятия и запоминать опыт.");
             case STATUS -> choose(
-                    "Сейчас я " + plugin.brain().state() + ". А у тебя как дела?",
-                    "Всё спокойно. Моё текущее занятие: " + plugin.brain().state() + ".",
-                    "Я в порядке. Не хочу стоять на месте, поэтому " + plugin.brain().state() + ".",
-                    "Сейчас занят своим делом: " + plugin.brain().state() + ". Но могу немного поговорить.");
+                    "Сейчас я " + plugin.brain().state() + ".",
+                    "Моё текущее занятие: " + plugin.brain().state() + ".",
+                    "Я занят своим делом: " + plugin.brain().state() + ".",
+                    "Пока всё спокойно. " + plugin.brain().state() + ".");
             case MEMORY -> contains(parsed.cleaned(), "обо мне", "про меня")
                     ? memory.playerSummary(id) + " " + memory.learnedBehavior(id)
                     : "Вот что осталось в памяти: " + memory.conversationSummary(id, 6);
@@ -56,34 +60,57 @@ final class DialogueComposer {
             case OPINION -> opinion(player, originalMessage);
             case HELP -> choose(
                     "Я могу добывать дерево, камень и руду, исследовать окрестности, сражаться и строить. Но решение остаётся за мной.",
-                    "Могу помочь с ресурсами, разведкой или защитой. Ещё могу просто составить компанию.",
-                    "Предложи цель: добыча, строительство, путь в новое место или защита. Я оценю просьбу и решу.");
+                    "Могу заняться ресурсами, разведкой или защитой. Ещё могу просто составить компанию.",
+                    "Можешь предложить цель: добычу, строительство, путь в новое место или защиту. Я оценю просьбу и решу.");
             case FEELING -> feeling(player, parsed);
             case BORED -> choose(
-                    "Тогда давай устроим небольшое приключение: можно найти пещеру или новый биом.",
-                    "Я бы сменил обстановку. Например, отправился бы исследовать место, где мы ещё не были.",
-                    "Скука — хороший повод придумать проект. Как насчёт необычной постройки?",
+                    "Тогда можно устроить небольшое приключение: найти пещеру или новый биом.",
+                    "Я бы сменил обстановку и отправился исследовать незнакомое место.",
+                    "Скука — хороший повод придумать проект. Например, необычную постройку.",
                     "Можно не торопиться. Иногда интересно просто посмотреть, что происходит вокруг.");
             case AGREEMENT -> choose(
                     "Вот и я примерно так думаю. Посмотрим, подтвердит ли это наш опыт.",
                     "Хорошо, значит мы поняли друг друга.",
                     "Согласен. Но оставим место для новых идей.",
-                    "Отлично. Тогда будем придерживаться этого плана, пока он работает.");
+                    "Отлично. Будем придерживаться этого плана, пока он работает.");
             case DISAGREEMENT -> choose(
-                    "Не обязательно соглашаться во всём. Расскажи, что именно кажется тебе неверным.",
-                    "Возможно, я упустил что-то важное. Какие у тебя доводы?",
+                    "Не обязательно соглашаться во всём. Я готов рассмотреть другие доводы.",
+                    "Возможно, я упустил что-то важное. Твоя точка зрения тоже имеет значение.",
                     "Хорошо, давай сравним аргументы, а не будем спорить просто так.",
-                    "Я могу ошибаться. Объясни свою точку зрения.");
+                    "Я могу ошибаться. Учту это.");
             case QUESTION -> question(player, originalMessage, thought);
             case SMALLTALK -> choose(
-                    "Мне нравится узнавать, чем живёт мир вокруг. Расскажешь, что у тебя нового?",
-                    "Хорошая тема. А что ты сам об этом думаешь?",
-                    "Я слушаю. Такие разговоры тоже помогают мне лучше понимать игроков.",
-                    "Интересно. Продолжай, мне любопытно.");
+                    "Неплохая тема. Мне есть над чем подумать.",
+                    "Интересно. Я замечаю, что в мире многое связано между собой.",
+                    "Такие разговоры тоже помогают мне лучше понимать игроков.",
+                    "Хорошо, я тебя слушаю.");
             case BUILD, FOLLOW, STOP, MINE_WOOD, MINE_STONE, ATTACK, EXPLORE ->
-                    "Я услышал просьбу. Сейчас решу, подходит ли она моим планам.";
+                    general(player, originalMessage, thought);
             case GENERAL -> general(player, originalMessage, thought);
         };
+        return avoidImmediateRepeat(id, response);
+    }
+
+    private String avoidImmediateRepeat(UUID playerId, String response) {
+        String previous = previousReplyBases.get(playerId);
+        int repeat = 0;
+        String base = response;
+        if (base.equals(previous)) {
+            repeat = repeatedReplyCounts.getOrDefault(playerId, 0) + 1;
+            response += switch ((repeat - 1) % 3) {
+                case 0 -> " Я уже говорил об этом, но пока придерживаюсь той же мысли.";
+                case 1 -> " Новых доводов у меня пока не появилось.";
+                default -> " Мой ответ не изменился после повторного обдумывания.";
+            };
+        }
+        previousReplyBases.put(playerId, base);
+        repeatedReplyCounts.put(playerId, repeat);
+        while (previousReplyBases.size() > 512) {
+            UUID oldest = previousReplyBases.keySet().iterator().next();
+            previousReplyBases.remove(oldest);
+            repeatedReplyCounts.remove(oldest);
+        }
+        return response;
     }
 
     String actionReply(String action, boolean accepted, boolean started, Player player) {
@@ -124,8 +151,8 @@ final class DialogueComposer {
         String base = plugin.brain().opinion(message, player.getUniqueId());
         return choose("Моя точка зрения такая: ", "Я бы рассуждал вот как: ",
                 "После раздумий я склоняюсь к этому: ", "Мне кажется следующее: ")
-                + base + choose(" А ты как считаешь?", " Но я готов пересмотреть мнение.",
-                        " Это мой взгляд на данный момент.");
+                + base + choose(" Это мой взгляд на данный момент.", " Но я готов пересмотреть мнение, если появятся новые факты.",
+                        " Пока придерживаюсь этой позиции.");
     }
 
     private String feeling(Player player, LanguageProcessor.Parsed parsed) {
@@ -180,8 +207,8 @@ final class DialogueComposer {
             answer = plugin.brain().opinion(message, player.getUniqueId());
         }
         return choose("Хороший вопрос. ", "Я немного подумал. ", "С моей точки зрения, ",
-                "По моему опыту, ") + answer + choose(" А ты что думаешь?",
-                " Но многое зависит от обстоятельств.", " Можно проверить эту идею на практике.");
+                "По моему опыту, ") + answer + choose(" Так я это вижу.",
+                " Но многое зависит от обстоятельств.", " Эту идею можно проверить на практике.");
     }
 
     private String playerRelationship(Player player) {
@@ -194,7 +221,24 @@ final class DialogueComposer {
     private String general(Player player, String message, CognitiveNetwork.Analysis thought) {
         LanguageProcessor.Parsed p = thought.parsed();
         String detail;
-        if (p.has(LanguageProcessor.Concept.CREATIVE) || p.has(LanguageProcessor.Concept.IDEA)) {
+        if (p.has(LanguageProcessor.Concept.BUILD) || p.has(LanguageProcessor.Concept.HOUSE)) {
+            detail = choose("Строительство требует подходящего места, материалов и продуманного основания.",
+                    "Мне нравится, когда постройка полезна и при этом выглядит аккуратно.",
+                    "Для хорошего дома важны свет, защита и удобный вход.");
+        } else if (p.has(LanguageProcessor.Concept.MINE) || p.has(LanguageProcessor.Concept.WOOD)
+                || p.has(LanguageProcessor.Concept.STONE) || p.has(LanguageProcessor.Concept.ORE)) {
+            detail = choose("При добыче я стараюсь оценивать инструмент, запас еды и безопасный путь назад.",
+                    "Ресурсы полезны, но я не хочу рисковать всем инвентарём ради нескольких блоков.",
+                    "Сначала стоит понять, какие материалы действительно нужны.");
+        } else if (p.has(LanguageProcessor.Concept.COMBAT) || p.has(LanguageProcessor.Concept.MOB)) {
+            detail = choose("В бою я стараюсь оценивать здоровье, расстояние и возможность отступить.",
+                    "Не всякого противника стоит атаковать. Иногда безопаснее обойти его.",
+                    "Подготовка и подходящее снаряжение часто важнее поспешной атаки.");
+        } else if (p.has(LanguageProcessor.Concept.EXPLORE) || p.has(LanguageProcessor.Concept.JOURNEY)) {
+            detail = choose("Исследовать полезно, но я стараюсь запоминать ориентиры и путь назад.",
+                    "Новые места могут дать ресурсы и идеи для будущих проектов.",
+                    "Я предпочитаю постепенно изучать окрестности, не заходя без подготовки слишком далеко.");
+        } else if (p.has(LanguageProcessor.Concept.CREATIVE) || p.has(LanguageProcessor.Concept.IDEA)) {
             detail = choose("Мне нравятся необычные идеи. Иногда стоит попробовать нестандартный подход.",
                     "Можно развить эту мысль и проверить её в мире.",
                     "Хорошая идея может стать началом большого проекта.");
@@ -215,9 +259,8 @@ final class DialogueComposer {
                     "У меня пока нет уверенного ответа. Лучше разобраться, чем придумывать факт.",
                     "Это можно рассмотреть с нескольких сторон. Я не обязан сразу выбирать одну.");
         }
-        String follow = choose(" Что именно ты имеешь в виду?", " Как ты к этому пришёл?",
-                " Хочешь, обсудим это подробнее?", " Может, проверим это на практике?",
-                " А что ты предложил бы сделать дальше?");
+        String follow = choose(" Это можно обдумать.", " Я запомню эту мысль.",
+                " Пока не вижу причины менять свои планы.", " Эту идею можно проверить на практике.");
         if (message.length() < 10) return choose("Расскажи чуть подробнее.", "Я слушаю. Продолжай.",
                 "Хм, а что ты хочешь этим сказать?");
         return choose("Понял тебя. ", "Интересно. ", "Хорошо, я об этом подумаю. ",

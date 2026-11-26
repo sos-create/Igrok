@@ -30,6 +30,9 @@ final class AgentBrain {
     private final AgentMemory memory;
     private final GoalPlanner planner = new GoalPlanner();
     private final Map<UUID, Integer> lastGreetingTick = new HashMap<>();
+    private final Map<UUID, Long> lastInteractionReplyAt = new HashMap<>();
+    private final Map<UUID, Long> lastAttackReplyAt = new HashMap<>();
+    private final Map<UUID, Long> lastAttackPenaltyAt = new HashMap<>();
     private AgentNavigator navigator;
 
     private GoalPlanner.Goal goal = GoalPlanner.Goal.IDLE;
@@ -279,6 +282,9 @@ final class AgentBrain {
             String greeting = "Привет, " + nearest.getName() + "! Рад тебя видеть. Как у тебя дела?";
             bot.swingMainHand();
             memory.markGreeted(nearest.getUniqueId(), greeting);
+            memory.observeAction(nearest.getUniqueId(), "social");
+            plugin.cognition().observeBehavior("social");
+            if (plugin.dialogue() != null) plugin.dialogue().recordBotReply(nearest.getUniqueId(), greeting);
             lastGreetingTick.put(nearest.getUniqueId(), tickCounter);
             state = "Общаюсь с " + nearest.getName();
             say(greeting);
@@ -301,34 +307,71 @@ final class AgentBrain {
 
     void rememberBotMessage(UUID player, String message) {
         memory.recordConversation(player, message, true);
+        if (plugin.dialogue() != null) plugin.dialogue().recordBotReply(player, message);
     }
 
     void onPlayerInteraction(Player player) {
-        if (player == null) return;
-        memory.rememberPlayerName(player.getUniqueId(), player.getName());
-        memory.recordConversation(player.getUniqueId(), "[подошёл и взаимодействовал со мной]", false);
+        if (player == null || !player.isOnline()) return;
+        UUID playerId = player.getUniqueId();
+        long now = System.currentTimeMillis();
+        if (now - lastInteractionReplyAt.getOrDefault(playerId, 0L) < 2_500L) return;
+        lastInteractionReplyAt.put(playerId, now);
+        trimInteractionCooldowns(now);
+
+        memory.rememberPlayerName(playerId, player.getName());
+        memory.recordConversation(playerId, "[подошёл и взаимодействовал со мной]", false);
+        memory.observeAction(playerId, "social");
+        plugin.cognition().observeBehavior("social");
+
         Player bot = plugin.controller().bukkitPlayer();
         if (bot != null) {
             face(bot, player.getEyeLocation());
             bot.swingMainHand();
         }
-        String reply = memory.trust(player.getUniqueId()) >= 3
+        String reply = memory.trust(playerId) >= 3
                 ? "Привет, " + player.getName() + "! Рад, что заглянул."
                 : "Привет, " + player.getName() + ". Что хотел?";
-        rememberBotMessage(player.getUniqueId(), reply);
+        rememberBotMessage(playerId, reply);
         say(reply);
     }
 
     void onPlayerAttack(Player player) {
-        if (player == null) return;
-        memory.rememberPlayerName(player.getUniqueId(), player.getName());
-        memory.adjustReputation(player.getUniqueId(), -2);
-        memory.recordConversation(player.getUniqueId(), "[ударил меня]", false);
-        String reply = memory.trust(player.getUniqueId()) <= -3
+        if (player == null || !player.isOnline()) return;
+        UUID playerId = player.getUniqueId();
+        long now = System.currentTimeMillis();
+
+        // Repeated hit packets are common during combat. Learn and respond at a
+        // controlled rate so one sword combo cannot spam the chat or reputation.
+        if (now - lastAttackPenaltyAt.getOrDefault(playerId, 0L) >= 5_000L) {
+            memory.adjustReputation(playerId, -1);
+            lastAttackPenaltyAt.put(playerId, now);
+        }
+        if (now - lastAttackReplyAt.getOrDefault(playerId, 0L) < 2_500L) return;
+        lastAttackReplyAt.put(playerId, now);
+        trimInteractionCooldowns(now);
+
+        memory.rememberPlayerName(playerId, player.getName());
+        memory.recordConversation(playerId, "[ударил меня]", false);
+        memory.observeAction(playerId, "combat");
+        plugin.cognition().observeBehavior("combat");
+
+        String reply = memory.trust(playerId) <= -3
                 ? "Не надо меня бить, " + player.getName() + ". Я уже начинаю тебе не доверять."
                 : "Эй, " + player.getName() + "! Зачем ты меня ударил?";
-        rememberBotMessage(player.getUniqueId(), reply);
+        rememberBotMessage(playerId, reply);
         say(reply);
+    }
+
+    private void trimInteractionCooldowns(long now) {
+        if (lastInteractionReplyAt.size() > 512) {
+            lastInteractionReplyAt.entrySet().removeIf(entry -> now - entry.getValue() > 300_000L);
+        }
+        if (lastAttackReplyAt.size() > 512) {
+            lastAttackReplyAt.entrySet().removeIf(entry -> now - entry.getValue() > 300_000L);
+        }
+        if (lastAttackPenaltyAt.size() > 512) {
+            lastAttackPenaltyAt.entrySet().removeIf(entry -> now - entry.getValue() > 300_000L);
+        }
     }
 
     /** The player may suggest an action, but the bot makes the final decision. */
@@ -997,6 +1040,8 @@ final class AgentBrain {
     }
 
     private void say(String message) {
-        Bukkit.broadcastMessage("§6Igrok§7: §f" + message);
+        String botName = plugin.getConfig().getString("bot-name", "Igrok");
+        if (botName == null || botName.isBlank()) botName = "Igrok";
+        Bukkit.broadcastMessage("§6" + botName + "§7: §f" + message);
     }
 }

@@ -4,7 +4,9 @@ import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.World;
 import org.bukkit.entity.Player;
+import org.bukkit.entity.Projectile;
 import org.bukkit.event.EventHandler;
+import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
 import org.bukkit.event.entity.EntityDamageByEntityEvent;
 import org.bukkit.event.entity.PlayerDeathEvent;
@@ -72,7 +74,7 @@ public final class IgrokPlugin extends JavaPlugin implements Listener {
         if (getConfig().getBoolean("auto-spawn", true)) {
             Bukkit.getScheduler().runTask(this, this::spawnWithConfiguredSkin);
         }
-        getLogger().info("Igrok 0.9.14 survival player agent enabled for Paper 1.21.4.");
+        getLogger().info("Igrok 0.9.15 survival player agent enabled for Paper 1.21.4.");
     }
 
     @Override
@@ -294,13 +296,13 @@ public final class IgrokPlugin extends JavaPlugin implements Listener {
         };
     }
 
-    @EventHandler
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void onPlayerBlockBreak(BlockBreakEvent event) {
         memory.observeAction(event.getPlayer().getUniqueId(), "mine");
         cognition.observeBehavior("mine");
     }
 
-    @EventHandler
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void onPlayerBlockPlace(BlockPlaceEvent event) {
         memory.observeAction(event.getPlayer().getUniqueId(), "build");
         cognition.observeBehavior("build");
@@ -315,7 +317,7 @@ public final class IgrokPlugin extends JavaPlugin implements Listener {
         }
     }
 
-    @EventHandler
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void onPlayerExplore(PlayerMoveEvent event) {
         if (event.getTo() == null || event.getFrom().getWorld() != event.getTo().getWorld()) return;
         if ((event.getFrom().getBlockX() >> 4) == (event.getTo().getBlockX() >> 4)
@@ -330,22 +332,24 @@ public final class IgrokPlugin extends JavaPlugin implements Listener {
         }
     }
 
-    @EventHandler
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void onBotInteract(PlayerInteractEntityEvent event) {
         if (!(event.getRightClicked() instanceof Player clicked) || !controller.isBot(clicked)) return;
         if (event.getPlayer().getUniqueId().equals(clicked.getUniqueId())) return;
-        memory.observeAction(event.getPlayer().getUniqueId(), "social");
-        cognition.observeBehavior("social");
         brain.onPlayerInteraction(event.getPlayer());
     }
 
-    @EventHandler
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void onBotHit(EntityDamageByEntityEvent event) {
         if (!(event.getEntity() instanceof Player target) || !controller.isBot(target)) return;
-        if (event.getDamager() instanceof Player attacker) {
-            cognition.observeBehavior("combat");
-            brain.onPlayerAttack(attacker);
+        Player attacker = null;
+        if (event.getDamager() instanceof Player directPlayer) {
+            attacker = directPlayer;
+        } else if (event.getDamager() instanceof Projectile projectile
+                && projectile.getShooter() instanceof Player shooter) {
+            attacker = shooter;
         }
+        if (attacker != null) brain.onPlayerAttack(attacker);
     }
 
     @EventHandler
@@ -369,6 +373,7 @@ public final class IgrokPlugin extends JavaPlugin implements Listener {
     }
 
     FakePlayerController controller() { return controller; }
+    ChatDialogue dialogue() { return dialogue; }
     HouseBuilder houseBuilder() { return houseBuilder; }
     AgentBrain brain() { return brain; }
     CognitiveNetwork cognition() { return cognition; }
