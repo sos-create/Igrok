@@ -661,6 +661,13 @@ final class AgentBrain {
             navigator.stop();
             return;
         }
+        // A cached Bukkit Block may outlive its chunk. Discard it before any
+        // block-state read so the bot never touches an unloaded chunk.
+        if (miningTarget != null
+                && !miningTarget.getWorld().isChunkLoaded(miningTarget.getX() >> 4, miningTarget.getZ() >> 4)) {
+            miningTarget = null;
+            miningTicks = 0;
+        }
         if (miningTarget == null || miningTarget.getType().isAir()) {
             if (tickCounter < nextSearchTick) {
                 state = "Ищу ресурсы";
