@@ -22,7 +22,6 @@ final class IgrokServerPlayer extends ServerPlayer {
         this.connection = fakeListener;
     }
 
-    @Override
     private double fallStartY = Double.NaN;
 
     @Override
@@ -58,8 +57,6 @@ final class IgrokServerPlayer extends ServerPlayer {
                             level().getBlockState(landingPos);
                     if (landing.is(net.minecraft.world.level.block.Blocks.HAY_BLOCK)) {
                         multiplier = 0.2F;
-                    } else if (landing.is(net.minecraft.world.level.block.Blocks.BED)) {
-                        multiplier = 0.5F;
                     }
                     if (multiplier > 0.0F) {
                         causeFallDamage(distance, multiplier, damageSources().fall());
