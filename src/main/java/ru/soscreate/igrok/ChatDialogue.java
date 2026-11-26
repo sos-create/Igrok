@@ -78,20 +78,27 @@ final class ChatDialogue implements Listener {
 
         PendingMessage pending = pendingMessages.get(senderId);
         if (pending != null) {
-            // Several rapid messages become one thought; process only the latest text.
+            // Messages in one burst become a single thought. Reset the timer so the
+            // reply is still delayed 20-30 seconds from the most recent message.
             pending.message = rawMessage;
+            scheduleReply(senderId, pending);
             return;
         }
 
+        PendingMessage created = new PendingMessage(rawMessage);
+        pendingMessages.put(senderId, created);
+        scheduleReply(senderId, created);
+    }
+
+    private void scheduleReply(UUID senderId, PendingMessage pending) {
+        if (pending.task != null) pending.task.cancel();
         int minDelay = Math.max(1, plugin.getConfig().getInt("chat.reply-delay-min-seconds", 20));
         int maxDelay = Math.max(minDelay, plugin.getConfig().getInt("chat.reply-delay-max-seconds", 30));
         int delaySeconds = ThreadLocalRandom.current().nextInt(minDelay, maxDelay + 1);
-        PendingMessage created = new PendingMessage(rawMessage);
-        pendingMessages.put(senderId, created);
         try {
-            created.task = Bukkit.getScheduler().runTaskLater(plugin, () -> {
+            pending.task = Bukkit.getScheduler().runTaskLater(plugin, () -> {
                 PendingMessage queued = pendingMessages.remove(senderId);
-                if (queued != created || !plugin.isEnabled()) return;
+                if (queued != pending || !plugin.isEnabled()) return;
                 processMessage(senderId, queued.message);
             }, delaySeconds * 20L);
         } catch (IllegalPluginAccessException ignored) {
