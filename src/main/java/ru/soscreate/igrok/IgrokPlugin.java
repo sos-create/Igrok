@@ -124,7 +124,7 @@ public final class IgrokPlugin extends JavaPlugin implements Listener {
                 if (!isEnabled()) return;
                 Bukkit.getScheduler().runTask(this, () -> {
                     if (!isEnabled() || !decided.compareAndSet(false, true)) return;
-                    spawnDecisionMade = true;
+
                     if (skinFallbackTask != null) {
                         skinFallbackTask.cancel();
                         skinFallbackTask = null;
@@ -155,7 +155,7 @@ public final class IgrokPlugin extends JavaPlugin implements Listener {
             });
         } catch (Throwable error) {
             if (decided.compareAndSet(false, true)) {
-                spawnDecisionMade = true;
+
                 if (skinFallbackTask != null) {
                     skinFallbackTask.cancel();
                     skinFallbackTask = null;
