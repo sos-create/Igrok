@@ -37,18 +37,13 @@ This is an algorithmic simulation. It does not provide human-level intelligence,
 - Pathfinding only examines already-loaded chunks, revalidates waypoints before movement, rejects common damaging blocks and checks combat sidesteps against safe ground.
 - The initial spawn and exploration destinations reject common damaging surfaces.
 
-## Chat and commands
+## Chat and interaction
 
 - Igrok replies when addressed by its configured name or Игрок; recent direct conversation can continue without repeating the name.
 - Unrelated player-to-player chat is ignored.
-- Requests require igrok.control or igrok.build; permission does not force the bot to accept.
+- Player requests are expressed in ordinary chat; the bot may accept or refuse them.
+- No slash-command interface is required.
 - TNT and ignition remain forbidden.
-
-Commands:
-- /igrok status, /igrok brain
-- /igrok follow, /igrok mine wood, /igrok mine stone
-- /igrok attack, /igrok explore, /igrok stop
-- /igrok build, /igrok cancelbuild, /igrok spawn, /igrok remove
 
 ## Notes
 

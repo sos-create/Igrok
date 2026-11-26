@@ -41,7 +41,6 @@ public final class IgrokPlugin extends JavaPlugin implements Listener {
     private BukkitTask cognitionSaveTask;
     private BukkitTask inventorySaveTask;
     private BukkitTask skinFallbackTask;
-    private boolean spawnDecisionMade;
     private File stateFile;
     private YamlConfiguration stateData;
     private final Map<UUID, Long> lastExplorationObservation = new HashMap<>();
@@ -70,14 +69,13 @@ public final class IgrokPlugin extends JavaPlugin implements Listener {
         if (getConfig().getBoolean("auto-spawn", true)) {
             Bukkit.getScheduler().runTask(this, this::spawnWithConfiguredSkin);
         }
-        getLogger().info("Igrok 0.9.10 autonomous survival agent enabled for Paper 1.21.4.");
+        getLogger().info("Igrok 0.9.11 autonomous survival agent enabled for Paper 1.21.4.");
     }
 
     @Override
     public void onDisable() {
         if (respawnTask != null) respawnTask.cancel();
         if (skinFallbackTask != null) skinFallbackTask.cancel();
-        spawnDecisionMade = true;
         if (brainTask != null) brainTask.cancel();
         if (stateSaveTask != null) stateSaveTask.cancel();
         if (cognitionSaveTask != null) cognitionSaveTask.cancel();
@@ -115,7 +113,6 @@ public final class IgrokPlugin extends JavaPlugin implements Listener {
         // Never hold up server startup waiting for Mojang profile services.
         skinFallbackTask = Bukkit.getScheduler().runTaskLater(this, () -> {
             if (!decided.compareAndSet(false, true)) return;
-            spawnDecisionMade = true;
             getLogger().warning("Skin lookup for '" + skinOwner
                     + "' timed out after 5 seconds; spawning with the standard Minecraft skin.");
             controller.setSkinProperties(List.of());
