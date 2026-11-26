@@ -68,7 +68,7 @@ public final class IgrokPlugin extends JavaPlugin implements Listener {
                 houseBuilder.resumeSavedState(stateData);
             });
         }
-        getLogger().info("Igrok 0.8.0 multi-layer cognitive agent enabled for Paper 1.21.4.");
+        getLogger().info("Igrok 0.9.0 compact matrix-memory cognitive agent enabled for Paper 1.21.4.");
     }
 
     @Override
