@@ -1,58 +1,42 @@
-# Igrok
+# Igrok 0.8.0
 
-Paper 1.21.4 server-side player agent (Java 21), version 0.6.0.
+Paper 1.21.4 server-side player agent (Java 21).
 
-## Independent decisions and safety
-- Player chat is processed only when the message directly addresses Igrok by name or says "Игрок"; unrelated player chat is ignored.
-- A request is a suggestion, never an order. Even players with the required permission can be refused.
-- The bot weighs its personality, trust/reputation and current activity before accepting requests. It can say no and continue its own plans.
-- TNT is permanently forbidden: Igrok will not place, ignite or trigger TNT. Ignition blocks/items are also rejected by the cabin builder. This rule is hard-coded and cannot be overridden by permissions or configuration.
-- Chat control still requires `igrok.control` (default: op); house-building requests require `igrok.build` (default: op). Permission only allows making a request; it does not guarantee acceptance.
+## Cognitive architecture
+- Language layer: Russian/English normalization, lightweight stemming, synonym groups, question and command detection, negation and sentiment signals.
+- Associative layer: dozens of semantic concept nodes activate related ideas through weighted links.
+- Intent layer: combines several signals to distinguish greetings, questions, memories, opinions, emotions, requests, agreement and disagreement.
+- Dialogue layer: response openings, topic-specific reasoning, content fragments and follow-up questions combine into a large variety of replies.
+- Adaptive links: a Hebbian-style learning rule strengthens or weakens associations when a player reacts to a previous answer. Co-occurring concepts also form stronger links.
+- Player behavior model: per-player counters and action transitions remember whether a player tends to build, mine, fight, explore or interact socially, including common sequences.
 
-## Social interaction
-- Greets nearby players in normal public chat, with a configurable cooldown per player.
-- Looks at nearby players while idle and waves with its main hand when greeting or being interacted with.
-- Right-clicking the bot starts a short social interaction.
-- It reacts to being hit by a player and remembers the event; it does not retaliate against real players.
-- Replies can refer to recent conversation lines, player name, remembered interests and approximate trust/reputation.
+This is an algorithmic simulation, not a human brain or a pretrained language model. It does not understand every possible sentence like a large language model, but it uses multiple connected stages rather than a one-keyword-to-one-answer lookup.
 
-## Persistent online presence and restart recovery
-- With `auto-spawn: true`, Igrok automatically joins as a fake online player whenever the Paper server starts. It remains online only while the server is running and disconnects with it at shutdown.
-- The last world, coordinates and rotation are stored in `plugins/Igrok/agent-state.yml`; Igrok returns to that location after restart.
-- Its active goal, mining mode/progress, follow target UUID, exploration intent and unfinished cabin-building cursor are saved every 30 seconds and on normal shutdown.
-- On restart it resumes the previous task. If the followed player is offline, it waits for that player to return.
-- A crash or power loss may lose changes since the last periodic save.
+## Persistent learning
+- plugins/Igrok/memory.bin keeps compact per-player records, dialogue snippets, reputation, preferred topics, action counters and action-transition counts.
+- plugins/Igrok/cognition.yml stores learned synaptic weights.
+- Old memory.bin versions 1 and 2 are read and upgraded to version 3 on the next save.
+- Learning and language analysis run only when a relevant event occurs. The network is not ticked continuously.
+- Memory and network weights are saved periodically and on normal shutdown.
 
-## Compact memory
-- Stored in `plugins/Igrok/memory.bin`: versioned binary stream compressed with GZIP.
-- Keeps up to 128 player records and 10 short conversation entries per player.
-- Remembers player UUID/name, reputation, interaction count, greeting cooldown, topic counters, recent dialogue and mined-material totals.
-- Text entries are trimmed to 180 characters; no unbounded chat transcript is kept.
-- Writes are atomic where supported and saved every 60 seconds plus on shutdown.
-- Existing `memory.yml` is imported automatically on first startup and remains untouched as a backup.
-- No additional library, database, network call or AI model is required.
+## Chat and actions
+- Igrok responds when addressed by its configured name or by “Игрок”; it can also continue a recent direct conversation.
+- Unrelated player-to-player chat is ignored.
+- It can answer in public chat, express opinions, remember earlier messages and politely refuse requests.
+- Chat requests are suggestions, not guaranteed commands. igrok.control and igrok.build permissions are required to request actions.
+- TNT placement, ignition and detonation remain permanently forbidden.
+
+## Performance
+- No neural framework, GPU, model files, database, external network request or extra runtime dependency.
+- Inference is event-driven and bounded: a few dozen semantic nodes with two propagation passes, and small bounded memory records.
+- The neural-inspired network is calculated on addressed chat only, not on every game tick.
+- Existing movement, pathfinding, mining and building remain governed by their current tick limits.
 
 ## Commands
-- `/igrok status` — current agent activity.
-- `/igrok brain` — personality, memory size and remembered conversation count.
-- `/igrok follow` — follow the command sender.
-- `/igrok mine wood` or `/igrok mine stone` — gather a small batch.
-- `/igrok attack` — attack the nearest hostile monster.
-- `/igrok explore` — explore nearby loaded terrain.
-- `/igrok stop` — stop the current manual task.
-- `/igrok build` / `/igrok cancelbuild` — start or cancel the cabin builder.
-- `/igrok spawn` / `/igrok remove`.
+- /igrok status — current activity.
+- /igrok brain — personality, memory statistics and state.
+- /igrok follow, /igrok mine wood, /igrok mine stone, /igrok attack, /igrok explore, /igrok stop.
+- /igrok build, /igrok cancelbuild, /igrok spawn, /igrok remove.
 
-Address the bot by name or write "Игрок" to talk to it. It will not treat unrelated public chat as instructions.
-
-## Performance and storage
-- No neural network, model download, database server or GPU required.
-- Perception and movement remain bounded. Social scanning runs at a configurable interval.
-- Memory is bounded by player and message caps; compressed binary storage is typically much smaller than a YAML transcript. Actual size depends on names and chat content.
-- Memory writes are periodic and atomic where supported.
-
-## Limitations
-This is a deterministic agent, not human consciousness. Its replies and decisions are algorithmic, based on personality, trust, activity and compact recent conversation memory. It can refuse requests, but its reasoning is a rule-based simulation rather than human-level understanding.
-
-## Source adaptation
-The fake-player architecture is adapted from [My Bot Mod](https://github.com/skylhcss/my-bot-mod), distributed under MIT; see [UPSTREAM-LICENSE](UPSTREAM-LICENSE).
+## Existing behavior retained
+Igrok automatically appears while the Paper server runs, disconnects when it shuts down, remembers its location and unfinished goals across restarts, and keeps the existing safety restrictions. The fake-player architecture is adapted from https://github.com/skylhcss/my-bot-mod, distributed under MIT; see UPSTREAM-LICENSE.

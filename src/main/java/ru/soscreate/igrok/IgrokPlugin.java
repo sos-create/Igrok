@@ -220,17 +220,22 @@ public final class IgrokPlugin extends JavaPlugin implements Listener {
     @EventHandler
     public void onPlayerBlockBreak(BlockBreakEvent event) {
         memory.observeAction(event.getPlayer().getUniqueId(), "mine");
+        cognition.observeBehavior("mine");
     }
 
     @EventHandler
     public void onPlayerBlockPlace(BlockPlaceEvent event) {
         memory.observeAction(event.getPlayer().getUniqueId(), "build");
+        cognition.observeBehavior("build");
     }
 
     @EventHandler
     public void onMobKilled(EntityDeathEvent event) {
         Player killer = event.getEntity().getKiller();
-        if (killer != null) memory.observeAction(killer.getUniqueId(), "combat");
+        if (killer != null) {
+            memory.observeAction(killer.getUniqueId(), "combat");
+            cognition.observeBehavior("combat");
+        }
     }
 
     @EventHandler
@@ -243,6 +248,7 @@ public final class IgrokPlugin extends JavaPlugin implements Listener {
         long previous = lastExplorationObservation.getOrDefault(id, 0L);
         if (now - previous >= 15_000L) {
             memory.observeAction(id, "explore");
+            cognition.observeBehavior("explore");
             lastExplorationObservation.put(id, now);
         }
     }
@@ -251,13 +257,18 @@ public final class IgrokPlugin extends JavaPlugin implements Listener {
     public void onBotInteract(PlayerInteractEntityEvent event) {
         if (!(event.getRightClicked() instanceof Player clicked) || !controller.isBot(clicked)) return;
         if (event.getPlayer().getUniqueId().equals(clicked.getUniqueId())) return;
+        memory.observeAction(event.getPlayer().getUniqueId(), "social");
+        cognition.observeBehavior("social");
         brain.onPlayerInteraction(event.getPlayer());
     }
 
     @EventHandler
     public void onBotHit(EntityDamageByEntityEvent event) {
         if (!(event.getEntity() instanceof Player target) || !controller.isBot(target)) return;
-        if (event.getDamager() instanceof Player attacker) brain.onPlayerAttack(attacker);
+        if (event.getDamager() instanceof Player attacker) {
+            cognition.observeBehavior("combat");
+            brain.onPlayerAttack(attacker);
+        }
     }
 
     @EventHandler

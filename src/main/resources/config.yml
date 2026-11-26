@@ -1,4 +1,4 @@
-# Igrok 0.7.0 configuration
+# Igrok 0.8.0 configuration
 bot-name: Igrok
 spawn-world: ""
 auto-spawn: true
@@ -9,7 +9,11 @@ chat:
   cooldown-seconds: 2
   listen-radius: 12
   # Igrok answers direct mentions and short follow-ups in a recent conversation.
-  follow-up-window-seconds: 90
+  follow-up-window-seconds: 120
+  cognition:
+    enabled: true
+    propagation-passes: 2
+    save-interval-seconds: 60
   social:
     enabled: true
     radius: 7

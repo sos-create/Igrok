@@ -1,10 +1,10 @@
 name: Igrok
-version: 0.7.0
+version: 0.8.0
 main: ru.soscreate.igrok.IgrokPlugin
 api-version: '1.21'
 load: POSTWORLD
 authors: [sos-create]
-description: Autonomous Paper agent with chat dialogue, learned player profiles, independent decisions and compressed memory.
+description: Autonomous Paper agent with a lightweight multi-layer cognitive network, adaptive dialogue and learned player behavior.
 commands:
   igrok:
     description: Manage the Igrok player agent.
