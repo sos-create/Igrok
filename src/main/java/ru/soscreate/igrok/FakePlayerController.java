@@ -4,6 +4,7 @@ import com.mojang.authlib.GameProfile;
 import net.minecraft.network.Connection;
 import net.minecraft.network.DisconnectionDetails;
 import net.minecraft.network.protocol.PacketFlow;
+import io.netty.channel.embedded.EmbeddedChannel;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
@@ -57,6 +58,10 @@ final class FakePlayerController {
             UUID uuid = UUID.nameUUIDFromBytes(("OfflinePlayer:" + name).getBytes(StandardCharsets.UTF_8));
             GameProfile profile = new GameProfile(uuid, name);
             Connection networkConnection = new Connection(PacketFlow.SERVERBOUND);
+            // PlayerList.placeNewPlayer expects an active channel. A bare Connection has
+            // no channel and crashes in setupInboundProtocol. EmbeddedChannel provides
+            // a local, socket-free channel for this server-side fake player.
+            EmbeddedChannel fakeChannel = new EmbeddedChannel(networkConnection);
             IgrokServerPlayer created = new IgrokServerPlayer(server, level, profile, networkConnection);
             created.setPos(location.getX(), location.getY(), location.getZ());
             created.setYRot(location.getYaw());
