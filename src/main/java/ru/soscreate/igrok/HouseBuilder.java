@@ -201,7 +201,7 @@ final class HouseBuilder {
                         || groundType.name().contains("LEAVES")) return false;
 
                 for (int y = groundY + 1; y <= groundY + 5; y++) {
-                    if (!world.getBlockAt(x, y, z).isAir()) return false;
+                    if (!world.getBlockAt(x, y, z).isEmpty()) return false;
                 }
             }
         }
