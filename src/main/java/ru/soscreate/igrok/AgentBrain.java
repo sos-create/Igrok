@@ -5,15 +5,14 @@ import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.World;
 import org.bukkit.block.Block;
-import org.bukkit.entity.Entity;
-import org.bukkit.entity.LivingEntity;
 import org.bukkit.entity.Monster;
 import org.bukkit.entity.Player;
-import org.bukkit.inventory.ItemStack;
 import org.bukkit.util.Vector;
 
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.Locale;
+import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ThreadLocalRandom;
 
@@ -26,6 +25,7 @@ final class AgentBrain {
     private final AgentPersonality personality;
     private final AgentMemory memory;
     private final GoalPlanner planner = new GoalPlanner();
+    private final Map<UUID, Integer> lastGreetingTick = new HashMap<>();
     private AgentNavigator navigator;
 
     private GoalPlanner.Goal goal = GoalPlanner.Goal.IDLE;
@@ -85,6 +85,89 @@ final class AgentBrain {
                 state = "Отдыхаю и наблюдаю";
             }
         }
+
+        int socialInterval = Math.max(10, plugin.getConfig().getInt("chat.social.scan-interval-ticks", 20));
+        if (tickCounter % socialInterval == 0) socialize(bot);
+    }
+
+    private void socialize(Player bot) {
+        if (!plugin.getConfig().getBoolean("chat.social.enabled", true)) return;
+        if (goal != GoalPlanner.Goal.IDLE) return;
+        double radius = Math.max(2.0, plugin.getConfig().getDouble("chat.social.radius", 7.0));
+        Player nearest = bot.getNearbyEntities(radius, 3.0, radius).stream()
+                .filter(entity -> entity instanceof Player)
+                .map(entity -> (Player) entity)
+                .filter(player -> !player.getUniqueId().equals(bot.getUniqueId()))
+                .filter(Player::isOnline)
+                .min(Comparator.comparingDouble(player -> player.getLocation().distanceSquared(bot.getLocation())))
+                .orElse(null);
+        if (nearest == null) return;
+
+        face(bot, nearest.getEyeLocation());
+        memory.rememberPlayerName(nearest.getUniqueId(), nearest.getName());
+        long greetCooldown = Math.max(30L, plugin.getConfig().getLong("chat.social.greeting-cooldown-seconds", 300)) * 1000L;
+        if (memory.shouldGreet(nearest.getUniqueId(), greetCooldown)
+                && tickCounter - lastGreetingTick.getOrDefault(nearest.getUniqueId(), Integer.MIN_VALUE / 2) > 100) {
+            String greeting = "Привет, " + nearest.getName() + "! Рад тебя видеть. Как у тебя дела?";
+            bot.swingMainHand();
+            memory.markGreeted(nearest.getUniqueId(), greeting);
+            lastGreetingTick.put(nearest.getUniqueId(), tickCounter);
+            state = "Общаюсь с " + nearest.getName();
+            say(greeting);
+        } else {
+            state = "Рядом с игроком " + nearest.getName();
+        }
+    }
+
+    void onPlayerMessage(Player player, String message) {
+        if (player == null || message == null) return;
+        memory.rememberPlayerName(player.getUniqueId(), player.getName());
+        memory.rememberMessage(player.getUniqueId(), message);
+        memory.recordConversation(player.getUniqueId(), message, false);
+        Player bot = plugin.controller().bukkitPlayer();
+        if (bot != null && player.getWorld() == bot.getWorld()
+                && player.getLocation().distanceSquared(bot.getLocation()) <= 24.0 * 24.0) {
+            face(bot, player.getEyeLocation());
+        }
+    }
+
+    void rememberBotMessage(UUID player, String message) {
+        memory.recordConversation(player, message, true);
+    }
+
+    void onPlayerInteraction(Player player) {
+        if (player == null) return;
+        memory.rememberPlayerName(player.getUniqueId(), player.getName());
+        memory.recordConversation(player.getUniqueId(), "[подошёл и взаимодействовал со мной]", false);
+        Player bot = plugin.controller().bukkitPlayer();
+        if (bot != null) {
+            face(bot, player.getEyeLocation());
+            bot.swingMainHand();
+        }
+        String reply = memory.trust(player.getUniqueId()) >= 3
+                ? "Привет, " + player.getName() + "! Рад, что заглянул."
+                : "Привет, " + player.getName() + ". Что хотел?";
+        rememberBotMessage(player.getUniqueId(), reply);
+        say(reply);
+    }
+
+    void onPlayerAttack(Player player) {
+        if (player == null) return;
+        memory.rememberPlayerName(player.getUniqueId(), player.getName());
+        memory.adjustReputation(player.getUniqueId(), -2);
+        memory.recordConversation(player.getUniqueId(), "[ударил меня]", false);
+        String reply = memory.trust(player.getUniqueId()) <= -3
+                ? "Не надо меня бить, " + player.getName() + ". Я уже начинаю тебе не доверять."
+                : "Эй, " + player.getName() + "! Зачем ты меня ударил?";
+        rememberBotMessage(player.getUniqueId(), reply);
+        say(reply);
+    }
+
+    void memoryStats(Player viewer) {
+        if (viewer == null) return;
+        viewer.sendMessage("§6Память: §f" + memory.rememberedPlayers() + " игроков, "
+                + memory.rememberedMessages() + " сохранённых реплик, " + memory.totalMined()
+                + " добытых блоков, файл " + memory.storedBytes() + " байт.");
     }
 
     private void chooseGoal(Player bot) {

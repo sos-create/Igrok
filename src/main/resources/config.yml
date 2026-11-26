@@ -1,11 +1,18 @@
-# Igrok 0.3.0 configuration
+# Igrok 0.4.0 configuration
 bot-name: Igrok
 spawn-world: ""
 auto-spawn: true
 auto-respawn: true
+
 chat:
   enabled: true
   cooldown-seconds: 3
+  listen-radius: 10
+  social:
+    enabled: true
+    radius: 7
+    scan-interval-ticks: 20
+    greeting-cooldown-seconds: 300
 
 building:
   enabled: true
@@ -15,12 +22,10 @@ building:
 
 brain:
   enabled: true
-  # World perception and goal selection are recalculated at this interval.
   think-interval-ticks: 10
   exploration:
     enabled: true
   combat:
-    # Automatically defend only when monsters approach or target the bot.
     aggressive: false
     radius: 12
   mining:

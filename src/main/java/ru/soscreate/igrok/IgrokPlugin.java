@@ -2,15 +2,15 @@ package ru.soscreate.igrok;
 
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
-import org.bukkit.Material;
 import org.bukkit.World;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandSender;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
+import org.bukkit.event.entity.EntityDamageByEntityEvent;
 import org.bukkit.event.entity.PlayerDeathEvent;
-import org.bukkit.inventory.ItemStack;
+import org.bukkit.event.player.PlayerInteractEntityEvent;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.scheduler.BukkitTask;
 
@@ -25,32 +25,35 @@ public final class IgrokPlugin extends JavaPlugin implements Listener {
     private AgentMemory memory;
     private BukkitTask respawnTask;
     private BukkitTask brainTask;
+    private BukkitTask memorySaveTask;
 
     @Override
     public void onEnable() {
         saveDefaultConfig();
         controller = new FakePlayerController(this);
         houseBuilder = new HouseBuilder(this);
-        memory = new AgentMemory(new File(getDataFolder(), "memory.yml"));
+        memory = new AgentMemory(new File(getDataFolder(), "memory.bin"));
         memory.load();
         brain = new AgentBrain(this, memory);
         dialogue = new ChatDialogue(this);
         Bukkit.getPluginManager().registerEvents(this, this);
         Bukkit.getPluginManager().registerEvents(dialogue, this);
         brainTask = Bukkit.getScheduler().runTaskTimer(this, brain::tick, 1L, 1L);
+        memorySaveTask = Bukkit.getScheduler().runTaskTimer(this, memory::save, 1200L, 1200L);
 
         if (getConfig().getBoolean("auto-spawn", true)) {
             Bukkit.getScheduler().runTask(this, () -> {
                 if (!controller.isSpawned()) spawnAtDefaultWorldSpawn();
             });
         }
-        getLogger().info("Igrok 0.3.0 cognitive agent enabled for Paper 1.21.4.");
+        getLogger().info("Igrok 0.4.0 social agent enabled for Paper 1.21.4.");
     }
 
     @Override
     public void onDisable() {
         if (respawnTask != null) respawnTask.cancel();
         if (brainTask != null) brainTask.cancel();
+        if (memorySaveTask != null) memorySaveTask.cancel();
         if (brain != null) brain.stop();
         if (houseBuilder != null) houseBuilder.cancel(false);
         if (memory != null) memory.save();
@@ -120,7 +123,8 @@ public final class IgrokPlugin extends JavaPlugin implements Listener {
             }
             case "brain" -> {
                 sender.sendMessage("§6Характер Igrok: §f" + brain.personalityDescription());
-                sender.sendMessage("§6Память: §f" + memory.totalMined() + " добытых блоков; состояние: " + brain.state());
+                brain.memoryStats(sender instanceof Player player ? player : null);
+                sender.sendMessage("§6Состояние: §f" + brain.state());
             }
             case "follow" -> {
                 if (!(sender instanceof Player player)) {
@@ -149,6 +153,19 @@ public final class IgrokPlugin extends JavaPlugin implements Listener {
             default -> sender.sendMessage("§eИспользование: /igrok <spawn|remove|status|build|cancelbuild|brain|follow|mine|attack|explore|stop>");
         }
         return true;
+    }
+
+    @EventHandler
+    public void onBotInteract(PlayerInteractEntityEvent event) {
+        if (!(event.getRightClicked() instanceof Player clicked) || !controller.isBot(clicked)) return;
+        if (event.getPlayer().getUniqueId().equals(clicked.getUniqueId())) return;
+        brain.onPlayerInteraction(event.getPlayer());
+    }
+
+    @EventHandler
+    public void onBotHit(EntityDamageByEntityEvent event) {
+        if (!(event.getEntity() instanceof Player target) || !controller.isBot(target)) return;
+        if (event.getDamager() instanceof Player attacker) brain.onPlayerAttack(attacker);
     }
 
     @EventHandler
