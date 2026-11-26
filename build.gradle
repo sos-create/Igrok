@@ -17,9 +17,6 @@ dependencies {
 }
 
 tasks {
-    assemble {
-        dependsOn(reobfJar)
-    }
     jar {
         archiveBaseName.set("Igrok")
     }
@@ -30,5 +27,6 @@ tasks {
 }
 
 paperweight {
+    // Paper 1.21.4 runs with Mojang mappings; do not reobfuscate the output.
     reobfArtifactConfiguration = io.papermc.paperweight.userdev.ReobfArtifactConfiguration.MOJANG_PRODUCTION
 }
