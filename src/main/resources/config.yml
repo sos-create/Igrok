@@ -1,4 +1,4 @@
-# Igrok 0.5.0 configuration
+# Igrok 0.7.0 configuration
 bot-name: Igrok
 spawn-world: ""
 auto-spawn: true
@@ -6,9 +6,10 @@ auto-respawn: true
 
 chat:
   enabled: true
-  cooldown-seconds: 3
-  listen-radius: 10
-  # Bot reacts only when directly addressed; ambient player chat is ignored.
+  cooldown-seconds: 2
+  listen-radius: 12
+  # Igrok answers direct mentions and short follow-ups in a recent conversation.
+  follow-up-window-seconds: 90
   social:
     enabled: true
     radius: 7
