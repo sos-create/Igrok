@@ -163,6 +163,38 @@ final class AgentBrain {
         say(reply);
     }
 
+    /** The player may suggest an action, but the bot makes the final decision. */
+    boolean considerRequest(UUID playerId, String action) {
+        if (playerId == null || action == null) return false;
+        String normalized = action.toLowerCase(Locale.ROOT);
+        // Permanent safety rules cannot be overridden by trust, permissions or personality.
+        if (normalized.contains("tnt") || normalized.contains("динамит")
+                || normalized.contains("подж") || normalized.contains("взорв")) return false;
+        if (plugin.getConfig().getBoolean("autonomy.refuse-all-player-orders", false)) return false;
+
+        int trust = memory.trust(playerId);
+        double willingness = 0.28 + personality.sociability() * 0.24
+                + personality.patience() * 0.12 + Math.max(-5, Math.min(5, trust)) * 0.055;
+        // Busy, risky or disruptive requests are less likely to be accepted.
+        if (goal != GoalPlanner.Goal.IDLE && !normalized.contains("останов")) willingness -= 0.20;
+        if (normalized.contains("атак") || normalized.contains("напад")) willingness -= 0.16;
+        if (normalized.contains("след") || normalized.contains("иди")) willingness -= 0.04;
+        willingness = Math.max(0.05, Math.min(0.90, willingness));
+        return ThreadLocalRandom.current().nextDouble() < willingness;
+    }
+
+    String refusalReason(UUID playerId) {
+        int trust = memory.trust(playerId);
+        if (goal != GoalPlanner.Goal.IDLE) return "Нет, я уже занят своим делом и не хочу бросать его.";
+        if (trust < 0) return "Нет. Пока я тебе недостаточно доверяю.";
+        return switch (ThreadLocalRandom.current().nextInt(4)) {
+            case 0 -> "Нет, сейчас я не хочу этим заниматься.";
+            case 1 -> "Я подумал и решил отказаться. У меня есть свои планы.";
+            case 2 -> "Не сегодня. Я сам решаю, чем мне заниматься.";
+            default -> "Я понимаю просьбу, но не обязан соглашаться. В этот раз — нет.";
+        };
+    }
+
     void memoryStats(Player viewer) {
         if (viewer == null) return;
         viewer.sendMessage("§6Память: §f" + memory.rememberedPlayers() + " игроков, "
