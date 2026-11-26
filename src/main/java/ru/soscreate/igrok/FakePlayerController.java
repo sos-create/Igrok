@@ -113,8 +113,15 @@ final class FakePlayerController {
             server.getPlayerList().placeNewPlayer(networkConnection, created, cookie);
             created.restoreFakeListener();
             applySafeChunkDistances(bukkitBot);
-            // Position was set before registration. A second teleport here is redundant
-            // and would recalculate player tracking for no benefit.
+            // Paper's login registration may place a new offline player at the world's
+            // spawn position even though setPos was called before registration. Restore
+            // the already-validated target only after PlayerList has finished registration.
+            // The constructor already carries the 2-chunk ClientInformation, so this
+            // relocation cannot request the server's full default view radius.
+            if (!created.teleportTo(level, location.getX(), location.getY(), location.getZ(),
+                    java.util.Set.of(), location.getYaw(), location.getPitch(), false)) {
+                throw new IllegalStateException("Paper refused the validated Igrok spawn position");
+            }
             created.setHealth(created.getMaxHealth());
 
             if (!loadInventory(bukkitBot)) {
