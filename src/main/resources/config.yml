@@ -7,3 +7,11 @@ auto-respawn: true
 chat:
   enabled: true
   cooldown-seconds: 3
+building:
+  enabled: true
+  # Place one block every N server ticks. 2 ticks = about 10 blocks per second.
+  block-interval-ticks: 2
+  # Search for a clear, flat 9x9 area within this radius of the requester.
+  search-radius: 16
+  # Allow "Игрок, построй дом" in chat (requires igrok.build permission).
+  chat-trigger: true
