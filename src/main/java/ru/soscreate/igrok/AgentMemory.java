@@ -28,7 +28,7 @@ import java.util.zip.GZIPOutputStream;
  */
 final class AgentMemory {
     private static final int MAGIC = 0x49474D31; // IGM1
-    private static final int VERSION = 1;
+    private static final int VERSION = 2;
     private static final int MAX_PLAYERS = 128;
     private static final int MAX_HISTORY = 10;
     private static final int MAX_TEXT_CHARS = 180;
@@ -57,6 +57,7 @@ final class AgentMemory {
         long lastGreetingMinutes;
         int lastTopic;
         final int[] topics = new int[TOPIC_COUNT];
+        final int[] actions = new int[5];
         final ArrayDeque<Entry> history = new ArrayDeque<>();
     }
 
@@ -75,7 +76,7 @@ final class AgentMemory {
             try (DataInputStream in = new DataInputStream(new GZIPInputStream(Files.newInputStream(file.toPath())))) {
                 if (in.readInt() != MAGIC) throw new IOException("Invalid memory signature");
                 int version = in.readUnsignedByte();
-                if (version != VERSION) throw new IOException("Unsupported memory version " + version);
+                if (version < 1 || version > VERSION) throw new IOException("Unsupported memory version " + version);
 
                 int minedCount = readVarInt(in);
                 if (minedCount > 128) throw new IOException("Too many mined-material entries");
@@ -97,6 +98,9 @@ final class AgentMemory {
                     record.lastTopic = Math.max(0, Math.min(TOPIC_COUNT - 1, in.readUnsignedByte()));
                     for (int topic = 0; topic < TOPIC_COUNT; topic++) {
                         record.topics[topic] = readVarInt(in);
+                    }
+                    if (version >= 2) {
+                        for (int action = 0; action < record.actions.length; action++) record.actions[action] = readVarInt(in);
                     }
                     int historyCount = in.readUnsignedByte();
                     if (historyCount > MAX_HISTORY) throw new IOException("Invalid conversation history size");
@@ -182,6 +186,7 @@ final class AgentMemory {
                 writeVarLong(out, record.lastGreetingMinutes);
                 out.writeByte(record.lastTopic);
                 for (int count : record.topics) writeVarInt(out, Math.max(0, count));
+                for (int count : record.actions) writeVarInt(out, Math.max(0, count));
                 out.writeByte(record.history.size());
                 for (Entry line : record.history) {
                     out.writeBoolean(line.fromBot);
@@ -299,6 +304,33 @@ final class AgentMemory {
         if (player == null) return;
         PlayerRecord record = record(player);
         record.reputation = clamp(record.reputation + delta, -10, 10);
+    }
+
+
+    void observeAction(UUID player, String action) {
+        if (player == null || action == null) return;
+        PlayerRecord record = record(player);
+        int index = switch (action) {
+            case "build" -> 0;
+            case "mine" -> 1;
+            case "combat" -> 2;
+            case "explore" -> 3;
+            default -> 4;
+        };
+        record.actions[index] = Math.min(1_000_000, record.actions[index] + 1);
+    }
+
+    String learnedBehavior(UUID player) {
+        PlayerRecord record = players.get(player);
+        if (record == null) return "Я пока не успел изучить твой стиль игры.";
+        String[] labels = {"строить", "добывать ресурсы", "сражаться", "исследовать мир", "взаимодействовать с миром"};
+        int best = 0, total = 0;
+        for (int i = 0; i < record.actions.length; i++) {
+            total += record.actions[i];
+            if (record.actions[i] > record.actions[best]) best = i;
+        }
+        if (total == 0) return "Я пока наблюдал за тобой слишком мало, чтобы понять твой стиль игры.";
+        return "Я заметил " + total + " твоих игровых действий. Похоже, тебе больше всего нравится " + labels[best] + ".";
     }
 
     void recordMined(Material material) {
