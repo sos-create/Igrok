@@ -6,7 +6,6 @@ import net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer;
 import org.bukkit.Bukkit;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
-import org.bukkit.plugin.java.JavaPlugin;
 
 import java.util.Locale;
 import java.util.HashMap;
@@ -14,10 +13,10 @@ import java.util.Map;
 import java.util.UUID;
 
 final class ChatDialogue implements Listener {
-    private final JavaPlugin plugin;
+    private final IgrokPlugin plugin;
     private final Map<UUID, Long> lastReply = new HashMap<>();
 
-    ChatDialogue(JavaPlugin plugin) {
+    ChatDialogue(IgrokPlugin plugin) {
         this.plugin = plugin;
     }
 
