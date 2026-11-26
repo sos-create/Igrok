@@ -82,7 +82,7 @@ public final class IgrokPlugin extends JavaPlugin implements Listener {
         if (getConfig().getBoolean("auto-spawn", true)) {
             Bukkit.getScheduler().runTask(this, this::spawnWithConfiguredSkin);
         }
-        getLogger().info("Igrok 0.9.21 survival player agent enabled for Paper 1.21.4 (vanilla physics enabled).");
+        getLogger().info("Igrok 0.9.22 survival player agent enabled for Paper 1.21.4 (vanilla physics enabled).");
     }
 
     @Override
@@ -213,8 +213,43 @@ public final class IgrokPlugin extends JavaPlugin implements Listener {
     }
 
     private void finishSpawn() {
-        if (!controller.isSpawned() && !spawnAtSavedLocation()) spawnAtDefaultWorldSpawn();
-        houseBuilder.resumeSavedState(stateData);
+        if (controller.isSpawned()) return;
+        if (!spawnAtSavedLocation()) spawnAtDefaultWorldSpawn();
+    }
+
+    /**
+     * Loads the target chunk asynchronously. This is a temporary chunk access, not a
+     * force-load ticket; no server thread is blocked while terrain is read/generated.
+     */
+    private void loadSpawnChunk(Location target, boolean fallbackToWorldSpawn) {
+        if (target == null || target.getWorld() == null || !isEnabled()) return;
+        World world = target.getWorld();
+        int chunkX = target.getBlockX() >> 4;
+        int chunkZ = target.getBlockZ() >> 4;
+        world.getChunkAtAsync(chunkX, chunkZ, true).whenComplete((chunk, error) -> {
+            if (!isEnabled()) return;
+            Bukkit.getScheduler().runTask(this, () -> {
+                if (!isEnabled() || controller.isSpawned()) return;
+                if (error != null || chunk == null) {
+                    getLogger().warning("Could not asynchronously load Igrok spawn chunk at "
+                            + chunkX + ", " + chunkZ + ": " + (error == null ? "chunk unavailable" : error.getMessage()));
+                    if (fallbackToWorldSpawn) spawnAtDefaultWorldSpawn();
+                    return;
+                }
+                Location safe = findSafeSpawn(target);
+                if (safe == null) {
+                    getLogger().warning("Configured Igrok spawn is unsafe after chunk load; searching nearby safe ground.");
+                    if (fallbackToWorldSpawn) spawnAtDefaultWorldSpawn();
+                    return;
+                }
+                if (!controller.spawn(safe, getConfig().getString("bot-name", "Igrok"))) {
+                    getLogger().severe("Igrok spawn failed after the target chunk was loaded; see the preceding error.");
+                    return;
+                }
+                getLogger().info("Igrok spawned successfully in loaded chunk " + chunkX + ", " + chunkZ + ".");
+                houseBuilder.resumeSavedState(stateData);
+            });
+        });
     }
 
     private boolean spawnAtSavedLocation() {
@@ -224,17 +259,8 @@ public final class IgrokPlugin extends JavaPlugin implements Listener {
         Location saved = new Location(world, stateData.getDouble("bot.x"), stateData.getDouble("bot.y"),
                 stateData.getDouble("bot.z"), (float) stateData.getDouble("bot.yaw"),
                 (float) stateData.getDouble("bot.pitch"));
-        // Never synchronously load or generate a chunk just to restore the bot.
-        // If its old chunk is not already loaded, use the normal world spawn instead.
-        if (!world.isChunkLoaded(saved.getBlockX() >> 4, saved.getBlockZ() >> 4)) {
-            getLogger().warning("Saved Igrok position is in an unloaded chunk; using the world spawn.");
-            return false;
-        }
-        if (!isSafeSpawn(saved)) {
-            getLogger().warning("Saved Igrok position is unsafe; using the world spawn.");
-            return false;
-        }
-        return controller.spawn(saved, getConfig().getString("bot-name", "Igrok"));
+        loadSpawnChunk(saved, true);
+        return true;
     }
 
     private void savePersistentState() {
@@ -271,12 +297,31 @@ public final class IgrokPlugin extends JavaPlugin implements Listener {
         Location spawn = world.getSpawnLocation().clone();
         spawn.setX(spawn.getBlockX() + 0.5);
         spawn.setZ(spawn.getBlockZ() + 0.5);
-        if (!isSafeSpawn(spawn)) {
-            getLogger().severe("Igrok was not spawned: world spawn chunk is not loaded or the location is unsafe. "
-                    + "No chunk was force-loaded and the world was not modified.");
-            return false;
+        loadSpawnChunk(spawn, false);
+        return true;
+    }
+
+    /** Finds a safe standing position near the requested point after its chunk is loaded. */
+    private Location findSafeSpawn(Location origin) {
+        if (origin == null || origin.getWorld() == null) return null;
+        World world = origin.getWorld();
+        int baseX = origin.getBlockX();
+        int baseZ = origin.getBlockZ();
+        for (int radius = 0; radius <= 4; radius++) {
+            for (int dx = -radius; dx <= radius; dx++) {
+                for (int dz = -radius; dz <= radius; dz++) {
+                    if (Math.max(Math.abs(dx), Math.abs(dz)) != radius) continue;
+                    int x = baseX + dx;
+                    int z = baseZ + dz;
+                    if (!world.isChunkLoaded(x >> 4, z >> 4)) continue;
+                    int y = world.getHighestBlockYAt(x, z) + 1;
+                    Location candidate = new Location(world, x + 0.5, y, z + 0.5,
+                            origin.getYaw(), origin.getPitch());
+                    if (isSafeSpawn(candidate)) return candidate;
+                }
+            }
         }
-        return controller.spawn(spawn, getConfig().getString("bot-name", "Igrok"));
+        return null;
     }
 
     private boolean isSafeSpawn(Location location) {
