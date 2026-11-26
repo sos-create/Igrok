@@ -8,19 +8,36 @@ import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
 import org.bukkit.plugin.IllegalPluginAccessException;
+import org.bukkit.scheduler.BukkitTask;
 
+import java.util.HashMap;
 import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
-import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ThreadLocalRandom;
 import java.util.regex.Pattern;
 
-/** Filters addressed chat, sends it to the cognition layers and publishes replies. */
+/** Filters addressed chat, coalesces bursts, and handles one delayed thought per player. */
 final class ChatDialogue implements Listener {
     private static final int MAX_CHAT_CHARS = 256;
+    private static final long DUPLICATE_WINDOW_MILLIS = 60_000L;
+
+    private static final class PendingMessage {
+        private String message;
+        private BukkitTask task;
+
+        private PendingMessage(String message) {
+            this.message = message;
+        }
+    }
+
     private final IgrokPlugin plugin;
-    private final Map<UUID, Long> lastReply = new ConcurrentHashMap<>();
-    private final Map<UUID, CognitiveNetwork.Analysis> pendingThoughts = new ConcurrentHashMap<>();
+    private final Map<UUID, Long> lastReply = new HashMap<>();
+    private final Map<UUID, String> lastIncomingFingerprint = new HashMap<>();
+    private final Map<UUID, Long> lastIncomingAt = new HashMap<>();
+    private final Map<UUID, PendingMessage> pendingMessages = new HashMap<>();
+    private final Map<UUID, Long> lastBotQuestionAt = new HashMap<>();
+    private final Map<UUID, CognitiveNetwork.Analysis> pendingThoughts = new HashMap<>();
     private final DialogueComposer composer;
 
     ChatDialogue(IgrokPlugin plugin) {
@@ -36,10 +53,64 @@ final class ChatDialogue implements Listener {
                 ? raw.substring(0, MAX_CHAT_CHARS) : raw;
         UUID senderId = event.getPlayer().getUniqueId();
         try {
-            Bukkit.getScheduler().runTask(plugin, () -> processMessage(senderId, safeMessage));
+            // Config, queues and Bukkit entities are accessed only on the main thread.
+            Bukkit.getScheduler().runTask(plugin, () -> queueMessage(senderId, safeMessage));
         } catch (IllegalPluginAccessException ignored) {
-            // The server is shutting down; do not schedule work on a disabled plugin.
+            // The server is shutting down.
         }
+    }
+
+    private void queueMessage(UUID senderId, String rawMessage) {
+        if (!plugin.isEnabled() || rawMessage == null || rawMessage.isBlank()) return;
+        long now = System.currentTimeMillis();
+        String fingerprint = fingerprint(rawMessage);
+        String previousFingerprint = lastIncomingFingerprint.get(senderId);
+        long previousAt = lastIncomingAt.getOrDefault(senderId, 0L);
+        if (fingerprint.equals(previousFingerprint) && now - previousAt < DUPLICATE_WINDOW_MILLIS) return;
+
+        lastIncomingFingerprint.put(senderId, fingerprint);
+        lastIncomingAt.put(senderId, now);
+        if (lastIncomingFingerprint.size() > 512) {
+            lastIncomingFingerprint.entrySet().removeIf(entry ->
+                    now - lastIncomingAt.getOrDefault(entry.getKey(), 0L) > 300_000L);
+            lastIncomingAt.keySet().retainAll(lastIncomingFingerprint.keySet());
+        }
+
+        PendingMessage pending = pendingMessages.get(senderId);
+        if (pending != null) {
+            // Several rapid messages become one thought; process only the latest text.
+            pending.message = rawMessage;
+            return;
+        }
+
+        int minDelay = Math.max(1, plugin.getConfig().getInt("chat.reply-delay-min-seconds", 20));
+        int maxDelay = Math.max(minDelay, plugin.getConfig().getInt("chat.reply-delay-max-seconds", 30));
+        int delaySeconds = ThreadLocalRandom.current().nextInt(minDelay, maxDelay + 1);
+        PendingMessage created = new PendingMessage(rawMessage);
+        pendingMessages.put(senderId, created);
+        try {
+            created.task = Bukkit.getScheduler().runTaskLater(plugin, () -> {
+                PendingMessage queued = pendingMessages.remove(senderId);
+                if (queued != created || !plugin.isEnabled()) return;
+                processMessage(senderId, queued.message);
+            }, delaySeconds * 20L);
+        } catch (IllegalPluginAccessException ignored) {
+            pendingMessages.remove(senderId);
+        }
+    }
+
+    void shutdown() {
+        for (PendingMessage pending : pendingMessages.values()) {
+            if (pending.task != null) pending.task.cancel();
+        }
+        pendingMessages.clear();
+        pendingThoughts.clear();
+        lastBotQuestionAt.clear();
+    }
+
+    private String fingerprint(String message) {
+        return message.toLowerCase(Locale.ROOT).replace('ё', 'е')
+                .replaceAll("[\\p{Punct}\\s]+", " ").trim();
     }
 
     private void processMessage(UUID senderId, String rawMessage) {
@@ -49,8 +120,7 @@ final class ChatDialogue implements Listener {
             plugin.reportRuntimeError("chat-processing", error);
             Player sender = Bukkit.getPlayer(senderId);
             if (sender != null) {
-                sender.sendMessage("§6Igrok§7: §fНе смог безопасно обработать это сообщение. "
-                        + "Я остановил действие и попробую снова позже.");
+                sender.sendMessage("§6Igrok§7: §fНе смог безопасно обработать это сообщение. Я остановил действие.");
             }
         }
     }
@@ -69,15 +139,16 @@ final class ChatDialogue implements Listener {
         boolean addressed = mentionsBot(message, plugin.getConfig().getString("bot-name", "Igrok"));
         long followUpMillis = Math.max(10L,
                 plugin.getConfig().getLong("chat.follow-up-window-seconds", 90)) * 1000L;
-        boolean continuation = plugin.brain().memory().isConversationActive(senderId, followUpMillis)
+        long questionAt = lastBotQuestionAt.getOrDefault(senderId, 0L);
+        boolean continuation = questionAt > 0L && System.currentTimeMillis() - questionAt <= followUpMillis
                 && isConversationalFollowUp(message);
         if (!addressed && !continuation) return;
+        if (continuation) lastBotQuestionAt.remove(senderId);
 
         long now = System.currentTimeMillis();
         if (pendingThoughts.size() > 512) pendingThoughts.keySet().removeIf(id -> Bukkit.getPlayer(id) == null);
-        if (pendingThoughts.size() > 1024) pendingThoughts.clear();
         if (lastReply.size() > 512) lastReply.entrySet().removeIf(entry -> now - entry.getValue() > 300_000L);
-        long cooldown = Math.max(1L, plugin.getConfig().getLong("chat.cooldown-seconds", 2)) * 1000L;
+        long cooldown = Math.max(1L, plugin.getConfig().getLong("chat.cooldown-seconds", 20)) * 1000L;
         if (now - lastReply.getOrDefault(senderId, 0L) < cooldown) return;
         lastReply.put(senderId, now);
 
@@ -113,7 +184,7 @@ final class ChatDialogue implements Listener {
             default -> sender.hasPermission("igrok.control");
         };
         if (!permitted) {
-            sendReply(id, "Я услышал просьбу, но у тебя нет разрешения на такие действия. Можем пока просто поговорить.");
+            sendReply(id, "Я услышал просьбу, но у тебя нет разрешения на такие действия. Можем пока поговорить.");
             return;
         }
         if (!plugin.brain().considerRequest(id, action)) {
@@ -161,6 +232,8 @@ final class ChatDialogue implements Listener {
 
     private void sendReply(UUID playerId, String response) {
         plugin.brain().rememberBotMessage(playerId, response);
+        if (response.contains("?")) lastBotQuestionAt.put(playerId, System.currentTimeMillis());
+        else lastBotQuestionAt.remove(playerId);
         Bukkit.broadcast(Component.text("Igrok: " + response));
     }
 }

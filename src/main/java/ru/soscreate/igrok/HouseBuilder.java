@@ -1,6 +1,8 @@
 package ru.soscreate.igrok;
 
 import org.bukkit.Bukkit;
+import org.bukkit.FluidCollisionMode;
+import org.bukkit.GameMode;
 import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.World;
@@ -14,6 +16,8 @@ import org.bukkit.entity.Player;
 import org.bukkit.event.block.BlockPlaceEvent;
 import org.bukkit.inventory.EquipmentSlot;
 import org.bukkit.inventory.ItemStack;
+import org.bukkit.util.RayTraceResult;
+import org.bukkit.util.Vector;
 import org.bukkit.scheduler.BukkitTask;
 
 import java.util.ArrayList;
@@ -44,6 +48,9 @@ final class HouseBuilder {
     private Material wallMaterial = Material.OAK_PLANKS;
     private Material glassMaterial;
     private Material doorMaterial;
+    private AgentNavigator navigator;
+    private Location workStandPosition;
+    private int navigationFailures;
 
     HouseBuilder(IgrokPlugin plugin) {
         this.plugin = plugin;
@@ -77,6 +84,9 @@ final class HouseBuilder {
             return;
         }
         actor = bot;
+        navigator = new AgentNavigator(actor);
+        workStandPosition = null;
+        navigationFailures = 0;
         wallMaterial = materialOr(data.getString("builder.wall-material", ""), Material.OAK_PLANKS);
         glassMaterial = optionalMaterial(data.getString("builder.glass-material", ""));
         doorMaterial = optionalMaterial(data.getString("builder.door-material", ""));
@@ -116,6 +126,9 @@ final class HouseBuilder {
         Player chosenActor = plugin.controller().bukkitPlayer();
         if (chosenActor == null || !chosenActor.isOnline()) return false;
         actor = chosenActor;
+        navigator = new AgentNavigator(actor);
+        workStandPosition = null;
+        navigationFailures = 0;
         choosePalette();
         plan.clear();
         createCabinPlan();
@@ -143,6 +156,8 @@ final class HouseBuilder {
         task.cancel();
         task = null;
         plan.clear();
+        workStandPosition = null;
+        if (navigator != null) navigator.stop();
         if (announce) say("Остановил строительство. Уже поставленные блоки оставлены на месте.");
     }
 
@@ -183,7 +198,9 @@ final class HouseBuilder {
                 task.cancel();
                 task = null;
             }
+            if (navigator != null) navigator.stop();
             plan.clear();
+            workStandPosition = null;
         }
     }
 
@@ -224,6 +241,43 @@ final class HouseBuilder {
             stopForSafety("Строительство остановлено: место для следующего блока занято.");
             return;
         }
+        if (actor.getGameMode() != GameMode.SURVIVAL) {
+            stopForSafety("Строительство остановлено: бот должен находиться в режиме выживания.");
+            return;
+        }
+
+        // A normal survival player must physically reach the block and have line of sight.
+        if (!withinPlacementReach(target)) {
+            if (navigator == null) navigator = new AgentNavigator(actor);
+            if (workStandPosition == null || !isSafeStandingSpot(workStandPosition)) {
+                workStandPosition = findBuildStandPosition(target);
+                navigationFailures = 0;
+            }
+            if (workStandPosition == null) {
+                stopForSafety("Не нашёл безопасное место, откуда можно поставить следующий блок.");
+                return;
+            }
+            if (actor.getLocation().distanceSquared(workStandPosition) > 0.64) {
+                boolean moving = navigator.moveTo(workStandPosition);
+                if (!moving && actor.getLocation().distanceSquared(workStandPosition) > 0.64) {
+                    navigationFailures++;
+                    if (navigationFailures > 50) {
+                        stopForSafety("Не смог дойти до места строительства; удалённая установка блоков запрещена.");
+                    }
+                } else {
+                    navigationFailures = 0;
+                }
+                return;
+            }
+            if (!withinPlacementReach(target)) {
+                workStandPosition = null;
+                navigationFailures++;
+                if (navigationFailures > 12) {
+                    stopForSafety("Не удалось подойти к блоку с доступной стороны.");
+                }
+                return;
+            }
+        }
 
         BlockPlaceEvent event = new BlockPlaceEvent(target, target.getState(),
                 target.getRelative(BlockFace.DOWN), new ItemStack(step.material()),
@@ -239,6 +293,8 @@ final class HouseBuilder {
         if (step.consumeItem()) consumeOne(actor, step.material());
         cursor++;
         placed++;
+        workStandPosition = null;
+        navigationFailures = 0;
         if (cursor >= plan.size()) finish();
     }
 
@@ -276,6 +332,73 @@ final class HouseBuilder {
         }
     }
 
+    private boolean withinPlacementReach(Block target) {
+        Location center = target.getLocation().add(0.5, 0.5, 0.5);
+        return actor.getEyeLocation().distanceSquared(center) <= 4.5 * 4.5
+                && actor.hasLineOfSight(center);
+    }
+
+    private Location findBuildStandPosition(Block target) {
+        if (navigator == null) navigator = new AgentNavigator(actor);
+        World world = target.getWorld();
+        Location center = target.getLocation().add(0.5, 0.5, 0.5);
+        Location current = actor.getLocation();
+        Location best = null;
+        double bestScore = Double.POSITIVE_INFINITY;
+        for (int radius = 1; radius <= 4; radius++) {
+            for (int dx = -radius; dx <= radius; dx++) {
+                for (int dz = -radius; dz <= radius; dz++) {
+                    if (Math.max(Math.abs(dx), Math.abs(dz)) != radius) continue;
+                    for (int dy = -1; dy <= 3; dy++) {
+                        Location candidate = new Location(world, target.getX() + dx + 0.5,
+                                target.getY() + dy, target.getZ() + dz + 0.5,
+                                current.getYaw(), 0.0F);
+                        if (!isSafeStandingSpot(candidate)) continue;
+                        Location eye = candidate.clone().add(0.0, 1.62, 0.0);
+                        Vector direction = center.toVector().subtract(eye.toVector());
+                        double distance = direction.length();
+                        if (distance < 0.1 || distance > 4.5) continue;
+                        RayTraceResult hit = world.rayTraceBlocks(eye, direction.normalize(), distance,
+                                FluidCollisionMode.NEVER, true);
+                        if (hit != null && hit.getHitBlock() != null) continue;
+                        double score = current.distanceSquared(candidate) + distance * 0.15;
+                        if (score < bestScore) {
+                            bestScore = score;
+                            best = candidate;
+                        }
+                    }
+                }
+            }
+        }
+        return best;
+    }
+
+    private boolean isSafeStandingSpot(Location location) {
+        if (location == null || location.getWorld() == null) return false;
+        World world = location.getWorld();
+        int x = location.getBlockX();
+        int y = location.getBlockY();
+        int z = location.getBlockZ();
+        if (y <= world.getMinHeight() || y + 1 >= world.getMaxHeight()
+                || !world.isChunkLoaded(x >> 4, z >> 4)
+                || !world.getWorldBorder().isInside(location)) return false;
+        if (navigator != null && !navigator.canStandAt(location)) return false;
+        Block feet = world.getBlockAt(x, y, z);
+        Block head = world.getBlockAt(x, y + 1, z);
+        Block floor = world.getBlockAt(x, y - 1, z);
+        return feet.isPassable() && head.isPassable() && !feet.isLiquid() && !head.isLiquid()
+                && !isHazard(feet.getType()) && !isHazard(head.getType())
+                && floor.getType().isSolid() && !floor.isLiquid() && !isHazard(floor.getType());
+    }
+
+    private boolean isHazard(Material material) {
+        return switch (material) {
+            case FIRE, SOUL_FIRE, MAGMA_BLOCK, CACTUS, CAMPFIRE, SOUL_CAMPFIRE,
+                    WITHER_ROSE, SWEET_BERRY_BUSH, POWDER_SNOW, POINTED_DRIPSTONE -> true;
+            default -> false;
+        };
+    }
+
     private void stopForSafety(String message) {
         cancel(false);
         say(message + " Уже поставленные блоки не удалял.");
@@ -286,19 +409,21 @@ final class HouseBuilder {
         task = null;
         completed = true;
         plan.clear();
+        workStandPosition = null;
+        if (navigator != null) navigator.stop();
         say("Дом готов! Я построил убежище из " + placed + " блоков, потратив собственные ресурсы.");
     }
 
     private Location findSite(Location anchor) {
         World world = anchor.getWorld();
-        int radius = Math.max(10, Math.min(24, plugin.getConfig().getInt("building.search-radius", 16)));
+        int radius = Math.max(8, Math.min(12, plugin.getConfig().getInt("building.search-radius", 10)));
         int originX = anchor.getBlockX();
         int originZ = anchor.getBlockZ();
         List<int[]> offsets = new ArrayList<>();
         for (int dx = -radius; dx <= radius; dx += 2) {
             for (int dz = -radius; dz <= radius; dz += 2) {
                 int distanceSquared = dx * dx + dz * dz;
-                if (distanceSquared >= 64 && distanceSquared <= radius * radius) {
+                if (distanceSquared >= 36 && distanceSquared <= radius * radius) {
                     offsets.add(new int[]{dx, dz, distanceSquared});
                 }
             }

@@ -119,7 +119,7 @@ final class AgentNavigator {
             if (feet.getRelative(0, 1, 0).isPassable()
                     && feet.getRelative(0, 2, 0).isPassable()) vertical = 0.42;
         }
-        bot.setVelocity(new Vector(dx * 0.20, vertical, dz * 0.20));
+        bot.setVelocity(new Vector(dx * 0.12, vertical, dz * 0.12));
 
         Location now = bot.getLocation();
         if (previousPosition != null && now.distanceSquared(previousPosition) < 0.0025) {
@@ -226,7 +226,7 @@ final class AgentNavigator {
         Node found = null;
         int expanded = 0;
 
-        while (!open.isEmpty() && expanded < 900) {
+        while (!open.isEmpty() && expanded < 450) {
             OpenNode current = open.poll();
             if (current.g() > costs.getOrDefault(current.node(), Double.POSITIVE_INFINITY)) continue;
             if (current.node().equals(requestedGoal)) {
@@ -239,8 +239,8 @@ final class AgentNavigator {
                 for (int dy = 1; dy >= -1; dy--) {
                     Node candidate = new Node(current.node().x() + dir[0],
                             current.node().y() + dy, current.node().z() + dir[1]);
-                    if (Math.abs(candidate.x() - start.x()) > 24
-                            || Math.abs(candidate.z() - start.z()) > 24
+                    if (Math.abs(candidate.x() - start.x()) > 20
+                            || Math.abs(candidate.z() - start.z()) > 20
                             || !standable(world, candidate)) continue;
                     if (dir[0] != 0 && dir[1] != 0) {
                         Node sideA = new Node(current.node().x() + dir[0], current.node().y(), current.node().z());
