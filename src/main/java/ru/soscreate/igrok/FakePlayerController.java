@@ -31,6 +31,7 @@ import java.util.UUID;
 final class FakePlayerController {
     private final IgrokPlugin plugin;
     private IgrokServerPlayer bot;
+    private EmbeddedChannel fakeChannel;
 
     FakePlayerController(IgrokPlugin plugin) {
         this.plugin = plugin;
@@ -53,6 +54,8 @@ final class FakePlayerController {
             return false;
         }
         IgrokServerPlayer created = null;
+        EmbeddedChannel channel = null;
+        IgrokServerPlayer created = null;
         try {
             MinecraftServer server = ((CraftServer) Bukkit.getServer()).getServer();
             ServerLevel level = ((CraftWorld) location.getWorld()).getHandle();
@@ -69,14 +72,21 @@ final class FakePlayerController {
             created.setXRot(location.getPitch());
             created.setYHeadRot(location.getYaw());
 
+            // A fake player has no client that needs a large terrain view. Keeping the
+            // default server view distance makes Paper queue hundreds of chunks around
+            // this NPC, needlessly stressing the server and exposing unrelated bad chunk
+            // data far from the bot. Restrict it before registration and re-apply after
+            // PlayerList installs the initial client settings.
+            Player bukkitBot = created.getBukkitEntity();
+            applySafeChunkDistances(bukkitBot);
             server.getPlayerList().placeNewPlayer(networkConnection, created,
                     CommonListenerCookie.createInitial(profile, false));
             created.restoreFakeListener();
+            applySafeChunkDistances(bukkitBot);
             created.teleportTo(level, location.getX(), location.getY(), location.getZ(),
                     java.util.Set.of(), location.getYaw(), location.getPitch(), false);
             created.setHealth(created.getMaxHealth());
 
-            Player bukkitBot = created.getBukkitEntity();
             if (!loadInventory(bukkitBot)) {
                 bukkitBot.getInventory().setItem(0, new ItemStack(Material.STONE_AXE));
                 bukkitBot.getInventory().setItem(1, new ItemStack(Material.STONE_PICKAXE));
@@ -86,6 +96,7 @@ final class FakePlayerController {
             }
 
             bot = created;
+            fakeChannel = channel;
             plugin.getLogger().info("Igrok spawned at " + location.getWorld().getName()
                     + " " + location.getBlockX() + " " + location.getBlockY() + " " + location.getBlockZ());
             return true;
@@ -105,10 +116,24 @@ final class FakePlayerController {
                     } catch (Throwable ignored) { }
                 }
             }
+            if (channel != null) {
+                try { channel.finishAndReleaseAll(); }
+                catch (Throwable cleanupError) {
+                    plugin.getLogger().warning("Could not close failed Igrok channel: " + cleanupError.getMessage());
+                }
+            }
             plugin.getLogger().severe("Could not spawn Igrok: " + error.getMessage());
             error.printStackTrace();
             return false;
         }
+    }
+
+    private void applySafeChunkDistances(Player player) {
+        // Paper accepts values from 2 to 32. Two chunks are enough for the bot's
+        // local sensing radius while avoiding a 15-32 chunk load radius for an NPC.
+        player.setViewDistance(2);
+        player.setSendViewDistance(2);
+        player.setSimulationDistance(2);
     }
 
     void saveInventory() {
@@ -176,6 +201,15 @@ final class FakePlayerController {
         } catch (Throwable error) {
             plugin.getLogger().warning("Could not cleanly remove Igrok: " + error.getMessage());
             current.remove(net.minecraft.world.entity.Entity.RemovalReason.DISCARDED);
+        } finally {
+            EmbeddedChannel channel = fakeChannel;
+            fakeChannel = null;
+            if (channel != null) {
+                try { channel.finishAndReleaseAll(); }
+                catch (Throwable error) {
+                    plugin.getLogger().warning("Could not close Igrok channel: " + error.getMessage());
+                }
+            }
         }
     }
 }
