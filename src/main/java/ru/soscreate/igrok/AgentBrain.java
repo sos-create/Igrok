@@ -217,10 +217,10 @@ final class AgentBrain {
                 World world = bot.getWorld();
                 if (world.isChunkLoaded(candidate.getBlockX() >> 4, candidate.getBlockZ() >> 4)) {
                     int y = world.getHighestBlockYAt(candidate.getBlockX(), candidate.getBlockZ());
-                    Block floor = world.getBlockAt(candidate.getBlockX(), y, candidate.getBlockZ());
-                    if (floor.getType().isSolid() && !floor.isLiquid()
-                            && floor.getRelative(0, 1, 0).isPassable() && floor.getRelative(0, 2, 0).isPassable()) {
-                        idleWanderTarget = new Location(world, candidate.getBlockX() + 0.5, y + 1.0, candidate.getBlockZ() + 0.5);
+                    Location wander = new Location(world, candidate.getBlockX() + 0.5, y + 1.0,
+                            candidate.getBlockZ() + 0.5);
+                    if (navigator.canStandAt(wander)) {
+                        idleWanderTarget = wander;
                         state = "Решил немного прогуляться"; return;
                     }
                 }
@@ -557,16 +557,16 @@ final class AgentBrain {
                 Vector away = bot.getLocation().toVector().subtract(target.toVector());
                 away.setY(0);
                 if (away.lengthSquared() > 0.001) {
-                    away.normalize().multiply(0.16);
-                    bot.setVelocity(new Vector(away.getX(), bot.isOnGround() ? 0.0 : bot.getVelocity().getY(), away.getZ()));
+                    away.normalize();
+                    navigator.moveVector(away, 0.16);
                 }
             } else if (tickCounter < combatMoveUntilTick) {
                 Vector toward = target.toVector().subtract(bot.getLocation().toVector());
                 toward.setY(0);
                 if (toward.lengthSquared() > 0.001) {
                     toward.normalize();
-                    Vector side = new Vector(-toward.getZ(), 0, toward.getX()).multiply(0.14 * combatStrafeDirection);
-                    bot.setVelocity(new Vector(side.getX(), bot.isOnGround() ? 0.0 : bot.getVelocity().getY(), side.getZ()));
+                    Vector side = new Vector(-toward.getZ(), 0, toward.getX()).multiply(combatStrafeDirection);
+                    navigator.moveVector(side, 0.14);
                 }
             }
             state = "Маневрирую в бою с " + threat.getName();
@@ -837,10 +837,7 @@ final class AgentBrain {
                 Block floor = bot.getWorld().getBlockAt(x, y - 1, z);
                 Block feet = bot.getWorld().getBlockAt(x, y, z);
                 Block head = bot.getWorld().getBlockAt(x, y + 1, z);
-                if (floor.getType().isSolid() && !floor.isLiquid()
-                        && feet.isPassable() && !feet.isLiquid()
-                        && head.isPassable() && !head.isLiquid()
-                        && !isLearnedDanger(candidate)) {
+                if (navigator.canStandAt(candidate) && !isLearnedDanger(candidate)) {
                     exploreTarget = candidate;
                     break;
                 }

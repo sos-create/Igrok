@@ -23,6 +23,9 @@ import org.bukkit.configuration.file.YamlConfiguration;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
+import java.util.List;
+import java.util.concurrent.atomic.AtomicBoolean;
+import com.destroystokyo.paper.profile.ProfileProperty;
 
 public final class IgrokPlugin extends JavaPlugin implements Listener {
     private FakePlayerController controller;
@@ -37,6 +40,8 @@ public final class IgrokPlugin extends JavaPlugin implements Listener {
     private BukkitTask stateSaveTask;
     private BukkitTask cognitionSaveTask;
     private BukkitTask inventorySaveTask;
+    private BukkitTask skinFallbackTask;
+    private boolean spawnDecisionMade;
     private File stateFile;
     private YamlConfiguration stateData;
     private final Map<UUID, Long> lastExplorationObservation = new HashMap<>();
@@ -63,10 +68,7 @@ public final class IgrokPlugin extends JavaPlugin implements Listener {
         inventorySaveTask = Bukkit.getScheduler().runTaskTimer(this, controller::saveInventory, 6000L, 6000L);
 
         if (getConfig().getBoolean("auto-spawn", true)) {
-            Bukkit.getScheduler().runTask(this, () -> {
-                if (!controller.isSpawned() && !spawnAtSavedLocation()) spawnAtDefaultWorldSpawn();
-                houseBuilder.resumeSavedState(stateData);
-            });
+            Bukkit.getScheduler().runTask(this, this::spawnWithConfiguredSkin);
         }
         getLogger().info("Igrok 0.9.10 autonomous survival agent enabled for Paper 1.21.4.");
     }
@@ -74,6 +76,8 @@ public final class IgrokPlugin extends JavaPlugin implements Listener {
     @Override
     public void onDisable() {
         if (respawnTask != null) respawnTask.cancel();
+        if (skinFallbackTask != null) skinFallbackTask.cancel();
+        spawnDecisionMade = true;
         if (brainTask != null) brainTask.cancel();
         if (stateSaveTask != null) stateSaveTask.cancel();
         if (cognitionSaveTask != null) cognitionSaveTask.cancel();
@@ -87,6 +91,90 @@ public final class IgrokPlugin extends JavaPlugin implements Listener {
         if (controller != null) controller.remove();
     }
 
+
+    private void spawnWithConfiguredSkin() {
+        String skinOwner = getConfig().getString("skin-owner", "").trim();
+        if (skinOwner.isBlank()) {
+            controller.setSkinProperties(List.of());
+            finishSpawn();
+            return;
+        }
+
+        final org.bukkit.profile.PlayerProfile lookupProfile;
+        try {
+            lookupProfile = Bukkit.createProfile(skinOwner);
+        } catch (IllegalArgumentException error) {
+            getLogger().warning("Invalid skin-owner '" + skinOwner + "'. Using the standard Minecraft skin: "
+                    + error.getMessage());
+            controller.setSkinProperties(List.of());
+            finishSpawn();
+            return;
+        }
+
+        AtomicBoolean decided = new AtomicBoolean(false);
+        // Never hold up server startup waiting for Mojang profile services.
+        skinFallbackTask = Bukkit.getScheduler().runTaskLater(this, () -> {
+            if (!decided.compareAndSet(false, true)) return;
+            spawnDecisionMade = true;
+            getLogger().warning("Skin lookup for '" + skinOwner
+                    + "' timed out after 5 seconds; spawning with the standard Minecraft skin.");
+            controller.setSkinProperties(List.of());
+            finishSpawn();
+        }, 100L);
+
+        try {
+            lookupProfile.update().whenComplete((updated, error) -> {
+                if (!isEnabled()) return;
+                Bukkit.getScheduler().runTask(this, () -> {
+                    if (!isEnabled() || !decided.compareAndSet(false, true)) return;
+                    spawnDecisionMade = true;
+                    if (skinFallbackTask != null) {
+                        skinFallbackTask.cancel();
+                        skinFallbackTask = null;
+                    }
+
+                    List<ProfileProperty> textures = List.of();
+                    if (error == null
+                            && updated instanceof com.destroystokyo.paper.profile.PlayerProfile paperProfile) {
+                        textures = paperProfile.getProperties().stream()
+                                .filter(property -> "textures".equals(property.getName()))
+                                .filter(property -> property.getValue() != null && !property.getValue().isBlank())
+                                .filter(property -> property.getSignature() != null
+                                        && !property.getSignature().isBlank())
+                                .toList();
+                    } else if (error != null) {
+                        getLogger().warning("Could not resolve skin for '" + skinOwner + "': "
+                                + error.getMessage());
+                    }
+                    if (textures.isEmpty()) {
+                        getLogger().warning("No signed Minecraft skin texture found for '" + skinOwner
+                                + "'. Using the standard Minecraft skin.");
+                    } else {
+                        getLogger().info("Loaded signed Minecraft skin texture from '" + skinOwner + "'.");
+                    }
+                    controller.setSkinProperties(textures);
+                    finishSpawn();
+                });
+            });
+        } catch (Throwable error) {
+            if (decided.compareAndSet(false, true)) {
+                spawnDecisionMade = true;
+                if (skinFallbackTask != null) {
+                    skinFallbackTask.cancel();
+                    skinFallbackTask = null;
+                }
+                getLogger().warning("Could not start skin lookup for '" + skinOwner + "': "
+                        + error.getMessage() + ". Using the standard Minecraft skin.");
+                controller.setSkinProperties(List.of());
+                finishSpawn();
+            }
+        }
+    }
+
+    private void finishSpawn() {
+        if (!controller.isSpawned() && !spawnAtSavedLocation()) spawnAtDefaultWorldSpawn();
+        houseBuilder.resumeSavedState(stateData);
+    }
 
     private boolean spawnAtSavedLocation() {
         String worldName = stateData.getString("bot.world", "");
@@ -163,7 +251,16 @@ public final class IgrokPlugin extends JavaPlugin implements Listener {
         org.bukkit.block.Block head = world.getBlockAt(x, y + 1, z);
         org.bukkit.block.Block floor = world.getBlockAt(x, y - 1, z);
         return feet.isPassable() && head.isPassable() && !feet.isLiquid()
-                && !head.isLiquid() && floor.getType().isSolid() && !floor.isLiquid();
+                && !head.isLiquid() && !isHazardBlock(feet.getType()) && !isHazardBlock(head.getType())
+                && floor.getType().isSolid() && !floor.isLiquid() && !isHazardBlock(floor.getType());
+    }
+
+    private boolean isHazardBlock(org.bukkit.Material material) {
+        return switch (material) {
+            case FIRE, SOUL_FIRE, MAGMA_BLOCK, CACTUS, CAMPFIRE, SOUL_CAMPFIRE,
+                    WITHER_ROSE, SWEET_BERRY_BUSH, POWDER_SNOW, POINTED_DRIPSTONE -> true;
+            default -> false;
+        };
     }
 
     @EventHandler

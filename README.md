@@ -1,4 +1,4 @@
-# Igrok 0.9.10
+# Igrok 0.9.11
 
 Paper 1.21.4 server-side player agent (Java 21). Igrok is a lightweight autonomous survival agent built around a fake server-side Player, bounded pathfinding, utility-based goals, associative cognition and compact persistent memory.
 
@@ -29,6 +29,14 @@ This is an algorithmic simulation. It does not provide human-level intelligence,
 - Inventory, equipment, food, health, XP and player position/task state are persisted separately. Inventory is saved every five minutes and on normal shutdown.
 - Scans for furnaces, chests, crops, beds and crafting are throttled; pathfinding is bounded and only reads already-loaded chunks.
 
+## Player appearance and safe movement
+
+- The fake player receives a two-chunk client view distance in the ServerPlayer constructor, before PlayerList registers it and creates chunk tickets.
+- The same restricted ClientInformation is used by the fake packet listener and the PlayerList login cookie. Post-registration Bukkit limits are a second guard, not the primary restriction.
+- An optional signed Mojang skin can be selected with skin-owner in config.yml. Lookup is asynchronous and has a five-second startup fallback; a slow skin service never blocks server startup.
+- Pathfinding only examines already-loaded chunks, revalidates waypoints before movement, rejects common damaging blocks and checks combat sidesteps against safe ground.
+- The initial spawn and exploration destinations reject common damaging surfaces.
+
 ## Chat and commands
 
 - Igrok replies when addressed by its configured name or Игрок; recent direct conversation can continue without repeating the name.
@@ -44,6 +52,6 @@ Commands:
 
 ## Notes
 
-The plugin is compiled against Paper 1.21.4. A successful CI build verifies source compilation and artifact packaging, but actual movement, crop interaction, furnace behavior and protection-plugin compatibility must still be tested on the target live server.
+The plugin is compiled against Paper 1.21.4. Version 0.9.11 corrects the ServerPlayer constructor settings; the 0.9.10 post-login-only distance restriction was insufficient by itself. A successful CI build verifies source compilation and artifact packaging, but actual movement, crop interaction, furnace behavior and protection-plugin compatibility must still be tested on the target live server.
 
 The fake-player architecture is adapted from https://github.com/skylhcss/my-bot-mod, distributed under MIT; see UPSTREAM-LICENSE.

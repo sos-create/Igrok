@@ -1,4 +1,7 @@
-# Igrok 0.9.10 configuration
+# Igrok 0.9.11 configuration
+# Optional Mojang account name whose signed player skin Igrok should use.
+# Leave empty to use the standard Steve/Alex fallback skin.
+skin-owner: ""
 bot-name: Igrok
 spawn-world: ""
 auto-spawn: true
