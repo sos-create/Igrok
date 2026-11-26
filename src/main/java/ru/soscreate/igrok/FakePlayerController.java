@@ -13,8 +13,8 @@ import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ClientInformation;
 import net.minecraft.server.network.CommonListenerCookie;
 import org.bukkit.Bukkit;
+import org.bukkit.GameMode;
 import org.bukkit.Location;
-import org.bukkit.Material;
 import org.bukkit.craftbukkit.CraftServer;
 import org.bukkit.craftbukkit.CraftWorld;
 import org.bukkit.entity.Player;
@@ -122,14 +122,23 @@ final class FakePlayerController {
                     java.util.Set.of(), location.getYaw(), location.getPitch(), false)) {
                 throw new IllegalStateException("Paper refused the validated Igrok spawn position");
             }
+            // Ordinary survival identity: no operator, creative mode, invulnerability or starter kit.
+            bukkitBot.setOp(false);
+            bukkitBot.setGameMode(GameMode.SURVIVAL);
+            bukkitBot.setInvulnerable(false);
+            bukkitBot.setAllowFlight(false);
+            bukkitBot.setCanPickupItems(true);
+            bukkitBot.setCollidable(true);
             created.setHealth(created.getMaxHealth());
 
             if (!loadInventory(bukkitBot)) {
-                bukkitBot.getInventory().setItem(0, new ItemStack(Material.STONE_AXE));
-                bukkitBot.getInventory().setItem(1, new ItemStack(Material.STONE_PICKAXE));
-                bukkitBot.getInventory().setItem(2, new ItemStack(Material.WOODEN_SWORD));
-                bukkitBot.getInventory().setItem(3, new ItemStack(Material.BREAD, 8));
-                bukkitBot.getInventory().setHeldItemSlot(2);
+                bukkitBot.getInventory().clear();
+                bukkitBot.setHealth(bukkitBot.getMaxHealth());
+                bukkitBot.setFoodLevel(20);
+                bukkitBot.setSaturation(5.0F);
+                bukkitBot.setExhaustion(0.0F);
+                bukkitBot.setLevel(0);
+                bukkitBot.setExp(0.0F);
             }
 
             bot = created;
@@ -188,11 +197,13 @@ final class FakePlayerController {
         yaml.set("storage", Arrays.asList(inventory.getStorageContents()));
         yaml.set("armor", Arrays.asList(inventory.getArmorContents()));
         yaml.set("extra", Arrays.asList(inventory.getExtraContents()));
-        yaml.set("health", player.getHealth());
-        yaml.set("food", player.getFoodLevel());
-        yaml.set("saturation", player.getSaturation());
-        yaml.set("level", player.getLevel());
-        yaml.set("exp", player.getExp());
+        boolean dead = player.isDead() || player.getHealth() <= 0.0;
+        // Persist the vanilla death result, not a stale pre-death inventory or zero HP.
+        yaml.set("health", dead ? player.getMaxHealth() : player.getHealth());
+        yaml.set("food", dead ? 20 : player.getFoodLevel());
+        yaml.set("saturation", dead ? 5.0F : player.getSaturation());
+        yaml.set("level", dead ? 0 : player.getLevel());
+        yaml.set("exp", dead ? 0.0F : player.getExp());
         try {
             if (!plugin.getDataFolder().exists() && !plugin.getDataFolder().mkdirs()) return;
             yaml.save(temporary);

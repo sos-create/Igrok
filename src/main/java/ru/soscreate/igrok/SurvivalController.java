@@ -47,7 +47,6 @@ final class SurvivalController {
                             String reason, String miningMode) { }
 
     private final IgrokPlugin plugin;
-    private int nextPickupTick;
     private int nextCraftTick;
     private int nextBedScanTick;
     private int nextHuntDecisionTick;
@@ -71,33 +70,29 @@ final class SurvivalController {
     }
 
     void tick(Player bot, int tick) {
-        if (tick >= nextPickupTick) {
-            pickupNearby(bot);
-            nextPickupTick = tick + 10;
-        }
         int foodReserve = learnedFoodCaution ? 19 : 17;
         int recoveryReserve = learnedFoodCaution ? 20 : 19;
-        if (tick % 10 == 0 && (bot.getFoodLevel() <= foodReserve
+        if (tick % 20 == 0 && (bot.getFoodLevel() <= foodReserve
                 || (bot.getHealth() < bot.getMaxHealth() - 2.0 && bot.getFoodLevel() <= recoveryReserve))) {
             eatFromInventory(bot);
         }
         if (tick >= nextCraftTick) {
             craftUsefulItems(bot, tick);
             equipBestArmor(bot);
-            nextCraftTick = tick + 100;
+            nextCraftTick = tick + 200;
         }
         if (tick >= nextFurnaceTick) {
             maintainFurnace(bot);
-            nextFurnaceTick = tick + 100;
+            nextFurnaceTick = tick + 200;
         }
         if (tick >= nextFarmTick) {
             harvestNearbyCrops(bot);
-            nextFarmTick = tick + 100;
+            nextFarmTick = tick + 200;
         }
-        if (tick % 100 == 0) manageStorage(bot, tick);
-        if (tick % 100 == 0) {
+        if (tick % 200 == 0) manageStorage(bot, tick);
+        if (tick % 200 == 0) {
             if (!hasNearbyCraftingTable(bot)) placeCraftingTable(bot);
-            if (findNearbyBlock(bot, Material.FURNACE, 8) == null && count(bot, Material.FURNACE) > 0) {
+            if (findNearbyBlock(bot, Material.FURNACE, 4) == null && count(bot, Material.FURNACE) > 0) {
                 placeFurnace(bot);
             }
             if (isNight(bot) && !hasNearbyBed(bot, tick) && hasBedItem(bot)) placeBed(bot);
@@ -214,7 +209,7 @@ final class SurvivalController {
             if (knownBed == null) {
                 if (tick < nextBedScanTick) return false;
                 knownBed = findNearbyBed(bot, 16);
-                nextBedScanTick = tick + 100;
+                nextBedScanTick = tick + 200;
             }
         }
         if (knownBed == null) return false;
@@ -227,7 +222,7 @@ final class SurvivalController {
             navigator.stop();
             if (bot.sleep(knownBed, false)) return true;
             knownBed = null;
-            nextBedScanTick = tick + 100;
+            nextBedScanTick = tick + 200;
             return false;
         }
         navigator.moveTo(knownBed);
@@ -371,24 +366,6 @@ final class SurvivalController {
             default -> inventory.setBoots(replacement);
         }
         inventory.setItem(bestSlot, current == null || current.getType().isAir() ? null : current);
-    }
-
-    private void pickupNearby(Player bot) {
-        for (Entity entity : bot.getNearbyEntities(4.0, 3.0, 4.0)) {
-            if (entity instanceof Item dropped) {
-                if (dropped.getPickupDelay() > 0 || dropped.isDead()) continue;
-                ItemStack stack = dropped.getItemStack().clone();
-                Map<Integer, ItemStack> left = bot.getInventory().addItem(stack);
-                if (left.isEmpty()) {
-                    dropped.remove();
-                } else {
-                    dropped.setItemStack(left.values().iterator().next());
-                }
-            } else if (entity instanceof ExperienceOrb orb && !orb.isDead()) {
-                bot.giveExp(orb.getExperience());
-                orb.remove();
-            }
-        }
     }
 
     private void eatFromInventory(Player bot) {
@@ -558,10 +535,11 @@ final class SurvivalController {
     private void manageStorage(Player bot, int tick) {
         if (knownChest == null || knownChest.getWorld() != bot.getWorld()
                 || !bot.getWorld().isChunkLoaded(knownChest.getBlockX() >> 4, knownChest.getBlockZ() >> 4)
-                || knownChest.getBlock().getType() != Material.CHEST) {
+                || knownChest.getBlock().getType() != Material.CHEST
+                || !withinContainerReach(bot, knownChest)) {
             knownChest = null;
             if (tick < nextChestScanTick) return;
-            knownChest = findNearbyChest(bot, 8);
+            knownChest = findNearbyChest(bot, 4);
             nextChestScanTick = tick + 200;
         }
         if (knownChest == null && count(bot, Material.CHEST) > 0) {
@@ -575,6 +553,7 @@ final class SurvivalController {
         BlockState state = block.getState();
         if (!(state instanceof Chest chest)) return;
         Inventory storage = chest.getInventory();
+        if (!canOpenInventory(bot, storage)) return;
         PlayerInventory inventory = bot.getInventory();
 
         for (int slot = 0; slot < 36; slot++) {
@@ -612,6 +591,20 @@ final class SurvivalController {
         return -1;
     }
 
+    private boolean withinContainerReach(Player bot, Location container) {
+        if (container == null || container.getWorld() != bot.getWorld()) return false;
+        Location center = container.clone().add(0.5, 0.5, 0.5);
+        return bot.getEyeLocation().distanceSquared(center) <= 4.5 * 4.5
+                && bot.hasLineOfSight(center);
+    }
+
+    private boolean canOpenInventory(Player bot, Inventory inventory) {
+        org.bukkit.event.inventory.InventoryOpenEvent event =
+                new org.bukkit.event.inventory.InventoryOpenEvent(inventory, bot);
+        Bukkit.getPluginManager().callEvent(event);
+        return !event.isCancelled();
+    }
+
     private Location findNearbyChest(Player bot, int radius) {
         Location origin = bot.getLocation();
         World world = bot.getWorld();
@@ -624,7 +617,9 @@ final class SurvivalController {
                     if (y <= world.getMinHeight() || y >= world.getMaxHeight()) continue;
                     Block block = world.getBlockAt(x, y, z);
                     if (block.getType() != Material.CHEST) continue;
-                    double distance = block.getLocation().distanceSquared(origin);
+                    Location center = block.getLocation().add(0.5, 0.5, 0.5);
+                    double distance = bot.getEyeLocation().distanceSquared(center);
+                    if (distance > 4.5 * 4.5 || !bot.hasLineOfSight(center)) continue;
                     if (distance < bestDistance) {
                         bestDistance = distance;
                         best = block.getLocation();
@@ -668,6 +663,9 @@ final class SurvivalController {
                     Block soil = crop.getRelative(BlockFace.DOWN);
                     if (soil.getType() != Material.FARMLAND && soil.getType() != Material.SOUL_SAND) continue;
                     Material cropType = crop.getType();
+                    Location cropCenter = crop.getLocation().add(0.5, 0.5, 0.5);
+                    if (bot.getEyeLocation().distanceSquared(cropCenter) > 4.5 * 4.5
+                            || !bot.hasLineOfSight(cropCenter)) continue;
                     if (!bot.breakBlock(crop)) continue;
 
                     // Replant only with an item the bot already owns; dropped crop yield is picked up
@@ -697,7 +695,7 @@ final class SurvivalController {
     }
 
     private boolean placeFurnace(Player bot) {
-        if (count(bot, Material.FURNACE) <= 0 || findNearbyBlock(bot, Material.FURNACE, 8) != null) return false;
+        if (count(bot, Material.FURNACE) <= 0 || findNearbyBlock(bot, Material.FURNACE, 4) != null) return false;
         Block target = findPlacementSpot(bot, 2);
         if (target == null) return false;
         ItemStack item = firstItem(bot, Material.FURNACE);
@@ -712,11 +710,12 @@ final class SurvivalController {
     }
 
     private void maintainFurnace(Player bot) {
-        Block block = findNearbyBlock(bot, Material.FURNACE, 8);
+        Block block = findNearbyBlock(bot, Material.FURNACE, 4);
         if (block == null) return;
         BlockState state = block.getState();
         if (!(state instanceof Furnace furnace)) return;
         org.bukkit.inventory.FurnaceInventory inventory = furnace.getInventory();
+        if (!canOpenInventory(bot, inventory)) return;
 
         ItemStack result = inventory.getResult();
         if (result != null && !result.getType().isAir()) {
@@ -878,7 +877,7 @@ final class SurvivalController {
                 && knownBed.getBlock().getType().name().endsWith("_BED")) return true;
         if (!isNight(bot) || tick < nextBedScanTick) return false;
         knownBed = findNearbyBed(bot, 16);
-        nextBedScanTick = tick + 100;
+        nextBedScanTick = tick + 200;
         return knownBed != null;
     }
 
@@ -998,7 +997,10 @@ final class SurvivalController {
                     if (y <= world.getMinHeight() || y >= world.getMaxHeight()) continue;
                     Block block = world.getBlockAt(x, y, z);
                     if (block.getType() != material) continue;
-                    double distance = block.getLocation().distanceSquared(origin);
+                    Location center = block.getLocation().add(0.5, 0.5, 0.5);
+                    if (bot.getEyeLocation().distanceSquared(center) > 4.5 * 4.5
+                            || !bot.hasLineOfSight(center)) continue;
+                    double distance = center.distanceSquared(origin);
                     if (distance < bestDistance) {
                         bestDistance = distance;
                         best = block;

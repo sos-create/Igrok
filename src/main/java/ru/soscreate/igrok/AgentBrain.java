@@ -66,6 +66,7 @@ final class AgentBrain {
     private int starvationDeaths;
     private int combatRetreatUntilTick;
     private int pauseAfterFailureUntilTick;
+    private boolean builderWasActive;
     private String lastLesson = "Пока не было смертельных ошибок.";
 
     AgentBrain(IgrokPlugin plugin, AgentMemory memory) {
@@ -150,7 +151,7 @@ final class AgentBrain {
     }
 
     void tick() {
-        tickCounter++;
+        tickCounter += 2;
         if (tickCounter < pauseAfterFailureUntilTick) return;
         try {
             tickInternal();
@@ -177,12 +178,19 @@ final class AgentBrain {
         survival.tick(bot, tickCounter);
 
         if (plugin.houseBuilder().isBuilding()) {
-            navigator.stop();
+            // HouseBuilder controls movement with its own navigator. Stopping the
+            // normal navigator every tick used to cancel every builder movement.
+            if (!builderWasActive) navigator.stop();
+            builderWasActive = true;
             state = "Строю дом";
             return;
         }
+        if (builderWasActive) {
+            builderWasActive = false;
+            navigator.stop();
+        }
 
-        int thinkInterval = Math.max(5, plugin.getConfig().getInt("brain.think-interval-ticks", 10));
+        int thinkInterval = Math.max(10, plugin.getConfig().getInt("brain.think-interval-ticks", 20));
         if (tickCounter % thinkInterval == 0) chooseGoal(bot);
 
         switch (goal) {
@@ -695,7 +703,7 @@ final class AgentBrain {
                 return;
             }
             miningTarget = findMiningTarget(bot);
-            nextSearchTick = tickCounter + 40;
+            nextSearchTick = tickCounter + (miningTarget == null ? 100 : 0);
             miningTicks = 0;
         }
         if (miningTarget == null) {
@@ -714,10 +722,16 @@ final class AgentBrain {
         }
 
         Location blockLocation = miningTarget.getLocation().add(0.5, 0.5, 0.5);
-        double distance = bot.getLocation().distance(blockLocation);
-        if (distance > 4.4) {
-            state = "Иду к блоку " + miningTarget.getType().name().toLowerCase(Locale.ROOT);
-            navigator.moveTo(miningTarget.getLocation());
+        // Same 4.5-block eye reach and line-of-sight rule as a survival player.
+        boolean canReach = bot.getEyeLocation().distanceSquared(blockLocation) <= 4.5 * 4.5
+                && bot.hasLineOfSight(blockLocation);
+        if (!canReach) {
+            state = "Подхожу к блоку " + miningTarget.getType().name().toLowerCase(Locale.ROOT);
+            if (!navigator.moveTo(miningTarget.getLocation())) {
+                miningTarget = null;
+                miningTicks = 0;
+                nextSearchTick = tickCounter + 40;
+            }
             return;
         }
 
@@ -746,6 +760,7 @@ final class AgentBrain {
                 minedThisTask++;
                 miningTarget = null;
                 miningTicks = 0;
+                nextSearchTick = tickCounter + 40;
                 int limit = Math.max(1, plugin.getConfig().getInt("brain.mining.blocks-per-order", 4));
                 if (minedThisTask >= limit) {
                     miningRequested = false;
@@ -755,8 +770,12 @@ final class AgentBrain {
                     say("Закончил добычу. Теперь у меня в памяти " + memory.totalMined() + " добытых блоков.");
                 }
             } else {
-                miningTarget = null;
-                say("Не получилось сломать этот блок. Возможно, регион защищён.");
+                miningScanReset();
+                miningRequested = false;
+                manualOrderActive = false;
+                goal = GoalPlanner.Goal.IDLE;
+                nextSearchTick = tickCounter + 100;
+                say("Не получилось сломать этот блок. Сервер или регион запретил добычу, поэтому я не обхожу защиту.");
             }
         }
     }
@@ -764,25 +783,27 @@ final class AgentBrain {
     private Block findMiningTarget(Player bot) {
         World world = bot.getWorld();
         Location origin = bot.getLocation();
-        int radius = Math.max(5, Math.min(14, plugin.getConfig().getInt("brain.mining.search-radius", 10)));
+        int radius = Math.max(5, Math.min(8, plugin.getConfig().getInt("brain.mining.search-radius", 8)));
         Block best = null;
         double bestDistance = Double.POSITIVE_INFINITY;
-
+        boolean woodMode = miningMode.equals("wood");
+        int minimumToolTier = miningMode.equals("iron") ? 3 : 1;
+        if (!woodMode && survivalToolTier(bot, "PICKAXE") < minimumToolTier) return null;
+        int minY = Math.max(world.getMinHeight() + 1, origin.getBlockY() - (woodMode ? 4 : 10));
+        int maxY = Math.min(world.getMaxHeight() - 2, origin.getBlockY() + (woodMode ? 5 : 4));
+        Location eye = bot.getEyeLocation();
         for (int x = origin.getBlockX() - radius; x <= origin.getBlockX() + radius; x++) {
             for (int z = origin.getBlockZ() - radius; z <= origin.getBlockZ() + radius; z++) {
                 if (!world.isChunkLoaded(x >> 4, z >> 4)) continue;
-                for (int y = Math.max(world.getMinHeight() + 1, origin.getBlockY() - (miningMode.equals("wood") ? 5 : 16));
-                     y <= Math.min(world.getMaxHeight() - 2, origin.getBlockY() + 8); y++) {
+                for (int y = minY; y <= maxY; y++) {
                     Block block = world.getBlockAt(x, y, z);
                     Material type = block.getType();
                     if (!isWantedResource(type)) continue;
-                    if (!miningMode.equals("wood")
-                            && survivalToolTier(bot, "PICKAXE") < (miningMode.equals("iron") ? 3 : 1)) continue;
                     Location center = block.getLocation().add(0.5, 0.5, 0.5);
-                    double distance = center.distanceSquared(origin);
+                    double distance = center.distanceSquared(eye);
                     if (distance >= bestDistance || distance > (radius + 2.0) * (radius + 2.0)) continue;
-                    if (miningMode.equals("wood") && !hasNearbyLeaves(block)) continue;
-                    if (!miningMode.equals("wood") && !bot.hasLineOfSight(center)) continue;
+                    if (!bot.hasLineOfSight(center)) continue;
+                    if (woodMode && !hasNearbyLeaves(block)) continue;
                     best = block;
                     bestDistance = distance;
                 }
@@ -790,6 +811,8 @@ final class AgentBrain {
         }
         return best;
     }
+
+    private void miningScanReset() { miningTarget = null; miningTicks = 0; }
 
     private boolean isWantedResource(Material type) {
         String name = type.name();
@@ -821,9 +844,9 @@ final class AgentBrain {
     }
 
     private boolean hasNearbyLeaves(Block log) {
-        for (int dx = -3; dx <= 3; dx++) {
-            for (int dy = -2; dy <= 4; dy++) {
-                for (int dz = -3; dz <= 3; dz++) {
+        for (int dx = -2; dx <= 2; dx++) {
+            for (int dy = -1; dy <= 3; dy++) {
+                for (int dz = -2; dz <= 2; dz++) {
                     Block nearby = log.getRelative(dx, dy, dz);
                     if (!log.getWorld().isChunkLoaded(nearby.getX() >> 4, nearby.getZ() >> 4)) continue;
                     if (nearby.getType().name().endsWith("_LEAVES")) return true;

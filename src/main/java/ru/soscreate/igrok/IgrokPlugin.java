@@ -63,7 +63,7 @@ public final class IgrokPlugin extends JavaPlugin implements Listener {
         dialogue = new ChatDialogue(this);
         Bukkit.getPluginManager().registerEvents(this, this);
         Bukkit.getPluginManager().registerEvents(dialogue, this);
-        brainTask = Bukkit.getScheduler().runTaskTimer(this, () -> runSafely("brain", brain::tick), 1L, 1L);
+        brainTask = Bukkit.getScheduler().runTaskTimer(this, () -> runSafely("brain", brain::tick), 2L, 2L);
         memorySaveTask = Bukkit.getScheduler().runTaskTimer(this, () -> runSafely("memory-save", memory::save), 6000L, 6000L);
         stateSaveTask = Bukkit.getScheduler().runTaskTimer(this, () -> runSafely("state-save", this::savePersistentState), 600L, 600L);
         cognitionSaveTask = Bukkit.getScheduler().runTaskTimer(this, () -> runSafely("cognition-save", cognition::save), 6000L, 6000L);
@@ -72,13 +72,14 @@ public final class IgrokPlugin extends JavaPlugin implements Listener {
         if (getConfig().getBoolean("auto-spawn", true)) {
             Bukkit.getScheduler().runTask(this, this::spawnWithConfiguredSkin);
         }
-        getLogger().info("Igrok 0.9.13 autonomous survival agent enabled for Paper 1.21.4.");
+        getLogger().info("Igrok 0.9.14 survival player agent enabled for Paper 1.21.4.");
     }
 
     @Override
     public void onDisable() {
         if (respawnTask != null) respawnTask.cancel();
         if (skinFallbackTask != null) skinFallbackTask.cancel();
+        if (dialogue != null) dialogue.shutdown();
         if (brainTask != null) brainTask.cancel();
         if (stateSaveTask != null) stateSaveTask.cancel();
         if (cognitionSaveTask != null) cognitionSaveTask.cancel();
@@ -350,10 +351,8 @@ public final class IgrokPlugin extends JavaPlugin implements Listener {
     @EventHandler
     public void onBotDeath(PlayerDeathEvent event) {
         if (!controller.isBot(event.getEntity())) return;
-        event.setKeepInventory(true);
-        event.setKeepLevel(true);
-        event.setDroppedExp(0);
-        controller.saveInventory();
+        // Vanilla death rules: inventory and experience are dropped/lost normally.
+        // The delayed respawn saves the post-death inventory state before creating a new player.
         EntityDamageEvent lastDamage = event.getEntity().getLastDamageCause();
         String cause = lastDamage == null ? "UNKNOWN" : lastDamage.getCause().name();
         String killerType = lastDamage != null && lastDamage instanceof EntityDamageByEntityEvent byEntity
