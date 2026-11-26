@@ -96,4 +96,7 @@ public final class IgrokPlugin extends JavaPlugin implements Listener {
             spawnAtDefaultWorldSpawn();
         }, 40L);
     }
+    FakePlayerController controller() {
+        return controller;
+    }
 }
