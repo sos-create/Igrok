@@ -1277,6 +1277,10 @@ final class AgentBrain {
         goal = GoalPlanner.Goal.EXPLORE;
         if (navigator != null) navigator.stop();
     }
+    void resumeForCommand() {
+        pausedByPlayer = false;
+    }
+
     void pauseByPlayer() {
         stop();
         pausedByPlayer = true;

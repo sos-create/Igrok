@@ -239,6 +239,8 @@ final class ChatDialogue implements Listener {
             return;
         }
 
+        // Any accepted new task releases an explicit stop/hold.
+        if (!"stop".equals(action)) plugin.brain().resumeForCommand();
         boolean started;
         switch (action) {
             case "build" -> started = plugin.houseBuilder().start(sender.getLocation(), sender);
