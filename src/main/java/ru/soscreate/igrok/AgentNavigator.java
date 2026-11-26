@@ -133,8 +133,17 @@ final class AgentNavigator {
             plannedDestination = null;
             retryCooldown = 5;
             if (bot.isOnGround()) {
-                Vector currentVelocity = bot.getVelocity();
-                bot.setVelocity(new Vector(currentVelocity.getX(), 0.42, currentVelocity.getZ()));
+                // Only use the stuck-recovery hop when the current column has clear
+                // headroom. Never push the bot into a ceiling or a damaging block.
+                Block feet = bot.getLocation().getBlock();
+                Block head = feet.getRelative(0, 1, 0);
+                Block aboveHead = feet.getRelative(0, 2, 0);
+                if (head.isPassable() && aboveHead.isPassable()
+                        && !head.isLiquid() && !aboveHead.isLiquid()
+                        && !isHazard(head.getType()) && !isHazard(aboveHead.getType())) {
+                    Vector currentVelocity = bot.getVelocity();
+                    bot.setVelocity(new Vector(currentVelocity.getX(), 0.42, currentVelocity.getZ()));
+                }
             }
         }
         return true;
@@ -306,7 +315,9 @@ final class AgentNavigator {
 
     private boolean standable(World world, Node node) {
         if (node.y() <= world.getMinHeight() || node.y() + 1 >= world.getMaxHeight()
-                || !world.isChunkLoaded(node.x() >> 4, node.z() >> 4)) return false;
+                || !world.isChunkLoaded(node.x() >> 4, node.z() >> 4)
+                || !world.getWorldBorder().isInside(
+                        new Location(world, node.x() + 0.5, node.y(), node.z() + 0.5))) return false;
         Block feet = world.getBlockAt(node.x(), node.y(), node.z());
         Block head = world.getBlockAt(node.x(), node.y() + 1, node.z());
         Block floor = world.getBlockAt(node.x(), node.y() - 1, node.z());

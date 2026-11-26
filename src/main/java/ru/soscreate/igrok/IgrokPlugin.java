@@ -69,7 +69,7 @@ public final class IgrokPlugin extends JavaPlugin implements Listener {
         if (getConfig().getBoolean("auto-spawn", true)) {
             Bukkit.getScheduler().runTask(this, this::spawnWithConfiguredSkin);
         }
-        getLogger().info("Igrok 0.9.11 autonomous survival agent enabled for Paper 1.21.4.");
+        getLogger().info("Igrok 0.9.12 autonomous survival agent enabled for Paper 1.21.4.");
     }
 
     @Override
