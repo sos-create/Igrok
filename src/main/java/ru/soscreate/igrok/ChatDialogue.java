@@ -27,11 +27,12 @@ final class ChatDialogue implements Listener {
                 .toLowerCase(Locale.ROOT);
         UUID senderId = event.getPlayer().getUniqueId();
 
-        // AsyncChatEvent may run off-thread. All Bukkit/config access and dialogue
-        // state changes are deferred to the primary server thread.
         Bukkit.getScheduler().runTask(plugin, () -> {
             if (!plugin.isEnabled() || !plugin.getConfig().getBoolean("chat.enabled", true)
                     || !plugin.controller().isSpawned()) return;
+
+            Player sender = Bukkit.getPlayer(senderId);
+            plugin.brain().memory().rememberMessage(senderId, message);
 
             String botName = plugin.getConfig().getString("bot-name", "Igrok").toLowerCase(Locale.ROOT);
             if (!message.contains(botName) && !message.contains("игрок")) return;
@@ -42,7 +43,6 @@ final class ChatDialogue implements Listener {
             if (now - previous < cooldown) return;
             lastReply.put(senderId, now);
 
-            Player sender = Bukkit.getPlayer(senderId);
             if (sender != null && sender.hasPermission("igrok.build")
                     && plugin.getConfig().getBoolean("building.chat-trigger", true)
                     && contains(message, "построй дом", "построй мне дом", "построй домик", "строй дом")) {
@@ -53,21 +53,52 @@ final class ChatDialogue implements Listener {
                 return;
             }
 
+            if (sender != null && sender.hasPermission("igrok.control")) {
+                if (contains(message, "следуй за мной", "иди за мной", "держись рядом")) {
+                    plugin.brain().follow(sender);
+                    return;
+                }
+                if (contains(message, "остановись", "стой", "прекрати")) {
+                    plugin.brain().stop();
+                    return;
+                }
+                if (contains(message, "сруби дерево", "добудь дерево", "добудь брёвна", "наруби дерева")) {
+                    plugin.brain().requestMining("wood");
+                    return;
+                }
+                if (contains(message, "добудь камень", "копай камень", "копай руду", "начни копать")) {
+                    plugin.brain().requestMining("stone");
+                    return;
+                }
+                if (contains(message, "атакуй", "защищайся", "напади на моба")) {
+                    plugin.brain().attackNearest();
+                    return;
+                }
+                if (contains(message, "исследуй", "разведай", "прогуляйся")) {
+                    plugin.brain().exploreNow();
+                    return;
+                }
+            }
+
+            if (contains(message, "мнение", "что думаешь", "как считаешь", "твоя точка зрения")) {
+                Bukkit.broadcast(Component.text("Igrok: " + plugin.brain().opinion(message, senderId)));
+                return;
+            }
+
             Bukkit.broadcast(Component.text("Igrok: " + response(message)));
         });
     }
 
     private String response(String message) {
         if (contains(message, "привет", "здравствуй", "добрый день", "хай")) return "Привет! Рад тебя видеть.";
-        if (contains(message, "как дела", "как ты")) return "У меня всё хорошо. А у тебя как дела?";
-        if (contains(message, "что делаешь", "чем занят")) return "Пока осматриваюсь и общаюсь с игроками.";
-        if (contains(message, "кто ты", "ты кто")) return "Я Igrok — искусственный игрок этого мира.";
-        if (contains(message, "где ты", "ты где")) return "Я появился на стандартной точке возрождения этого мира.";
-        if (contains(message, "помоги", "помощь")) return "Пока я умею общаться и строить небольшой дом по просьбе игрока.";
+        if (contains(message, "как дела", "как ты")) return "Всё нормально. Сейчас я: " + plugin.brain().state() + ".";
+        if (contains(message, "что делаешь", "чем занят")) return "Сейчас я: " + plugin.brain().state() + ".";
+        if (contains(message, "кто ты", "ты кто")) return "Я Igrok. У меня есть характер, память о наших разговорах и собственные игровые цели.";
+        if (contains(message, "помоги", "помощь")) return "Могу следовать за тобой, исследовать местность, добывать дерево и камень, защищаться от враждебных мобов и строить.";
         if (contains(message, "спасибо", "благодарю")) return "Всегда пожалуйста!";
-        if (contains(message, "пока", "до встречи")) return "До встречи! Я останусь здесь.";
-        if (message.contains("?")) return "Интересный вопрос. Расскажи немного подробнее.";
-        return "Я тебя услышал. Расскажи подробнее — мне интересно.";
+        if (contains(message, "пока", "до встречи")) return "До встречи! Я продолжу заниматься своими делами.";
+        if (message.contains("?")) return "Я обдумаю это с учётом того, что уже знаю. Можешь спросить, что я думаю о строительстве, шахтах, боях или других игроках.";
+        return "Я тебя услышал. Сейчас я: " + plugin.brain().state() + ".";
     }
 
     private boolean contains(String text, String... phrases) {

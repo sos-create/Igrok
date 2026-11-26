@@ -10,9 +10,11 @@ import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.network.CommonListenerCookie;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
+import org.bukkit.Material;
 import org.bukkit.craftbukkit.CraftServer;
 import org.bukkit.craftbukkit.CraftWorld;
 import org.bukkit.entity.Player;
+import org.bukkit.inventory.ItemStack;
 
 import java.nio.charset.StandardCharsets;
 import java.util.UUID;
@@ -25,21 +27,10 @@ final class FakePlayerController {
         this.plugin = plugin;
     }
 
-    boolean isSpawned() {
-        return bot != null && !bot.isRemoved();
-    }
-
-    boolean isBot(Player player) {
-        return isSpawned() && player.getUniqueId().equals(bot.getUUID());
-    }
-
-    Location location() {
-        return isSpawned() ? bot.getBukkitEntity().getLocation().clone() : null;
-    }
-
-    Player bukkitPlayer() {
-        return isSpawned() ? bot.getBukkitEntity() : null;
-    }
+    boolean isSpawned() { return bot != null && !bot.isRemoved(); }
+    boolean isBot(Player player) { return isSpawned() && player.getUniqueId().equals(bot.getUUID()); }
+    Location location() { return isSpawned() ? bot.getBukkitEntity().getLocation().clone() : null; }
+    Player bukkitPlayer() { return isSpawned() ? bot.getBukkitEntity() : null; }
 
     boolean spawn(Location location, String configuredName) {
         if (isSpawned()) return true;
@@ -70,6 +61,14 @@ final class FakePlayerController {
             created.teleportTo(level, location.getX(), location.getY(), location.getZ(),
                     java.util.Set.of(), location.getYaw(), location.getPitch(), false);
             created.setHealth(created.getMaxHealth());
+
+            Player bukkitBot = created.getBukkitEntity();
+            bukkitBot.getInventory().setItem(0, new ItemStack(Material.WOODEN_AXE));
+            bukkitBot.getInventory().setItem(1, new ItemStack(Material.WOODEN_PICKAXE));
+            bukkitBot.getInventory().setItem(2, new ItemStack(Material.WOODEN_SWORD));
+            bukkitBot.getInventory().setItem(3, new ItemStack(Material.BREAD, 8));
+            bukkitBot.getInventory().setHeldItemSlot(2);
+
             bot = created;
             plugin.getLogger().info("Igrok spawned at " + location.getWorld().getName()
                     + " " + location.getBlockX() + " " + location.getBlockY() + " " + location.getBlockZ());

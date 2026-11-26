@@ -4,7 +4,7 @@ plugins {
 }
 
 group = "ru.soscreate"
-version = "0.2.0"
+version = "0.3.0"
 
 java {
     toolchain {
@@ -32,6 +32,5 @@ tasks {
 }
 
 paperweight {
-    // Paper 1.21.4 uses Mojang mappings at runtime.
     reobfArtifactConfiguration = io.papermc.paperweight.userdev.ReobfArtifactConfiguration.getMOJANG_PRODUCTION()
 }

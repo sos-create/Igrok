@@ -1,17 +1,29 @@
-# Igrok configuration
+# Igrok 0.3.0 configuration
 bot-name: Igrok
-# Empty means the first loaded world. Otherwise use an exact world name.
 spawn-world: ""
 auto-spawn: true
 auto-respawn: true
 chat:
   enabled: true
   cooldown-seconds: 3
+
 building:
   enabled: true
-  # Place one block every N server ticks. 2 ticks = about 10 blocks per second.
   block-interval-ticks: 2
-  # Search for a clear, flat 9x9 area within this radius of the requester.
   search-radius: 16
-  # Allow "Игрок, построй дом" in chat (requires igrok.build permission).
   chat-trigger: true
+
+brain:
+  enabled: true
+  # World perception and goal selection are recalculated at this interval.
+  think-interval-ticks: 10
+  exploration:
+    enabled: true
+  combat:
+    # Automatically defend only when monsters approach or target the bot.
+    aggressive: false
+    radius: 12
+  mining:
+    search-radius: 10
+    break-ticks: 28
+    blocks-per-order: 4
