@@ -599,10 +599,12 @@ final class SurvivalController {
     }
 
     private boolean canOpenInventory(Player bot, Inventory inventory) {
-        org.bukkit.event.inventory.InventoryOpenEvent event =
-                new org.bukkit.event.inventory.InventoryOpenEvent(inventory, bot);
-        Bukkit.getPluginManager().callEvent(event);
-        return !event.isCancelled();
+        // Use the player's own open-inventory path. Paper fires InventoryOpenEvent
+        // and permission/protection plugins can cancel it in the same way as for a human.
+        org.bukkit.inventory.InventoryView view = bot.openInventory(inventory);
+        if (view == null) return false;
+        bot.closeInventory();
+        return true;
     }
 
     private Location findNearbyChest(Player bot, int radius) {
