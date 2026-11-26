@@ -8,6 +8,7 @@ import io.netty.channel.embedded.EmbeddedChannel;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.server.level.ClientInformation;
 import net.minecraft.server.network.CommonListenerCookie;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
@@ -78,8 +79,13 @@ final class FakePlayerController {
             // PlayerList installs the initial client settings.
             Player bukkitBot = created.getBukkitEntity();
             applySafeChunkDistances(bukkitBot);
-            server.getPlayerList().placeNewPlayer(networkConnection, created,
-                    CommonListenerCookie.createInitial(profile, false));
+            ClientInformation defaults = ClientInformation.createDefault();
+            ClientInformation limitedClientInfo = new ClientInformation(
+                    defaults.language(), 2, defaults.chatVisibility(), defaults.chatColors(),
+                    defaults.modelCustomisation(), defaults.mainHand(), defaults.textFilteringEnabled(),
+                    defaults.allowsListing(), defaults.particleStatus());
+            CommonListenerCookie cookie = new CommonListenerCookie(profile, 0, limitedClientInfo, false);
+            server.getPlayerList().placeNewPlayer(networkConnection, created, cookie);
             created.restoreFakeListener();
             applySafeChunkDistances(bukkitBot);
             created.teleportTo(level, location.getX(), location.getY(), location.getZ(),
