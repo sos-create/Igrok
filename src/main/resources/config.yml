@@ -1,0 +1,9 @@
+# Igrok configuration
+bot-name: Igrok
+# Empty means the first loaded world. Otherwise use an exact world name.
+spawn-world: ""
+auto-spawn: true
+auto-respawn: true
+chat:
+  enabled: true
+  cooldown-seconds: 3
