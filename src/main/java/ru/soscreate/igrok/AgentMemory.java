@@ -361,6 +361,12 @@ final class AgentMemory {
         };
     }
 
+
+    int[] behaviorSignals(UUID player) {
+        PlayerRecord record = players.get(player);
+        return record == null ? new int[5] : record.actions.clone();
+    }
+
     void recordMined(Material material) {
         if (material == null) return;
         mined.merge(material.name(), 1, (oldValue, one) -> Math.min(1_000_000, oldValue + one));

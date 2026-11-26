@@ -62,6 +62,10 @@ final class CognitiveNetwork {
     }
 
     Analysis think(String message, String rememberedTopic, int trust) {
+        return think(message, rememberedTopic, trust, null);
+    }
+
+    Analysis think(String message, String rememberedTopic, int trust, int[] playerBehavior) {
         LanguageProcessor.Parsed parsed = language.parse(message);
         double[] activation = new double[NODES];
 
@@ -71,6 +75,7 @@ final class CognitiveNetwork {
         if (trust >= 3) activation[LanguageProcessor.Concept.FRIENDSHIP.ordinal()] += 0.22;
         if (trust <= -3) activation[LanguageProcessor.Concept.DANGER.ordinal()] += 0.18;
         boostRememberedTopic(activation, rememberedTopic);
+        boostPlayerBehavior(activation, playerBehavior);
 
         // Two shallow spreading-activation passes approximate association and context.
         for (int pass = 0; pass < 2; pass++) {
@@ -103,6 +108,23 @@ final class CognitiveNetwork {
         if (winner == null || best < 0.20) winner = Intent.GENERAL;
         double confidence = Math.max(0.0, Math.min(1.0, best / 1.55));
         return new Analysis(parsed, winner, action, confidence, activation);
+    }
+
+
+    private void boostPlayerBehavior(double[] activation, int[] counts) {
+        if (counts == null || counts.length < 5) return;
+        long total = 0;
+        for (int count : counts) total += Math.max(0, count);
+        if (total == 0) return;
+        LanguageProcessor.Concept[] related = {
+                LanguageProcessor.Concept.BUILD, LanguageProcessor.Concept.MINE,
+                LanguageProcessor.Concept.COMBAT, LanguageProcessor.Concept.EXPLORE,
+                LanguageProcessor.Concept.SOCIAL
+        };
+        for (int i = 0; i < related.length; i++) {
+            double preference = Math.max(0, counts[i]) / (double) total;
+            activation[related[i].ordinal()] += preference * 0.24;
+        }
     }
 
     private void boostRememberedTopic(double[] activation, String topic) {
