@@ -530,10 +530,13 @@ final class SurvivalController {
         for (BlockFace facing : new BlockFace[]{BlockFace.SOUTH, BlockFace.NORTH, BlockFace.EAST, BlockFace.WEST}) {
             int fx = bot.getLocation().getBlockX() + facing.getModX();
             int fz = bot.getLocation().getBlockZ() + facing.getModZ();
-            Block foot = bot.getWorld().getBlockAt(fx, bot.getLocation().getBlockY(), fz);
-            Block head = bot.getWorld().getBlockAt(fx + facing.getModX(), foot.getY(), fz + facing.getModZ());
-            if (!bot.getWorld().isChunkLoaded(foot.getX() >> 4, foot.getZ() >> 4)
-                    || !bot.getWorld().isChunkLoaded(head.getX() >> 4, head.getZ() >> 4)) continue;
+            int hx = fx + facing.getModX();
+            int hz = fz + facing.getModZ();
+            int y = bot.getLocation().getBlockY();
+            if (!bot.getWorld().isChunkLoaded(fx >> 4, fz >> 4)
+                    || !bot.getWorld().isChunkLoaded(hx >> 4, hz >> 4)) continue;
+            Block foot = bot.getWorld().getBlockAt(fx, y, fz);
+            Block head = bot.getWorld().getBlockAt(hx, y, hz);
             if (!foot.isEmpty() || !head.isEmpty()
                     || !foot.getRelative(BlockFace.UP).isPassable()
                     || !head.getRelative(BlockFace.UP).isPassable()
