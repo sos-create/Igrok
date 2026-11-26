@@ -5,6 +5,7 @@ import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.World;
 import org.bukkit.block.Block;
+import org.bukkit.entity.LivingEntity;
 import org.bukkit.entity.Monster;
 import org.bukkit.entity.Player;
 import org.bukkit.inventory.ItemStack;
@@ -34,6 +35,9 @@ final class AgentBrain {
     private final Map<UUID, Long> lastAttackReplyAt = new HashMap<>();
     private final Map<UUID, Long> lastAttackPenaltyAt = new HashMap<>();
     private AgentNavigator navigator;
+    private UUID conversationTarget;
+    private int conversationUntilTick;
+    private final Map<UUID, Long> lastAddressAckAt = new HashMap<>();
 
     private GoalPlanner.Goal goal = GoalPlanner.Goal.IDLE;
     private UUID followTarget;
@@ -188,6 +192,7 @@ final class AgentBrain {
         // A recent player attack temporarily overrides every voluntary activity.
         // This keeps an attack from behind from being overwritten by IDLE/MINE/FOLLOW.
         if (handlePlayerDefense(bot)) return;
+        if (handleConversationAttention(bot)) return;
 
         if (plugin.houseBuilder().isBuilding()) {
             // HouseBuilder controls movement with its own navigator. Stopping the
@@ -219,56 +224,77 @@ final class AgentBrain {
         int socialInterval = Math.max(10, plugin.getConfig().getInt("chat.social.scan-interval-ticks", 20));
         if (tickCounter % socialInterval == 0) socialize(bot);
     }
-
-
     private void idle(Player bot) {
         if (idleWanderTarget != null) {
             if (bot.getLocation().distanceSquared(idleWanderTarget) <= 2.25) {
                 idleWanderTarget = null;
                 idlePauseUntilTick = tickCounter + ThreadLocalRandom.current().nextInt(30, 91);
-                nextIdleWanderTick = tickCounter + ThreadLocalRandom.current().nextInt(240, 601);
-                navigator.stop(); state = "Остановился осмотреться"; return;
+                nextIdleWanderTick = tickCounter + ThreadLocalRandom.current().nextInt(240, 481);
+                navigator.stop();
+                state = "Остановился осмотреться";
+                return;
             }
-            state = "Неспешно прогуливаюсь"; navigator.moveTo(idleWanderTarget); return;
+            state = "Неспешно прогуливаюсь";
+            if (!moveTowardSafely(bot, idleWanderTarget, 0.12)) {
+                idleWanderTarget = null;
+                nextIdleWanderTick = tickCounter + 80;
+            }
+            return;
         }
+
         navigator.stop();
-        if (tickCounter < idlePauseUntilTick) { state = "Немного отдыхаю"; return; }
+        if (tickCounter < idlePauseUntilTick) {
+            state = "Немного отдыхаю";
+            return;
+        }
+
         Player nearby = bot.getNearbyEntities(6.0, 3.0, 6.0).stream()
-                .filter(entity -> entity instanceof Player).map(entity -> (Player) entity)
+                .filter(entity -> entity instanceof Player)
+                .map(entity -> (Player) entity)
                 .filter(player -> player.isOnline() && !player.getUniqueId().equals(bot.getUniqueId()))
-                .min(Comparator.comparingDouble(player -> player.getLocation().distanceSquared(bot.getLocation())))
+                .min(Comparator.comparingDouble(player ->
+                        player.getLocation().distanceSquared(bot.getLocation())))
                 .orElse(null);
         if (nearby != null && tickCounter >= nextIdleLookTick) {
             face(bot, nearby.getEyeLocation());
             nextIdleLookTick = tickCounter + ThreadLocalRandom.current().nextInt(35, 81);
-            state = "Наблюдаю за " + nearby.getName(); return;
-        }
-        if (tickCounter >= nextIdleLookTick) {
+            state = "Наблюдаю за " + nearby.getName();
+        } else if (tickCounter >= nextIdleLookTick) {
             float yaw = bot.getLocation().getYaw() + ThreadLocalRandom.current().nextInt(-75, 76);
             float pitch = ThreadLocalRandom.current().nextInt(-12, 13);
             bot.setRotation(yaw, pitch);
             nextIdleLookTick = tickCounter + ThreadLocalRandom.current().nextInt(40, 101);
         }
+
+        // Do not rely on a 0.25% random roll every AI pulse: that could leave
+        // Igrok stationary for several minutes. Take a short, safe walk every
+        // 12-24 seconds while otherwise idle.
         if (plugin.getConfig().getBoolean("brain.idle-wander.enabled", true)
-                && tickCounter >= nextIdleWanderTick && ThreadLocalRandom.current().nextDouble() < 0.0025) {
-            int dx = ThreadLocalRandom.current().nextInt(-6, 7), dz = ThreadLocalRandom.current().nextInt(-6, 7);
-            if (dx * dx + dz * dz >= 9) {
-                Location candidate = bot.getLocation().getBlock().getLocation().add(dx, 0, dz);
-                World world = bot.getWorld();
-                if (world.isChunkLoaded(candidate.getBlockX() >> 4, candidate.getBlockZ() >> 4)) {
-                    int y = world.getHighestBlockYAt(candidate.getBlockX(), candidate.getBlockZ());
-                    Location wander = new Location(world, candidate.getBlockX() + 0.5, y + 1.0,
-                            candidate.getBlockZ() + 0.5);
-                    if (navigator.canStandAt(wander)) {
-                        idleWanderTarget = wander;
-                        state = "Решил немного прогуляться"; return;
-                    }
+                && tickCounter >= nextIdleWanderTick) {
+            World world = bot.getWorld();
+            for (int attempt = 0; attempt < 8 && idleWanderTarget == null; attempt++) {
+                int dx = ThreadLocalRandom.current().nextInt(-8, 9);
+                int dz = ThreadLocalRandom.current().nextInt(-8, 9);
+                if (dx * dx + dz * dz < 9) continue;
+
+                int x = bot.getLocation().getBlockX() + dx;
+                int z = bot.getLocation().getBlockZ() + dz;
+                if (!world.isChunkLoaded(x >> 4, z >> 4)) continue;
+
+                int y = world.getHighestBlockYAt(x, z) + 1;
+                Location candidate = new Location(world, x + 0.5, y, z + 0.5);
+                if (navigator.canStandAt(candidate) && !isLearnedDanger(candidate)) {
+                    idleWanderTarget = candidate;
+                    state = "Решил немного прогуляться";
                 }
             }
-            nextIdleWanderTick = tickCounter + ThreadLocalRandom.current().nextInt(120, 241);
+            if (idleWanderTarget == null) {
+                nextIdleWanderTick = tickCounter + 80;
+            }
         }
-        state = "Отдыхаю и наблюдаю";
+        if (idleWanderTarget == null) state = "Отдыхаю и наблюдаю";
     }
+
 
     private void socialize(Player bot) {
         if (!plugin.getConfig().getBoolean("chat.social.enabled", true)) return;
@@ -300,6 +326,101 @@ final class AgentBrain {
         } else {
             state = "Рядом с игроком " + nearest.getName();
         }
+    }
+
+    void onPlayerAddressed(Player player) {
+        if (player == null || !player.isOnline()) return;
+        Player bot = plugin.controller().bukkitPlayer();
+        if (bot == null || !bot.isOnline() || player.getWorld() != bot.getWorld()) return;
+
+        UUID playerId = player.getUniqueId();
+        memory.rememberPlayerName(playerId, player.getName());
+        double distanceSquared = player.getLocation().distanceSquared(bot.getLocation());
+        face(bot, player.getEyeLocation());
+
+        if (distanceSquared > 20.25 && distanceSquared <= 24.0 * 24.0) {
+            if (navigator == null) navigator = new AgentNavigator(bot);
+            if (plugin.houseBuilder().isBuilding()) plugin.houseBuilder().cancel(false);
+            conversationTarget = playerId;
+            conversationUntilTick = tickCounter + 200; // 10 seconds of approach
+            navigator.stop();
+        }
+
+        long now = System.currentTimeMillis();
+        if (now - lastAddressAckAt.getOrDefault(playerId, 0L) >= 5_000L) {
+            lastAddressAckAt.put(playerId, now);
+            if (lastAddressAckAt.size() > 512) {
+                lastAddressAckAt.entrySet().removeIf(entry -> now - entry.getValue() > 300_000L);
+            }
+            String acknowledgement = distanceSquared > 20.25
+                    ? "Слышу тебя, " + player.getName() + ". Сейчас подойду."
+                    : "Слушаю тебя, " + player.getName() + ".";
+            memory.recordConversation(playerId, acknowledgement, true);
+            say(acknowledgement);
+        }
+    }
+
+    private boolean handleConversationAttention(Player bot) {
+        if (conversationTarget == null) return false;
+        Player speaker = Bukkit.getPlayer(conversationTarget);
+        if (speaker == null || !speaker.isOnline() || speaker.getWorld() != bot.getWorld()
+                || tickCounter > conversationUntilTick) {
+            conversationTarget = null;
+            conversationUntilTick = 0;
+            if (navigator != null) navigator.stop();
+            return false;
+        }
+
+        double distanceSquared = speaker.getLocation().distanceSquared(bot.getLocation());
+        if (distanceSquared <= 20.25) {
+            navigator.stop();
+            face(bot, speaker.getEyeLocation());
+            conversationTarget = null;
+            conversationUntilTick = 0;
+            state = "Остановился поговорить с " + speaker.getName();
+            return true;
+        }
+
+        if (plugin.houseBuilder().isBuilding()) plugin.houseBuilder().cancel(false);
+        if (navigator == null) navigator = new AgentNavigator(bot);
+        boolean moving = navigator.moveTo(speaker.getLocation());
+        Vector horizontalVelocity = bot.getVelocity().clone().setY(0.0);
+        if (!moving || horizontalVelocity.lengthSquared() < 0.0004) {
+            Vector toward = speaker.getLocation().toVector().subtract(bot.getLocation().toVector());
+            toward.setY(0.0);
+            tryCombatMove(toward, 0.12);
+        }
+        // Movement sets yaw toward the path. Restore eye contact after movement.
+        face(bot, speaker.getEyeLocation());
+        state = "Подхожу поговорить с " + speaker.getName();
+        decisionReason = "Игрок обратился ко мне — прекращаю бездействие и подхожу на расстояние разговора.";
+        decisionConfidence = 1.0;
+        return true;
+    }
+
+    private boolean moveTowardSafely(Player bot, Location destination, double speed) {
+        if (destination == null || destination.getWorld() != bot.getWorld()) return false;
+        boolean moving = navigator.moveTo(destination);
+        Vector velocity = bot.getVelocity().clone();
+        velocity.setY(0.0);
+        if (!moving || velocity.lengthSquared() < 0.0004) {
+            Vector direction = destination.toVector().subtract(bot.getLocation().toVector());
+            direction.setY(0.0);
+            if (tryCombatMove(direction, speed)) return true;
+        }
+        return moving;
+    }
+
+    private boolean performVanillaMeleeAttack(Player bot, LivingEntity target) {
+        if (bot == null || target == null || target.isDead() || !target.isValid()
+                || target.getWorld() != bot.getWorld()
+                || bot.getLocation().distanceSquared(target.getLocation()) > 9.0
+                || !bot.hasLineOfSight(target)) return false;
+        if (bot.getAttackCooldown() < 0.95F) return false;
+
+        bot.swingMainHand();
+        bot.attack(target);
+        return true;
     }
 
     void onPlayerMessage(Player player, String message) {
@@ -741,8 +862,7 @@ final class AgentBrain {
 
         if (distance > 4.0) {
             state = "Сближаюсь с противником";
-            boolean travelling = navigator.moveTo(target);
-            if (!travelling) {
+            if (!moveTowardSafely(bot, target, 0.15)) {
                 Vector toward = target.toVector().subtract(bot.getLocation().toVector());
                 toward.setY(0.0);
                 tryCombatMove(toward, 0.15);
@@ -778,13 +898,13 @@ final class AgentBrain {
         }
 
         face(bot, threat.getEyeLocation());
-        if (distance <= 3.4 && tickCounter >= nextAttackTick) {
-            bot.swingMainHand();
-            bot.attack(threat);
-            nextAttackTick = tickCounter + ThreadLocalRandom.current().nextInt(10, 16);
+        // Paper's LivingEntity.attack uses the server's normal attack attributes,
+        // held item and cooldown. An empty main hand still uses vanilla fist damage.
+        if (distance <= 3.0 && tickCounter >= nextAttackTick
+                && performVanillaMeleeAttack(bot, threat)) {
+            nextAttackTick = tickCounter + 2;
         }
     }
-
 
     private void hunt(Player bot) {
         if (bot.getFoodLevel() >= 14 && survival.hasFood(bot)) {
@@ -805,21 +925,21 @@ final class AgentBrain {
             return;
         }
         Location target = foodTarget.getLocation();
-        if (bot.getLocation().distanceSquared(target) > 9.0) {
+        double distanceSquared = bot.getLocation().distanceSquared(target);
+        if (distanceSquared > 9.0) {
             state = "Иду на охоту за пищей";
-            navigator.moveTo(target);
+            moveTowardSafely(bot, target, 0.12);
             return;
         }
         navigator.stop();
         survival.equipBestWeapon(bot);
         face(bot, foodTarget.getEyeLocation());
         state = "Добываю пищу";
-        if (tickCounter >= nextHuntAttackTick) {
-            bot.swingMainHand();
-            bot.attack(foodTarget);
-            nextHuntAttackTick = tickCounter + 14;
+        if (tickCounter >= nextHuntAttackTick && performVanillaMeleeAttack(bot, foodTarget)) {
+            nextHuntAttackTick = tickCounter + 2;
         }
     }
+
 
     private void sleep(Player bot) {
         if (!survival.isNight(bot)) {

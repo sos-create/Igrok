@@ -1,4 +1,4 @@
-# Igrok 0.9.18 configuration
+# Igrok 0.9.20 configuration
 # Optional Mojang account name whose signed player skin Igrok should use.
 # Leave empty to use the standard Steve/Alex fallback skin.
 skin-owner: ""
@@ -10,7 +10,7 @@ auto-respawn: true
 chat:
   enabled: true
   cooldown-seconds: 20
-  listen-radius: 12
+  listen-radius: 32
   # Bot answers 20-30 seconds after the last message in a burst.
   reply-delay-min-seconds: 20
   reply-delay-max-seconds: 30

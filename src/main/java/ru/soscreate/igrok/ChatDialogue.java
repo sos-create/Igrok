@@ -47,6 +47,7 @@ final class ChatDialogue implements Listener {
     }
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    @EventHandler(priority = EventPriority.HIGHEST)
     public void onChat(AsyncChatEvent event) {
         if (!plugin.isEnabled()) return;
         String raw = PlainTextComponentSerializer.plainText().serialize(event.message());
@@ -54,13 +55,17 @@ final class ChatDialogue implements Listener {
                 ? raw.substring(0, MAX_CHAT_CHARS) : raw;
         UUID senderId = event.getPlayer().getUniqueId();
         try {
-            // Config, queues and Bukkit entities are accessed only on the main thread.
-            Bukkit.getScheduler().runTask(plugin, () -> queueMessage(senderId, safeMessage));
+            Bukkit.getScheduler().runTask(plugin, () -> {
+                try {
+                    queueMessage(senderId, safeMessage);
+                } catch (RuntimeException error) {
+                    plugin.reportRuntimeError("chat-queue", error);
+                }
+            });
         } catch (IllegalPluginAccessException ignored) {
             // The server is shutting down.
         }
     }
-
     private void queueMessage(UUID senderId, String rawMessage) {
         if (!plugin.isEnabled() || rawMessage == null || rawMessage.isBlank()) return;
         long now = System.currentTimeMillis();
@@ -78,8 +83,6 @@ final class ChatDialogue implements Listener {
 
         String previousFingerprint = lastIncomingFingerprint.get(senderId);
         long previousAt = lastIncomingAt.getOrDefault(senderId, 0L);
-        // "Да" or "нет" is a valid answer to a recent question even when the
-        // exact same word was sent earlier in the duplicate window.
         if (!continuation && fingerprint.equals(previousFingerprint)
                 && now - previousAt < DUPLICATE_WINDOW_MILLIS) return;
 
@@ -91,11 +94,17 @@ final class ChatDialogue implements Listener {
             lastIncomingAt.keySet().retainAll(lastIncomingFingerprint.keySet());
         }
 
+        if (addressed) {
+            Player sender = Bukkit.getPlayer(senderId);
+            if (sender != null) plugin.brain().onPlayerAddressed(sender);
+        }
+
         PendingMessage pending = pendingMessages.get(senderId);
         if (pending != null) {
-            // Keep the last addressed request. Unrelated chat can reset the burst timer,
-            // but may not overwrite the message the bot is actually expected to answer.
-            if (addressed || continuation) pending.message = rawMessage;
+            // Ignore unrelated public chat. Only addressed messages or valid replies
+            // may update/reschedule the bot's pending response.
+            if (!addressed && !continuation) return;
+            pending.message = rawMessage;
             scheduleReply(senderId, pending);
             return;
         }
@@ -105,6 +114,7 @@ final class ChatDialogue implements Listener {
         pendingMessages.put(senderId, created);
         scheduleReply(senderId, created);
     }
+
 
     private void scheduleReply(UUID senderId, PendingMessage pending) {
         if (pending.task != null) pending.task.cancel();
@@ -160,7 +170,7 @@ final class ChatDialogue implements Listener {
         Player bot = plugin.controller().bukkitPlayer();
         if (sender == null || bot == null || sender.getWorld() != bot.getWorld()) return;
 
-        double radius = Math.max(3.0, plugin.getConfig().getDouble("chat.listen-radius", 12.0));
+        double radius = Math.max(32.0, plugin.getConfig().getDouble("chat.listen-radius", 32.0));
         if (sender.getLocation().distanceSquared(bot.getLocation()) > radius * radius) return;
 
         String message = rawMessage.toLowerCase(Locale.ROOT);
@@ -241,15 +251,14 @@ final class ChatDialogue implements Listener {
         }
         sendReply(id, composer.actionReply(action, true, started, sender));
     }
-
     private boolean mentionsBot(String message, String name) {
         String normalized = name == null ? "igrok" : name.toLowerCase(Locale.ROOT).trim();
         if (hasWord(message, normalized)) return true;
-        // The Russian alias is accepted as a form of address, not as any
-        // arbitrary mention of the noun "игрок" in unrelated chat.
-        return Pattern.compile("(?iu)(?:^|[.!?,:;]\\s*)@?(?:эй\\s+)?игрок(?![\\p{L}\\p{N}_])")
-                .matcher(message).find();
+        // Accept the Russian bot name anywhere in the sentence, not only at
+        // the beginning: "Привет, Игрок" and "Игрок, подойди" both address it.
+        return hasWord(message, "игрок");
     }
+
 
     private boolean hasWord(String text, String word) {
         if (word == null || word.isBlank()) return false;
