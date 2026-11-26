@@ -924,11 +924,11 @@ final class SurvivalController {
             BlockPlaceEvent footEvent = new BlockPlaceEvent(foot, foot.getState(),
                     foot.getRelative(BlockFace.DOWN), hand.clone(), bot, true, EquipmentSlot.HAND);
             Bukkit.getPluginManager().callEvent(footEvent);
-            if (footEvent.isCancelled()) continue;
+            if (footEvent.isCancelled() || !footEvent.canBuild()) continue;
             BlockPlaceEvent headEvent = new BlockPlaceEvent(head, head.getState(),
                     head.getRelative(BlockFace.DOWN), hand.clone(), bot, true, EquipmentSlot.HAND);
             Bukkit.getPluginManager().callEvent(headEvent);
-            if (headEvent.isCancelled()) continue;
+            if (headEvent.isCancelled() || !headEvent.canBuild()) continue;
 
             Bed footData = (Bed) bedMaterial.createBlockData();
             footData.setFacing(facing);
