@@ -182,7 +182,13 @@ final class CognitiveNetwork {
         boolean politeRequest = containsAny(text, "можешь", "мог бы", "могла бы", "пожалуйста",
                 "давай", "не мог бы", "не могла бы", "хочу чтобы ты", "мне нужно чтобы ты",
                 "could you", "please");
-        boolean imperative = p.command() || politeRequest;
+        // Movement requests are recognized as commands even when the player uses
+        // an infinitive or a short natural phrase instead of a strict imperative.
+        boolean movementRequest = containsAny(text, "подойти", "подойди", "подходи",
+                "приди", "приходи", "вернись", "возвращайся", "иди ко мне",
+                "иди сюда", "подойди ко мне", "подойди сюда", "двигайся",
+                "come here", "come to me", "approach");
+        boolean imperative = p.command() || politeRequest || movementRequest;
         if (!imperative) return null;
 
         if (containsAny(text, "постро", "дом", "строй", "build", "house")) return "build";
