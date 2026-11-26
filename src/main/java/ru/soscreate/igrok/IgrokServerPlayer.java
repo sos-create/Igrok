@@ -23,11 +23,51 @@ final class IgrokServerPlayer extends ServerPlayer {
     }
 
     @Override
+    private double fallStartY = Double.NaN;
+
+    @Override
     public void tick() {
         if (isRemoved()) return;
-        // ServerPlayer.tick() already invokes doTick(). Calling it again here
-        // advanced player state twice per server tick and could desynchronize
-        // movement, hunger, inventory and world interactions.
+
+        // Phase one: ServerPlayer bookkeeping (game mode, menus, attributes, etc.).
         super.tick();
+        if (isRemoved() || !isAlive()) return;
+
+        // Phase two: actual vanilla player movement and physics. A real player gets
+        // doTick() from ServerGamePacketListenerImpl.tickPlayer(). Igrok has no
+        // registered client socket, so that call never happens for this fake player.
+        // Calling doTick() here once per world tick gives it normal gravity, collisions,
+        // movement, item pickup and hunger without the network listener snap-back.
+        boolean groundedBefore = getBukkitEntity().isOnGround();
+        double yBefore = getY();
+        doTick();
+        if (isRemoved() || !isAlive()) return;
+
+        boolean groundedAfter = getBukkitEntity().isOnGround();
+        if (groundedBefore && !groundedAfter) {
+            fallStartY = yBefore;
+        } else if (!groundedBefore && !groundedAfter && Double.isNaN(fallStartY)) {
+            fallStartY = yBefore;
+        } else if (!groundedBefore && groundedAfter) {
+            if (Double.isFinite(fallStartY)) {
+                float distance = (float) Math.max(0.0, fallStartY - getY());
+                if (distance > 3.0F && !isInWater()) {
+                    float multiplier = 1.0F;
+                    net.minecraft.core.BlockPos landingPos = blockPosition().below();
+                    net.minecraft.world.level.block.state.BlockState landing =
+                            level().getBlockState(landingPos);
+                    if (landing.is(net.minecraft.world.level.block.Blocks.HAY_BLOCK)) {
+                        multiplier = 0.2F;
+                    } else if (landing.is(net.minecraft.world.level.block.Blocks.BED)) {
+                        multiplier = 0.5F;
+                    }
+                    if (multiplier > 0.0F) {
+                        causeFallDamage(distance, multiplier, damageSources().fall());
+                    }
+                }
+            }
+            fallStartY = Double.NaN;
+        }
     }
+
 }

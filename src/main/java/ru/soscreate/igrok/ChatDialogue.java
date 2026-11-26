@@ -70,7 +70,9 @@ final class ChatDialogue implements Listener {
         long now = System.currentTimeMillis();
         String fingerprint = fingerprint(rawMessage);
         String lower = rawMessage.toLowerCase(Locale.ROOT);
-        boolean addressed = mentionsBot(lower, plugin.getConfig().getString("bot-name", "Igrok"));
+        Player sender = Bukkit.getPlayer(senderId);
+        boolean addressed = mentionsBot(lower, plugin.getConfig().getString("bot-name", "Igrok"))
+                || isNearBot(sender);
         long followUpMillis = Math.max(10L,
                 plugin.getConfig().getLong("chat.follow-up-window-seconds", 90)) * 1000L;
         long questionAt = lastBotQuestionAt.getOrDefault(senderId, 0L);
@@ -93,9 +95,8 @@ final class ChatDialogue implements Listener {
             lastIncomingAt.keySet().retainAll(lastIncomingFingerprint.keySet());
         }
 
-        if (addressed) {
-            Player sender = Bukkit.getPlayer(senderId);
-            if (sender != null) plugin.brain().onPlayerAddressed(sender);
+        if (addressed && sender != null) {
+            plugin.brain().onPlayerAddressed(sender);
         }
 
         PendingMessage pending = pendingMessages.get(senderId);
@@ -117,8 +118,8 @@ final class ChatDialogue implements Listener {
 
     private void scheduleReply(UUID senderId, PendingMessage pending) {
         if (pending.task != null) pending.task.cancel();
-        int minDelay = Math.max(1, plugin.getConfig().getInt("chat.reply-delay-min-seconds", 20));
-        int maxDelay = Math.max(minDelay, plugin.getConfig().getInt("chat.reply-delay-max-seconds", 30));
+        int minDelay = Math.max(1, plugin.getConfig().getInt("chat.reply-delay-min-seconds", 5));
+        int maxDelay = Math.max(minDelay, plugin.getConfig().getInt("chat.reply-delay-max-seconds", 5));
         int delaySeconds = ThreadLocalRandom.current().nextInt(minDelay, maxDelay + 1);
         try {
             pending.task = Bukkit.getScheduler().runTaskLater(plugin, () -> {
@@ -169,11 +170,12 @@ final class ChatDialogue implements Listener {
         Player bot = plugin.controller().bukkitPlayer();
         if (sender == null || bot == null || sender.getWorld() != bot.getWorld()) return;
 
-        double radius = Math.max(32.0, plugin.getConfig().getDouble("chat.listen-radius", 32.0));
+        double radius = Math.max(4.0, plugin.getConfig().getDouble("chat.listen-radius", 16.0));
         if (sender.getLocation().distanceSquared(bot.getLocation()) > radius * radius) return;
 
         String message = rawMessage.toLowerCase(Locale.ROOT);
-        boolean addressed = mentionsBot(message, plugin.getConfig().getString("bot-name", "Igrok"));
+        boolean addressed = mentionsBot(message, plugin.getConfig().getString("bot-name", "Igrok"))
+                || isNearBot(sender);
         long followUpMillis = Math.max(10L,
                 plugin.getConfig().getLong("chat.follow-up-window-seconds", 90)) * 1000L;
         long questionAt = lastBotQuestionAt.getOrDefault(senderId, 0L);
@@ -185,7 +187,7 @@ final class ChatDialogue implements Listener {
         long now = System.currentTimeMillis();
         if (pendingThoughts.size() > 512) pendingThoughts.keySet().removeIf(id -> Bukkit.getPlayer(id) == null);
         if (lastReply.size() > 512) lastReply.entrySet().removeIf(entry -> now - entry.getValue() > 300_000L);
-        long cooldown = Math.max(1L, plugin.getConfig().getLong("chat.cooldown-seconds", 20)) * 1000L;
+        long cooldown = Math.max(1L, plugin.getConfig().getLong("chat.cooldown-seconds", 5)) * 1000L;
         if (!continuation && now - lastReply.getOrDefault(senderId, 0L) < cooldown) return;
         lastReply.put(senderId, now);
 
@@ -250,6 +252,14 @@ final class ChatDialogue implements Listener {
         }
         sendReply(id, composer.actionReply(action, true, started, sender));
     }
+    private boolean isNearBot(Player sender) {
+        if (sender == null || !sender.isOnline()) return false;
+        Player bot = plugin.controller().bukkitPlayer();
+        if (bot == null || !bot.isOnline() || sender.getWorld() != bot.getWorld()) return false;
+        double radius = Math.max(4.0, plugin.getConfig().getDouble("chat.listen-radius", 16.0));
+        return sender.getLocation().distanceSquared(bot.getLocation()) <= radius * radius;
+    }
+
     private boolean mentionsBot(String message, String name) {
         String normalized = name == null ? "igrok" : name.toLowerCase(Locale.ROOT).trim();
         if (hasWord(message, normalized)) return true;

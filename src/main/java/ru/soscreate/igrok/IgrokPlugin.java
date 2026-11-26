@@ -55,6 +55,12 @@ public final class IgrokPlugin extends JavaPlugin implements Listener {
     @Override
     public void onEnable() {
         saveDefaultConfig();
+        // Keep replies quick even when the server already has an older config.yml.
+        getConfig().set("chat.reply-delay-min-seconds", 5);
+        getConfig().set("chat.reply-delay-max-seconds", 5);
+        getConfig().set("chat.cooldown-seconds", 5);
+        getConfig().set("chat.listen-radius", 16);
+        saveConfig();
         stateFile = new File(getDataFolder(), "agent-state.yml");
         stateData = YamlConfiguration.loadConfiguration(stateFile);
         controller = new FakePlayerController(this);
@@ -76,7 +82,7 @@ public final class IgrokPlugin extends JavaPlugin implements Listener {
         if (getConfig().getBoolean("auto-spawn", true)) {
             Bukkit.getScheduler().runTask(this, this::spawnWithConfiguredSkin);
         }
-        getLogger().info("Igrok 0.9.19 survival player agent enabled for Paper 1.21.4.");
+        getLogger().info("Igrok 0.9.21 survival player agent enabled for Paper 1.21.4 (vanilla physics enabled).");
     }
 
     @Override
