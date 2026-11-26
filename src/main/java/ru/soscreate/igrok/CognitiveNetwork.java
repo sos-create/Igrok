@@ -28,19 +28,22 @@ final class CognitiveNetwork {
         private final String action;
         private final double confidence;
         private final double[] activations;
+        private final boolean directOrder;
 
         Analysis(LanguageProcessor.Parsed parsed, Intent intent, String action,
-                 double confidence, double[] activations) {
+                 double confidence, double[] activations, boolean directOrder) {
             this.parsed = parsed;
             this.intent = intent;
             this.action = action;
             this.confidence = confidence;
             this.activations = activations;
+            this.directOrder = directOrder;
         }
 
         Intent intent() { return intent; }
         String action() { return action; }
         double confidence() { return confidence; }
+        boolean directOrder() { return directOrder; }
         int sentiment() { return parsed.sentiment(); }
         boolean question() { return parsed.question(); }
         boolean negated() { return parsed.negated(); }
@@ -109,7 +112,15 @@ final class CognitiveNetwork {
         }
         if (winner == null || best < 0.20) winner = Intent.GENERAL;
         double confidence = Math.max(0.0, Math.min(1.0, best / 1.55));
-        return new Analysis(parsed, winner, action, confidence, activation);
+        String speech = parsed.cleaned().replace('ё', 'е');
+        boolean courteous = containsAny(speech, "пожалуйста", "можешь", "можете",
+                "мог бы", "могла бы", "не мог бы", "не могла бы", "прошу",
+                "будьте добры", "если можешь", "если не сложно", "не против",
+                "could you", "would you", "please");
+        boolean suggestion = containsAny(speech, "давай", "давайте", "предлагаю",
+                "может попробуем", "как насчет", "что если");
+        boolean directOrder = parsed.command() && !courteous && !suggestion && !parsed.question();
+        return new Analysis(parsed, winner, action, confidence, activation, directOrder);
     }
 
 
