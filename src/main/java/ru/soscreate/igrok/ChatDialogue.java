@@ -49,6 +49,8 @@ final class ChatDialogue implements Listener {
         if (!addressed && !continuation) return;
 
         long now = System.currentTimeMillis();
+        if (pendingThoughts.size() > 512) pendingThoughts.keySet().removeIf(id -> Bukkit.getPlayer(id) == null);
+        if (lastReply.size() > 512) lastReply.entrySet().removeIf(entry -> now - entry.getValue() > 300_000L);
         long cooldown = Math.max(1L, plugin.getConfig().getLong("chat.cooldown-seconds", 2)) * 1000L;
         if (now - lastReply.getOrDefault(senderId, 0L) < cooldown) return;
         lastReply.put(senderId, now);

@@ -29,9 +29,9 @@ import java.util.zip.GZIPOutputStream;
 final class AgentMemory {
     private static final int MAGIC = 0x49474D31; // IGM1
     private static final int VERSION = 3;
-    private static final int MAX_PLAYERS = 128;
-    private static final int MAX_HISTORY = 10;
-    private static final int MAX_TEXT_CHARS = 180;
+    private static final int MAX_PLAYERS = 256;
+    private static final int MAX_HISTORY = 24;
+    private static final int MAX_TEXT_CHARS = 240;
     private static final int TOPIC_COUNT = 6;
     private static final String[] TOPICS = {
             "общение", "строительство", "добыча", "бой", "исследование", "прочее"

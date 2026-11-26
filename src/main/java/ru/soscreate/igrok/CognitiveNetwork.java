@@ -148,11 +148,16 @@ final class CognitiveNetwork {
 
     private String requestedAction(LanguageProcessor.Parsed p) {
         String text = p.cleaned().replace("ё", "е");
-        boolean explosiveRequest = containsAny(text, "тнт", "динамит")
-                && containsAny(text, "постав", "подож", "запал", "взорв", "активир");
+        boolean explosiveRequest = containsAny(text, "взорви", "взорвать", "подожги", "запали")
+                || (containsAny(text, "тнт", "динамит")
+                && containsAny(text, "постав", "подож", "запал", "взорв", "активир"));
         if (explosiveRequest) return "tnt";
         if (p.negated() && !text.contains("не мог бы") && !text.contains("не могла бы")) return null;
-        boolean politeRequest = containsAny(text, "можешь", "мог бы", "пожалуйста", "давай", "не мог бы");
+        boolean explanatoryRequest = containsAny(text, "объясни", "расскажи", "научи", "покажи", "как сделать", "как построить");
+        if (explanatoryRequest) return null;
+        boolean politeRequest = containsAny(text, "можешь", "мог бы", "могла бы", "пожалуйста",
+                "давай", "не мог бы", "не могла бы", "хочу чтобы ты", "мне нужно чтобы ты",
+                "could you", "please");
         boolean imperative = p.command() || politeRequest;
         if (!imperative) return null;
 
@@ -247,6 +252,7 @@ final class CognitiveNetwork {
         if (storage == null) return;
         YamlConfiguration yaml = new YamlConfiguration();
         yaml.set("version", 1);
+        yaml.set("node-count", NODES);
         List<Double> values = new ArrayList<>(NODES * NODES);
         for (double[] row : synapses) for (double weight : row) values.add(round(weight));
         yaml.set("synapses", values);
@@ -262,6 +268,7 @@ final class CognitiveNetwork {
     private void load() {
         if (storage == null || !storage.isFile()) return;
         YamlConfiguration yaml = YamlConfiguration.loadConfiguration(storage);
+        if (yaml.contains("node-count") && yaml.getInt("node-count") != NODES) return;
         List<?> values = yaml.getList("synapses");
         if (values == null || values.size() != NODES * NODES) return;
         int index = 0;

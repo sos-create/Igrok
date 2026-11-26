@@ -10,10 +10,6 @@ chat:
   listen-radius: 12
   # Igrok answers direct mentions and short follow-ups in a recent conversation.
   follow-up-window-seconds: 120
-  cognition:
-    enabled: true
-    propagation-passes: 2
-    save-interval-seconds: 60
   social:
     enabled: true
     radius: 7
