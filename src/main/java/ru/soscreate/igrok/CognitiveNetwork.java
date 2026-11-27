@@ -199,7 +199,10 @@ final class CognitiveNetwork {
                 "приди", "приходи", "вернись", "возвращайся", "иди ко мне",
                 "иди сюда", "подойди ко мне", "подойди сюда", "двигайся",
                 "come here", "come to me", "approach");
-        boolean imperative = p.command() || politeRequest || movementRequest;
+        // Also accept common infinitive/colloquial forms such as "добуть дерево".
+        boolean resourceGatherRequest = containsAny(text, "добу", "сруб", "наруб",
+                "рубить", "собрать", "копать");
+        boolean imperative = p.command() || politeRequest || movementRequest || resourceGatherRequest;
         if (!imperative) return null;
 
         if (containsAny(text, "постро", "дом", "строй", "build", "house")) return "build";
@@ -211,10 +214,10 @@ final class CognitiveNetwork {
         if (containsAny(text, "атак", "напад", "защит", "убей", "attack", "fight")) return "attack";
         if (containsAny(text, "исслед", "развед", "прогуля", "осмотр", "explore")) return "explore";
         if (containsAny(text, "дерев", "бревн", "лес", "wood", "tree", "log")
-                && containsAny(text, "добуд", "сруб", "наруб", "коп", "собер", "принес")) return "wood";
+                && containsAny(text, "добу", "сруб", "наруб", "руб", "коп", "собер", "принес")) return "wood";
         if (containsAny(text, "кам", "руд", "желез", "угол", "алмаз", "stone", "ore", "iron", "diamond")
-                && containsAny(text, "добуд", "коп", "найд", "принес", "собер", "ищ")) return "stone";
-        if (containsAny(text, "коп", "шахт", "добуд", "mine") && !containsAny(text, "дерев", "бревн")) return "stone";
+                && containsAny(text, "добу", "коп", "найд", "принес", "собер", "ищ")) return "stone";
+        if (containsAny(text, "коп", "шахт", "добу", "mine") && !containsAny(text, "дерев", "бревн")) return "stone";
         return null;
     }
 
