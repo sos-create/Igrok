@@ -22,13 +22,13 @@ import java.util.UUID;
  * is bounded so exploration cannot flood the server with chunk work.
  */
 final class ChunkAreaManager {
-    private static final int VIEW_RADIUS = 8;
-    private static final int ACTIVE_RADIUS = 1; // 3x3 chunks
-    private static final int SCOUT_CACHE = 24;
-    private static final int MAX_IN_FLIGHT = 2;
     private static final long REFRESH_TICKS = 40L;
 
     private final IgrokPlugin plugin;
+    private final int viewRadius;
+    private final int activeRadius;
+    private final int scoutCache;
+    private final int maxInFlight;
     private final FakePlayerController controller;
     private final Set<ChunkKey> tickets = new HashSet<>();
     private final Set<ChunkKey> pending = new HashSet<>();
@@ -41,6 +41,10 @@ final class ChunkAreaManager {
     ChunkAreaManager(IgrokPlugin plugin, FakePlayerController controller) {
         this.plugin = plugin;
         this.controller = controller;
+        this.viewRadius = Math.max(2, Math.min(8, plugin.getConfig().getInt("chunks.view-radius", 8)));
+        this.activeRadius = Math.max(1, Math.min(2, plugin.getConfig().getInt("chunks.active-radius", 1)));
+        this.scoutCache = Math.max(0, Math.min(48, plugin.getConfig().getInt("chunks.scout-cache", 24)));
+        this.maxInFlight = Math.max(1, Math.min(2, plugin.getConfig().getInt("chunks.max-async-loads", 2)));
     }
 
     void start() {
@@ -79,8 +83,8 @@ final class ChunkAreaManager {
         Set<ChunkKey> next = new LinkedHashSet<>();
 
         // The 3x3 active area is always loaded and has highest priority.
-        for (int dx = -ACTIVE_RADIUS; dx <= ACTIVE_RADIUS; dx++) {
-            for (int dz = -ACTIVE_RADIUS; dz <= ACTIVE_RADIUS; dz++) {
+        for (int dx = -ACTIVE_RADIUS; dx <= activeRadius; dx++) {
+            for (int dz = -ACTIVE_RADIUS; dz <= activeRadius; dz++) {
                 next.add(new ChunkKey(world.getUID(), centerX + dx, centerZ + dz));
             }
         }
@@ -92,12 +96,12 @@ final class ChunkAreaManager {
         if (look.lengthSquared() > 0.0001) look.normalize();
 
         List<ScoutCandidate> candidates = new ArrayList<>();
-        for (int dx = -VIEW_RADIUS; dx <= VIEW_RADIUS; dx++) {
-            for (int dz = -VIEW_RADIUS; dz <= VIEW_RADIUS; dz++) {
-                if (Math.max(Math.abs(dx), Math.abs(dz)) > VIEW_RADIUS) continue;
-                if (Math.abs(dx) <= ACTIVE_RADIUS && Math.abs(dz) <= ACTIVE_RADIUS) continue;
+        for (int dx = -viewRadius; dx <= viewRadius; dx++) {
+            for (int dz = -viewRadius; dz <= viewRadius; dz++) {
+                if (Math.max(Math.abs(dx), Math.abs(dz)) > viewRadius) continue;
+                if (Math.abs(dx) <= activeRadius && Math.abs(dz) <= activeRadius) continue;
                 double distance = Math.sqrt(dx * dx + dz * dz);
-                if (distance > VIEW_RADIUS + 0.001) continue;
+                if (distance > viewRadius + 0.001) continue;
                 double dot = look.lengthSquared() < 0.0001 ? 0.0
                         : (dx * look.getX() + dz * look.getZ()) / Math.max(1.0, distance);
                 double score = distance - dot * 1.75;
@@ -126,7 +130,7 @@ final class ChunkAreaManager {
                 default -> dz;
             };
             ChunkKey key = new ChunkKey(world.getUID(), centerX + rx, centerZ + rz);
-            if (next.add(key) && ++added >= SCOUT_CACHE) break;
+            if (next.add(key) && ++added >= scoutCache) break;
         }
 
         desired.clear();
@@ -148,7 +152,7 @@ final class ChunkAreaManager {
     }
 
     private void pumpQueue() {
-        while (inFlight < MAX_IN_FLIGHT && !queue.isEmpty()) {
+        while (inFlight < maxInFlight && !queue.isEmpty()) {
             ChunkKey key = queue.poll();
             if (key == null || !desired.contains(key) || tickets.contains(key) || !pending.add(key)) continue;
             World world = Bukkit.getWorld(key.worldId());
