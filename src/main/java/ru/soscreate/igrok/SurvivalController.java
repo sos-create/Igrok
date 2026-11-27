@@ -48,6 +48,9 @@ final class SurvivalController {
 
     private final IgrokPlugin plugin;
     private final AutonomousPlanner autonomousPlanner = new AutonomousPlanner();
+    private final RecipeKnowledge recipeKnowledge = new RecipeKnowledge();
+    private int nextRecipeRefreshTick;
+    private int nextRedstoneGoalTick;
     private int nextCraftTick;
     private int nextBedScanTick;
     private int nextHuntDecisionTick;
@@ -71,6 +74,10 @@ final class SurvivalController {
     }
 
     void tick(Player bot, int tick) {
+        if (!recipeKnowledge.isLoaded() || tick >= nextRecipeRefreshTick) {
+            recipeKnowledge.refresh();
+            nextRecipeRefreshTick = tick + 1200;
+        }
         int learnedSurvival = plugin.skills().level("survival");
         int foodReserve = Math.min(19, (learnedFoodCaution ? 19 : 17) + learnedSurvival / 3);
         int recoveryReserve = Math.min(20, (learnedFoodCaution ? 20 : 19) + learnedSurvival / 3);
@@ -152,7 +159,14 @@ final class SurvivalController {
                 DevelopmentTree.preferredBranch(plugin.skills()),
                 plugin.skills().level("building") >= 4
                         && (plugin.houseBuilder().hasCompletedProject("watchtower")
-                            || plugin.skills().level("crafting") >= 2));
+                            || plugin.skills().level("crafting") >= 2),
+                count(bot, Material.REDSTONE),
+                tick >= nextRedstoneGoalTick,
+                count(bot, Material.PISTON),
+                count(bot, Material.REDSTONE_BLOCK),
+                plugin.skills().level("building") >= 5
+                        && plugin.houseBuilder().hasCompletedProject("workshop"),
+                plugin.houseBuilder().hasCompletedProject("piston_lab"));
 
         AutonomousPlanner.Decision decision = autonomousPlanner.choose(snapshot);
         if (decision == null) return null;
@@ -220,6 +234,7 @@ final class SurvivalController {
             case "wood" -> nextWoodGoalTick = tick + 400;
             case "coal" -> nextCoalGoalTick = tick + 500;
             case "iron" -> nextIronGoalTick = tick + 600;
+            case "redstone" -> nextRedstoneGoalTick = tick + 600;
             default -> nextStoneGoalTick = tick + 400;
         }
     }
@@ -509,6 +524,42 @@ final class SurvivalController {
                 && planks >= 3 && hasNearbyCraftingTable(bot)) {
             craftMatching(bot, type -> type.name().endsWith("_BED"));
         }
+
+        // Once the first shelter exists, reserve some resources for an actual
+        // piston/logic workshop instead of spending every ingot and plank on gear.
+        if (plugin.houseBuilder().hasCompleted() && hasNearbyCraftingTable(bot)) {
+            if (count(bot, Material.PISTON) < 1
+                    && count(bot, Material.COBBLESTONE) >= 4
+                    && count(bot, Material.IRON_INGOT) >= 1
+                    && count(bot, Material.REDSTONE) >= 1
+                    && countBySuffix(bot, "_PLANKS") >= 3
+                    && craftResult(bot, Material.PISTON)) return;
+            if (count(bot, Material.LEVER) < 2 && count(bot, Material.COBBLESTONE) > 20
+                    && count(bot, Material.STICK) >= 1
+                    && craftResult(bot, Material.LEVER)) return;
+            if (count(bot, Material.REDSTONE_TORCH) < 2
+                    && count(bot, Material.REDSTONE) >= 2
+                    && count(bot, Material.STICK) >= 2
+                    && craftResult(bot, Material.REDSTONE_TORCH)) return;
+            if (count(bot, Material.REPEATER) < 1
+                    && count(bot, Material.REDSTONE) >= 3
+                    && count(bot, Material.REDSTONE_TORCH) >= 2
+                    && count(bot, Material.STONE) >= 3
+                    && craftResult(bot, Material.REPEATER)) return;
+            if (count(bot, Material.OBSERVER) < 1
+                    && count(bot, Material.REDSTONE) >= 2
+                    && count(bot, Material.COBBLESTONE) >= 6
+                    && count(bot, Material.QUARTZ) >= 1
+                    && craftResult(bot, Material.OBSERVER)) return;
+            if (count(bot, Material.DROPPER) < 1 && count(bot, Material.REDSTONE) >= 1
+                    && count(bot, Material.COBBLESTONE) >= 7
+                    && craftResult(bot, Material.DROPPER)) return;
+            if (count(bot, Material.HOPPER) < 1 && count(bot, Material.IRON_INGOT) >= 5
+                    && count(bot, Material.CHEST) >= 1
+                    && craftResult(bot, Material.HOPPER)) return;
+            if (count(bot, Material.REDSTONE_BLOCK) < 1 && count(bot, Material.REDSTONE) >= 9
+                    && craftResult(bot, Material.REDSTONE_BLOCK)) return;
+        }
     }
 
     private int bestToolTier(Player bot, String suffix) {
@@ -537,9 +588,7 @@ final class SurvivalController {
     }
 
     private boolean craftMatching(Player bot, java.util.function.Predicate<Material> wanted) {
-        Iterator<Recipe> iterator = Bukkit.recipeIterator();
-        while (iterator.hasNext()) {
-            Recipe recipe = iterator.next();
+        for (Recipe recipe : recipeKnowledge.craftingRecipes()) {
             ItemStack result = recipe.getResult();
             if (result == null || result.getType().isAir() || !wanted.test(result.getType())) continue;
             List<RecipeChoice> ingredients = ingredientChoices(recipe);
