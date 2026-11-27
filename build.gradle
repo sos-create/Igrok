@@ -4,7 +4,7 @@ plugins {
 }
 
 group = "ru.soscreate"
-version = "0.9.29"
+version = "0.9.30"
 
 java {
     toolchain {
