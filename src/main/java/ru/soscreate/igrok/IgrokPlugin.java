@@ -61,12 +61,15 @@ public final class IgrokPlugin extends JavaPlugin implements Listener {
     @Override
     public void onEnable() {
         saveDefaultConfig();
-        getConfig().addDefault("chunks.enabled", true);
+        getConfig().addDefault("chunks.enabled", false);
         getConfig().addDefault("chunks.view-radius", 8);
         getConfig().addDefault("chunks.active-radius", 1);
         getConfig().addDefault("chunks.scout-cache", 24);
         getConfig().addDefault("chunks.max-async-loads", 2);
         getConfig().options().copyDefaults(true);
+        // Disable the experimental scout chunk generator. It can trigger expensive
+        // terrain reads/generation and Paper chunk-data failures on some worlds.
+        getConfig().set("chunks.enabled", false);
         // Keep replies quick even when the server already has an older config.yml.
         getConfig().set("chat.reply-delay-min-seconds", 5);
         getConfig().set("chat.reply-delay-max-seconds", 5);
@@ -97,7 +100,7 @@ public final class IgrokPlugin extends JavaPlugin implements Listener {
         if (getConfig().getBoolean("auto-spawn", true)) {
             Bukkit.getScheduler().runTask(this, this::spawnWithConfiguredSkin);
         }
-        getLogger().info("Igrok 0.9.30 survival player agent enabled for Paper 1.21.4 (vanilla physics enabled).");
+        getLogger().info("Igrok 0.9.34 survival player agent enabled for Paper 1.21.4 (vanilla physics enabled).");
     }
 
     @Override
