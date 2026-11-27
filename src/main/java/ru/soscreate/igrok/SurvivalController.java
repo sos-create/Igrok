@@ -109,7 +109,9 @@ final class SurvivalController {
                                            GoalPlanner.Goal current, int tick) {
         int logs = countBySuffix(bot, "_LOG") + countBySuffix(bot, "_WOOD");
         int planks = countBySuffix(bot, "_PLANKS");
-        int coal = count(bot, Material.COAL) + count(bot, Material.CHARCOAL);
+        int coal = count(bot, Material.COAL);
+        int charcoal = count(bot, Material.CHARCOAL);
+        int torches = count(bot, Material.TORCH);
         boolean hasTable = hasNearbyCraftingTable(bot) || count(bot, Material.CRAFTING_TABLE) > 0;
         boolean hasFurnace = findNearbyBlock(bot, Material.FURNACE, 4) != null
                 || count(bot, Material.FURNACE) > 0;
@@ -126,6 +128,8 @@ final class SurvivalController {
                 planks,
                 count(bot, Material.COBBLESTONE),
                 coal,
+                charcoal,
+                torches,
                 count(bot, Material.RAW_IRON),
                 count(bot, Material.IRON_INGOT),
                 bestToolTier(bot, "PICKAXE"),
@@ -138,7 +142,8 @@ final class SurvivalController {
                 tick >= nextStoneGoalTick,
                 tick >= nextCoalGoalTick,
                 tick >= nextIronGoalTick,
-                personality.curiosity());
+                personality.curiosity(),
+                personality.creativity());
 
         AutonomousPlanner.Decision decision = autonomousPlanner.choose(snapshot);
         if (decision == null) return null;
@@ -761,6 +766,16 @@ final class SurvivalController {
                 Material.GOLD_ORE, Material.DEEPSLATE_GOLD_ORE
         };
         for (Material material : priority) if (count(bot, material) > 0) return material;
+
+        // Charcoal is a valid coal substitute. Feed ordinary logs into the
+        // furnace when ores and food are not waiting to be smelted.
+        for (Material material : Material.values()) {
+            String name = material.name();
+            if ((name.endsWith("_LOG") || name.endsWith("_WOOD"))
+                    && !name.startsWith("STRIPPED_") && count(bot, material) > 0) {
+                return material;
+            }
+        }
         return null;
     }
 
