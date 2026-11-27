@@ -162,7 +162,7 @@ final class AutonomousPlanner {
         // and enough hands-on building experience. Each project competes with
         // upgrades, fuel and discovery instead of blocking them.
         if (s.shelterCompleted() && s.buildingSkill() >= 2 && !s.watchtowerCompleted()) {
-            if (usableWood < 25) {
+            if (usableWood < 29) {
                 best = better(best, collect(s.woodSearchReady(), "wood", 0.67,
                         "LOOKOUT", "У меня появилась идея построить небольшую смотровую башню; постепенно собираю доски.", false));
             } else if (s.cobblestone() < 9) {
