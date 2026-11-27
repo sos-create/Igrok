@@ -81,13 +81,13 @@ final class AutonomousPlanner {
         } else if (s.pickaxeTier() < 3) {
             if (s.cobblestone() < 3) {
                 best = better(best, collect(s.stoneSearchReady(), "stone", 0.86,
-                        "STONE_TOOLS", "Каменная кирка откроет больше рецептов и безопасную добычу руд."));
+                        "STONE_TOOLS", "Каменная кирка откроет больше рецептов и безопасную добычу руд.", false));
             } else if (s.cobblestone() < 8) {
                 best = better(best, collect(s.stoneSearchReady(), "stone", 0.74,
-                        "STONE_TOOLS", "Добираю камень для кирки, печи или другого полезного снаряжения."));
+                        "STONE_TOOLS", "Добираю камень для кирки, печи или другого полезного снаряжения.", false));
             } else if (s.cobblestone() < 12) {
                 best = better(best, collect(s.stoneSearchReady(), "stone", 0.61,
-                        "STONE_TOOLS", "Есть смысл сделать небольшой запас камня, но можно заняться и другими делами."));
+                        "STONE_TOOLS", "Есть смысл сделать небольшой запас камня, но можно заняться и другими делами.", false));
             } else {
                 best = better(best, decision(GoalPlanner.Goal.IDLE, "", 0.72, "STONE_TOOLS",
                         "Камня достаточно: крафтую улучшенные инструменты и не добываю лишнее."));
@@ -97,7 +97,7 @@ final class AutonomousPlanner {
         // An axe is an independent quality-of-life upgrade. It need not wait for a house.
         if (s.axeTier() < 1 && usableWood < 14) {
             best = better(best, collect(s.woodSearchReady(), "wood", 0.57,
-                    "WOODCUTTING", "Топор ускорит сбор древесины; пополню запас, если дерево доступно."));
+                    "WOODCUTTING", "Топор ускорит сбор древесины; пополню запас, если дерево доступно.", false));
         } else if (s.axeTier() < 3 && s.pickaxeTier() >= 1 && s.cobblestone() >= 3) {
             best = better(best, decision(GoalPlanner.Goal.IDLE, "", 0.49, "WOODCUTTING",
                     "Материалы для каменного топора уже есть: проверяю возможность его изготовить."));
@@ -111,7 +111,7 @@ final class AutonomousPlanner {
                         "Уголь искать необязательно: использую печь и древесину, чтобы получать древесный уголь."));
             } else if (s.pickaxeTier() >= 1) {
                 best = better(best, collect(s.coalSearchReady(), "coal", 0.63,
-                        "FUEL", "Нужен свет и топливо: проверяю уголь, если путь к нему сейчас доступен."));
+                        "FUEL", "Нужен свет и топливо: проверяю уголь, если путь к нему сейчас доступен.", false));
             } else if (s.cobblestone() >= 8 && s.craftingTableAvailable()) {
                 best = better(best, decision(GoalPlanner.Goal.IDLE, "", 0.57, "FURNACE",
                         "Сначала изготовлю печь из уже имеющегося камня; дальше можно получать древесный уголь."));
@@ -122,7 +122,7 @@ final class AutonomousPlanner {
         int iron = s.rawIron() + s.ironIngots();
         if (s.pickaxeTier() >= 3 && iron < 6) {
             best = better(best, collect(s.ironSearchReady(), "iron", 0.61,
-                    "IRON", "Железо даст более прочные инструменты, но я ищу его только с подходящей киркой."));
+                    "IRON", "Железо даст более прочные инструменты, но я ищу его только с подходящей киркой.", false));
         }
 
         // Furnace is a utility project, not a requirement for every other action.
