@@ -142,7 +142,7 @@ final class AgentNavigator {
         dx /= horizontal;
         dz /= horizontal;
         float yaw = (float) Math.toDegrees(Math.atan2(-dx, dz));
-        bot.setRotation(yaw, 0.0F);
+        turnToward(yaw);
 
         double vertical = bot.isOnGround() ? 0.0 : bot.getVelocity().getY();
         if (bot.isOnGround() && next.y() > current.getBlockY()) {
@@ -244,7 +244,7 @@ final class AgentNavigator {
         if (length < 0.001) return false;
         dx /= length;
         dz /= length;
-        bot.setRotation((float) Math.toDegrees(Math.atan2(-dx, dz)), 0.0F);
+        turnToward((float) Math.toDegrees(Math.atan2(-dx, dz)));
         double vertical = bot.isOnGround() ? 0.0 : bot.getVelocity().getY();
         if (bot.isOnGround() && best.y() > current.getBlockY()) {
             Block feet = current.getBlock();
@@ -254,6 +254,29 @@ final class AgentNavigator {
         double speed = movementSpeed();
         bot.setVelocity(new Vector(dx * speed, vertical, dz * speed));
         return true;
+    }
+
+    /**
+     * Turn like a player instead of snapping the body to the next path vector.
+     * The fake player's tick keeps these angles after vanilla movement physics.
+     */
+    private void turnToward(float targetYaw) {
+        float currentYaw = bot.getLocation().getYaw();
+        float delta = wrapDegrees(targetYaw - currentYaw);
+        float nextYaw = currentYaw + Math.max(-18.0F, Math.min(18.0F, delta));
+        float pitch = bot.getLocation().getPitch();
+        bot.setRotation(nextYaw, pitch);
+        org.bukkit.craftbukkit.entity.CraftPlayer craftPlayer =
+                (org.bukkit.craftbukkit.entity.CraftPlayer) bot;
+        craftPlayer.getHandle().setYHeadRot(nextYaw);
+        craftPlayer.getHandle().setYBodyRot(nextYaw);
+    }
+
+    private float wrapDegrees(float degrees) {
+        float wrapped = degrees % 360.0F;
+        if (wrapped <= -180.0F) wrapped += 360.0F;
+        if (wrapped > 180.0F) wrapped -= 360.0F;
+        return wrapped;
     }
 
     private void updateGait(boolean allowSprint) {
@@ -307,7 +330,7 @@ final class AgentNavigator {
         if (safeTarget == null || Math.abs(safeTarget.y() - current.getBlockY()) > 1) return false;
 
         float yaw = (float) Math.toDegrees(Math.atan2(-horizontal.getX(), horizontal.getZ()));
-        bot.setRotation(yaw, 0.0F);
+        turnToward(yaw);
         bot.setSprinting(false);
         double vertical = bot.isOnGround() ? 0.0 : bot.getVelocity().getY();
         if (bot.isOnGround() && safeTarget.y() > current.getBlockY()) {
