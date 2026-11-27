@@ -79,6 +79,11 @@ final class HouseBuilder {
 
     void resumeSavedState(YamlConfiguration data) {
         completed = data.getBoolean("builder.completed", false);
+        // Existing servers may already have a completed house but no skills.yml
+        // because the progression system did not exist in older versions.
+        if (completed && plugin.skills().level("building") < 2) {
+            plugin.skills().gain("building", 22);
+        }
         completedProjects.clear();
         completedProjects.addAll(data.getStringList("builder.completed-projects"));
         projectType = data.getString("builder.project-type", "shelter");
