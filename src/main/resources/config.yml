@@ -48,3 +48,12 @@ autonomy:
   # Player requests are proposals, never guaranteed orders.
   refuse-all-player-orders: false
   # TNT and ignition blocks are hard-banned in code, not configurable.
+
+# Igrok chunk streaming. Keeps nearby terrain available without loading a
+# complete 17x17 square at once.
+chunks:
+  enabled: true
+  view-radius: 8
+  active-radius: 1
+  scout-cache: 24
+  max-async-loads: 2
