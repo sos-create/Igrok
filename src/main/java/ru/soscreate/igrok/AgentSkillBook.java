@@ -52,7 +52,7 @@ final class AgentSkillBook {
     void gain(String skill, int amount) {
         if (!experience.containsKey(skill) || amount <= 0) return;
         int old = experience.get(skill);
-        int next = Math.min(100_000, old + Math.min(10, amount));
+        int next = Math.min(100_000, old + Math.min(1000, amount));
         if (next == old) return;
         experience.put(skill, next);
         dirty = true;
