@@ -126,8 +126,15 @@ final class AgentBrain {
         try { goal = GoalPlanner.Goal.valueOf(data.getString("brain.goal", "IDLE")); }
         catch (IllegalArgumentException ignored) { goal = GoalPlanner.Goal.IDLE; }
         String id = data.getString("brain.follow-target", "");
-        try { followTarget = id.isBlank() ? null : UUID.fromString(id); }
-        catch (IllegalArgumentException ignored) { followTarget = null; }
+        try {
+            UUID savedTarget = id.isBlank() ? null : UUID.fromString(id);
+            Player onlineTarget = savedTarget == null ? null : Bukkit.getPlayer(savedTarget);
+            // Following is a temporary order. Never let an offline player UUID
+            // pin an autonomous survival bot in FOLLOW after a server restart.
+            followTarget = onlineTarget != null && onlineTarget.isOnline() ? savedTarget : null;
+        } catch (IllegalArgumentException ignored) {
+            followTarget = null;
+        }
         miningRequested = data.getBoolean("brain.mining-requested", false);
         miningMode = data.getString("brain.mining-mode", "wood");
         if (!java.util.Set.of("wood", "stone", "coal", "iron").contains(miningMode)) miningMode = "wood";
@@ -762,9 +769,19 @@ final class AgentBrain {
         if (threat != null) threatDistance = threat.getLocation().distance(bot.getLocation());
 
         Player followed = followTarget == null ? null : Bukkit.getPlayer(followTarget);
-        if (followed != null && (!followed.isOnline() || followed.getWorld() != bot.getWorld())) followed = null;
+        if (followTarget != null && (followed == null || !followed.isOnline()
+                || followed.getWorld() != bot.getWorld())) {
+            followTarget = null;
+            followed = null;
+            if (!miningRequested && !attackRequested && !explorationRequested) {
+                manualOrderActive = false;
+            }
+        }
 
-        boolean explore = explorationRequested;
+        // Keep an exploration route active until its destination is reached.
+        // Previously the request flag was cleared as soon as a destination was
+        // selected, so the next planning pulse cancelled the trip halfway.
+        boolean explore = explorationRequested || exploreTarget != null;
         if (!explore && plugin.getConfig().getBoolean("brain.exploration.enabled", true)
                 && tickCounter >= nextExploreTick && personality.curiosity() > 0.48) {
             explore = true;
@@ -814,7 +831,7 @@ final class AgentBrain {
         }
 
         // A critical survival rule is stronger than follow/attack requests.
-        if (chosen != GoalPlanner.Goal.FLEE && followTarget != null) {
+        if (chosen != GoalPlanner.Goal.FLEE && followed != null) {
             chosen = GoalPlanner.Goal.FOLLOW;
             decisionReason = "Есть активная цель сопровождения; угрозы сейчас не требуют отступления.";
         }
@@ -827,7 +844,7 @@ final class AgentBrain {
         if (!manualOrderActive && chosen != GoalPlanner.Goal.FLEE
                 && chosen != GoalPlanner.Goal.DEFEND && !plugin.houseBuilder().isBuilding()
                 && !plugin.houseBuilder().hasCompleted() && tickCounter >= nextBuildAttemptTick) {
-            nextBuildAttemptTick = tickCounter + 600;
+            nextBuildAttemptTick = tickCounter + 200;
             if (plugin.houseBuilder().canBuild(bot)
                     && plugin.houseBuilder().start(bot.getLocation(), bot)) {
                 navigator.stop();
@@ -1005,7 +1022,12 @@ final class AgentBrain {
         Player target = followTarget == null ? null : Bukkit.getPlayer(followTarget);
         if (target == null || !target.isOnline() || target.getWorld() != bot.getWorld()) {
             navigator.stop();
-            state = "Жду возвращения игрока, за которым следую";
+            followTarget = null;
+            if (!miningRequested && !attackRequested && !explorationRequested) {
+                manualOrderActive = false;
+            }
+            goal = GoalPlanner.Goal.IDLE;
+            state = "Игрока нет рядом — возвращаюсь к своим делам";
             return;
         }
         Location behind = target.getLocation().clone();
@@ -1124,14 +1146,14 @@ final class AgentBrain {
     private Block findMiningTarget(Player bot) {
         World world = bot.getWorld();
         Location origin = bot.getLocation();
-        int radius = Math.max(5, Math.min(8, plugin.getConfig().getInt("brain.mining.search-radius", 8)));
+        int radius = Math.max(6, Math.min(12, plugin.getConfig().getInt("brain.mining.search-radius", 10)));
         Block best = null;
         double bestDistance = Double.POSITIVE_INFINITY;
         boolean woodMode = miningMode.equals("wood");
         int minimumToolTier = miningMode.equals("iron") ? 3 : 1;
         if (!woodMode && survivalToolTier(bot, "PICKAXE") < minimumToolTier) return null;
         int minY = Math.max(world.getMinHeight() + 1, origin.getBlockY() - (woodMode ? 4 : 10));
-        int maxY = Math.min(world.getMaxHeight() - 2, origin.getBlockY() + (woodMode ? 5 : 4));
+        int maxY = Math.min(world.getMaxHeight() - 2, origin.getBlockY() + (woodMode ? 8 : 4));
         Location eye = bot.getEyeLocation();
         for (int x = origin.getBlockX() - radius; x <= origin.getBlockX() + radius; x++) {
             for (int z = origin.getBlockZ() - radius; z <= origin.getBlockZ() + radius; z++) {
@@ -1143,8 +1165,10 @@ final class AgentBrain {
                     Location center = block.getLocation().add(0.5, 0.5, 0.5);
                     double distance = center.distanceSquared(eye);
                     if (distance >= bestDistance || distance > (radius + 2.0) * (radius + 2.0)) continue;
-                    // Select resources behind leaves/terrain too. Navigation must
-                    // approach them first; line of sight is checked again before mining.
+                    // Prefer resources the bot can actually see and reach. Selecting
+                    // a log hidden behind another trunk made it repeatedly walk to a
+                    // blocked side, discard the target, and select the same log again.
+                    if (!bot.hasLineOfSight(center)) continue;
                     if (woodMode && !hasNearbyLeaves(block)) continue;
                     best = block;
                     bestDistance = distance;
@@ -1201,13 +1225,16 @@ final class AgentBrain {
     private void explore(Player bot) {
         if (exploreTarget == null || bot.getLocation().distanceSquared(exploreTarget) < 2.0) {
             if (!explorationRequested) {
+                exploreTarget = null;
                 manualOrderActive = false;
                 goal = GoalPlanner.Goal.IDLE;
+                nextExploreTick = tickCounter + ThreadLocalRandom.current().nextInt(100, 181);
                 navigator.stop();
+                state = "Осмотрел окрестности; выбираю следующую цель";
                 return;
             }
-            int radius = 6 + (int) (personality.curiosity() * 10);
-            for (int attempt = 0; attempt < 8; attempt++) {
+            int radius = 10 + (int) (personality.curiosity() * 12);
+            for (int attempt = 0; attempt < 24; attempt++) {
                 int x = bot.getLocation().getBlockX() + ThreadLocalRandom.current().nextInt(-radius, radius + 1);
                 int z = bot.getLocation().getBlockZ() + ThreadLocalRandom.current().nextInt(-radius, radius + 1);
                 if (!bot.getWorld().isChunkLoaded(x >> 4, z >> 4)) continue;
@@ -1231,14 +1258,19 @@ final class AgentBrain {
             if (exploreTarget == null) {
                 goal = GoalPlanner.Goal.IDLE;
                 explorationRequested = false;
+                nextExploreTick = tickCounter + 100;
                 return;
             }
             explorationRequested = false;
         }
-        state = "Исследую окрестности";
-        if (!navigator.moveTo(exploreTarget)) {
+        state = "Ищу ресурсы и исследую окрестности";
+        double travelDistance = bot.getLocation().distance(exploreTarget);
+        boolean canSprint = travelDistance > 9.0 && bot.getFoodLevel() >= 14
+                && bot.getHealth() >= bot.getMaxHealth() * 0.65;
+        if (!navigator.moveTo(exploreTarget, canSprint)) {
             exploreTarget = null;
             explorationRequested = false;
+            nextExploreTick = tickCounter + 100;
         }
     }
 
