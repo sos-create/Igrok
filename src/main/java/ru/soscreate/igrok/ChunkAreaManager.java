@@ -83,8 +83,8 @@ final class ChunkAreaManager {
         Set<ChunkKey> next = new LinkedHashSet<>();
 
         // The 3x3 active area is always loaded and has highest priority.
-        for (int dx = -ACTIVE_RADIUS; dx <= activeRadius; dx++) {
-            for (int dz = -ACTIVE_RADIUS; dz <= activeRadius; dz++) {
+        for (int dx = -activeRadius; dx <= activeRadius; dx++) {
+            for (int dz = -activeRadius; dz <= activeRadius; dz++) {
                 next.add(new ChunkKey(world.getUID(), centerX + dx, centerZ + dz));
             }
         }
