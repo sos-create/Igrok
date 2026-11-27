@@ -35,9 +35,10 @@ final class GoalPlanner {
 
         // Absolute truth-table rule: immediate survival outranks every order.
         if (s.threatVisible()
-                && (s.health() <= 6.0 || healthRatio <= 0.32)) {
+                && (s.health() <= 7.0 || healthRatio <= 0.40
+                    || (healthRatio <= 0.52 && distance <= 8.0))) {
             return new Decision(Goal.FLEE, 1.0,
-                    "ПРАВИЛО: противник обнаружен И здоровье критически низкое — отступать.");
+                    "ПРАВИЛО: здоровье уже опасно низкое относительно угрозы — сначала отступить и восстановиться.");
         }
 
         // A close threat or deliberate defense request can trigger combat,
@@ -52,8 +53,8 @@ final class GoalPlanner {
         scores.put(Goal.IDLE, 0.14);
 
         double fleeScore = s.threatVisible()
-                ? 0.16 + danger * 0.25 + (1.0 - healthRatio) * 0.48
-                    + (healthRatio < 0.55 ? 0.16 : 0.0)
+                ? 0.18 + danger * 0.28 + (1.0 - healthRatio) * 0.56
+                    + (healthRatio < 0.58 ? 0.18 : 0.0)
                 : 0.0;
         scores.put(Goal.FLEE, fleeScore);
 
