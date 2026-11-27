@@ -39,6 +39,7 @@ public final class IgrokPlugin extends JavaPlugin implements Listener {
     private HouseBuilder houseBuilder;
     private AgentBrain brain;
     private AgentMemory memory;
+    private AgentSkillBook skills;
     private CognitiveNetwork cognition;
     private BukkitTask respawnTask;
     private BukkitTask brainTask;
@@ -67,6 +68,8 @@ public final class IgrokPlugin extends JavaPlugin implements Listener {
         houseBuilder = new HouseBuilder(this);
         memory = new AgentMemory(getDataFolder());
         memory.load();
+        skills = new AgentSkillBook(new File(getDataFolder(), "skills.yml"));
+        skills.load();
         brain = new AgentBrain(this, memory);
         cognition = new CognitiveNetwork(new File(new File(getDataFolder(), "memory"), "cognition.yml"));
         brain.loadState(stateData);
@@ -99,6 +102,7 @@ public final class IgrokPlugin extends JavaPlugin implements Listener {
         if (memorySaveTask != null) memorySaveTask.cancel();
         if (houseBuilder != null) houseBuilder.cancel(false);
         if (memory != null) memory.save();
+        if (skills != null) skills.save();
         if (cognition != null) cognition.save();
         if (controller != null) controller.remove();
     }
@@ -267,6 +271,7 @@ public final class IgrokPlugin extends JavaPlugin implements Listener {
         if (stateData == null) return;
         if (brain != null) brain.saveState(stateData);
         if (houseBuilder != null) houseBuilder.saveState(stateData);
+        if (skills != null) skills.save();
         Player bot = controller == null ? null : controller.bukkitPlayer();
         if (bot != null) {
             Location loc = bot.getLocation();
@@ -353,12 +358,19 @@ public final class IgrokPlugin extends JavaPlugin implements Listener {
     public void onPlayerBlockBreak(BlockBreakEvent event) {
         memory.observeAction(event.getPlayer().getUniqueId(), "mine");
         cognition.observeBehavior("mine");
+        if (controller != null && controller.isBot(event.getPlayer()) && skills != null) {
+            skills.gain("mining", 2);
+            skills.gain("awareness", 1);
+        }
     }
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void onPlayerBlockPlace(BlockPlaceEvent event) {
         memory.observeAction(event.getPlayer().getUniqueId(), "build");
         cognition.observeBehavior("build");
+        if (controller != null && controller.isBot(event.getPlayer()) && skills != null) {
+            skills.gain("building", 1);
+        }
     }
 
     @EventHandler
@@ -439,4 +451,5 @@ public final class IgrokPlugin extends JavaPlugin implements Listener {
     HouseBuilder houseBuilder() { return houseBuilder; }
     AgentBrain brain() { return brain; }
     CognitiveNetwork cognition() { return cognition; }
+    AgentSkillBook skills() { return skills; }
 }
