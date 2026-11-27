@@ -123,8 +123,16 @@ final class SurvivalController {
         boolean hasTable = hasNearbyCraftingTable(bot) || count(bot, Material.CRAFTING_TABLE) > 0;
         boolean hasFurnace = findNearbyBlock(bot, Material.FURNACE, 4) != null
                 || count(bot, Material.FURNACE) > 0;
-        boolean shelterComplete = plugin.houseBuilder().hasCompleted();
-        boolean shelterReady = !shelterComplete && plugin.houseBuilder().canBuild(bot);
+        HouseBuilder builder = plugin.houseBuilder();
+        boolean shelterComplete = builder.hasCompleted();
+        boolean shelterReady = !shelterComplete && builder.canBuild(bot);
+        int shelterMissingPlanks = shelterComplete ? 0 : builder.missingRequiredSuffix("_PLANKS");
+        int shelterMissingCobblestone = shelterComplete ? 0 : builder.missingRequired(Material.COBBLESTONE);
+        boolean projectUnlocked = !builder.nextProjectType().isBlank();
+        boolean projectReady = projectUnlocked && builder.canBuildProject(bot);
+        int projectMissingCobblestone = projectUnlocked ? builder.missingRequired(Material.COBBLESTONE) : 0;
+        int projectMissingPiston = projectUnlocked ? builder.missingRequired(Material.PISTON) : 0;
+        int projectMissingRedstoneBlock = projectUnlocked ? builder.missingRequired(Material.REDSTONE_BLOCK) : 0;
 
         AutonomousPlanner.Snapshot snapshot = new AutonomousPlanner.Snapshot(
                 bot.getFoodLevel(),
@@ -166,7 +174,13 @@ final class SurvivalController {
                 count(bot, Material.REDSTONE_BLOCK),
                 plugin.skills().level("building") >= 5
                         && plugin.houseBuilder().hasCompletedProject("workshop"),
-                plugin.houseBuilder().hasCompletedProject("piston_lab"));
+                plugin.houseBuilder().hasCompletedProject("piston_lab"),
+                shelterMissingPlanks,
+                shelterMissingCobblestone,
+                projectMissingCobblestone,
+                projectMissingPiston,
+                projectMissingRedstoneBlock,
+                projectReady);
 
         AutonomousPlanner.Decision decision = autonomousPlanner.choose(snapshot);
         if (decision == null) return null;
