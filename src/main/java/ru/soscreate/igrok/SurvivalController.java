@@ -389,6 +389,7 @@ final class SurvivalController {
         }
         bot.setFoodLevel(Math.min(20, bot.getFoodLevel() + nutrition));
         bot.setSaturation(Math.min(20.0F, bot.getSaturation() + nutrition * 0.6F));
+        plugin.skills().gain("survival", 1);
     }
 
     private boolean isRawFood(String name) {
@@ -515,7 +516,8 @@ final class SurvivalController {
         String tool = block.name().endsWith("_LOG") || block.name().endsWith("_WOOD")
                 ? "AXE" : "PICKAXE";
         int level = bestToolTier(bot, tool);
-        double speed = 1.0 + Math.max(0, level) * 0.32;
+        int learnedMining = plugin.skills().level("mining");
+        double speed = 1.0 + Math.max(0, level) * 0.32 + learnedMining * 0.035;
         if (block.name().endsWith("_ORE") && level < 3) speed *= 0.72;
         return Math.max(6, (int) Math.ceil(baseTicks / speed));
     }
@@ -601,7 +603,7 @@ final class SurvivalController {
         if (container == null || container.getWorld() != bot.getWorld()) return false;
         Location center = container.clone().add(0.5, 0.5, 0.5);
         return bot.getEyeLocation().distanceSquared(center) <= 4.5 * 4.5
-                && bot.hasLineOfSight(center);
+                && BlockPerception.canSee(bot.getEyeLocation(), bot.getWorld().getBlockAt(container), 4.5);
     }
 
     private boolean canOpenInventory(Player bot, Inventory inventory) {
@@ -627,7 +629,8 @@ final class SurvivalController {
                     if (block.getType() != Material.CHEST) continue;
                     Location center = block.getLocation().add(0.5, 0.5, 0.5);
                     double distance = bot.getEyeLocation().distanceSquared(center);
-                    if (distance > 4.5 * 4.5 || !bot.hasLineOfSight(center)) continue;
+                    if (distance > 4.5 * 4.5
+                            || !BlockPerception.canSee(bot.getEyeLocation(), block, 4.5)) continue;
                     if (distance < bestDistance) {
                         bestDistance = distance;
                         best = block.getLocation();
@@ -673,7 +676,7 @@ final class SurvivalController {
                     Material cropType = crop.getType();
                     Location cropCenter = crop.getLocation().add(0.5, 0.5, 0.5);
                     if (bot.getEyeLocation().distanceSquared(cropCenter) > 4.5 * 4.5
-                            || !bot.hasLineOfSight(cropCenter)) continue;
+                            || !BlockPerception.canSee(bot.getEyeLocation(), crop, 4.5)) continue;
                     if (!bot.breakBlock(crop)) continue;
 
                     // Replant only with an item the bot already owns; dropped crop yield is picked up
@@ -865,6 +868,7 @@ final class SurvivalController {
             bot.getWorld().dropItemNaturally(bot.getLocation(), leftover);
         }
         bot.updateInventory();
+        plugin.skills().gain("crafting", 2);
         return true;
     }
 
@@ -1018,7 +1022,7 @@ final class SurvivalController {
                     if (block.getType() != material) continue;
                     Location center = block.getLocation().add(0.5, 0.5, 0.5);
                     if (bot.getEyeLocation().distanceSquared(center) > 4.5 * 4.5
-                            || !bot.hasLineOfSight(center)) continue;
+                            || !BlockPerception.canSee(bot.getEyeLocation(), block, 4.5)) continue;
                     double distance = center.distanceSquared(origin);
                     if (distance < bestDistance) {
                         bestDistance = distance;
