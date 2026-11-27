@@ -301,9 +301,13 @@ final class AgentBrain {
                 && bot.getFoodLevel() > 10 && bot.getHealth() >= bot.getMaxHealth() * 0.60
                 && tickCounter >= nextIdleWanderTick) {
             World world = bot.getWorld();
-            for (int attempt = 0; attempt < 8 && idleWanderTarget == null; attempt++) {
-                int dx = ThreadLocalRandom.current().nextInt(-8, 9);
-                int dz = ThreadLocalRandom.current().nextInt(-8, 9);
+            for (int attempt = 0; attempt < 32 && idleWanderTarget == null; attempt++) {
+                // First try a nearby stroll. If those positions are inside a learned
+                // danger zone, try a wider radius so one old death cannot immobilize
+                // Igrok around the respawn point forever.
+                int radius = attempt < 8 ? 8 : 20 + (int) (personality.curiosity() * 12);
+                int dx = ThreadLocalRandom.current().nextInt(-radius, radius + 1);
+                int dz = ThreadLocalRandom.current().nextInt(-radius, radius + 1);
                 if (dx * dx + dz * dz < 9) continue;
 
                 int x = bot.getLocation().getBlockX() + dx;
@@ -1233,8 +1237,11 @@ final class AgentBrain {
                 state = "Осмотрел окрестности; выбираю следующую цель";
                 return;
             }
-            int radius = 10 + (int) (personality.curiosity() * 12);
-            for (int attempt = 0; attempt < 24; attempt++) {
+            // Learned danger zones are 28 blocks wide. Explore beyond that radius
+            // when necessary; otherwise the bot could reject every local destination
+            // after a death and remain at spawn forever.
+            int radius = 20 + (int) (personality.curiosity() * 12);
+            for (int attempt = 0; attempt < 40; attempt++) {
                 int x = bot.getLocation().getBlockX() + ThreadLocalRandom.current().nextInt(-radius, radius + 1);
                 int z = bot.getLocation().getBlockZ() + ThreadLocalRandom.current().nextInt(-radius, radius + 1);
                 if (!bot.getWorld().isChunkLoaded(x >> 4, z >> 4)) continue;
