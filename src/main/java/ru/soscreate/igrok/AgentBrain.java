@@ -313,6 +313,7 @@ final class AgentBrain {
                     && lastTaskPosition.getWorld() == bot.getWorld()
                     && lastTaskPosition.distanceSquared(bot.getLocation()) >= 1.0) {
                 plugin.skills().gain("navigation", 1);
+                plugin.skills().gain("awareness", 1);
             }
             lastTaskPosition = bot.getLocation().clone();
             lastTaskProgressTick = tickCounter;
@@ -1005,19 +1006,33 @@ final class AgentBrain {
             decisionReason = "Запрошена защита, а противник обнаружен; риск проверен правилом безопасности.";
         }
 
-        // Once resources are sufficient, Igrok spends his own inventory on one permanent shelter.
+        // Construction evolves into new projects only after the first shelter
+        // and enough building practice. Each project still requires real materials,
+        // a clear site, loaded chunks and ordinary placement permissions.
         if (!manualOrderActive && chosen != GoalPlanner.Goal.FLEE
                 && chosen != GoalPlanner.Goal.DEFEND && !plugin.houseBuilder().isBuilding()
-                && !plugin.houseBuilder().hasCompleted() && tickCounter >= nextBuildAttemptTick) {
+                && tickCounter >= nextBuildAttemptTick) {
             nextBuildAttemptTick = tickCounter + 200;
-            if (plugin.houseBuilder().canBuild(bot)
-                    && plugin.houseBuilder().start(bot.getLocation(), bot)) {
-                navigator.stop();
-                goal = GoalPlanner.Goal.IDLE;
-                state = "Строю собственное убежище";
-                decisionReason = "Собрал достаточно досок и камня; начал строить постоянное убежище за собственные ресурсы.";
-                decisionConfidence = 0.96;
-                return;
+            if (!plugin.houseBuilder().hasCompleted()) {
+                if (plugin.houseBuilder().canBuild(bot)
+                        && plugin.houseBuilder().start(bot.getLocation(), bot)) {
+                    navigator.stop();
+                    goal = GoalPlanner.Goal.IDLE;
+                    state = "Строю собственное убежище";
+                    decisionReason = "Материалы собраны, место проверено: начинаю строить своё первое убежище.";
+                    decisionConfidence = 0.96;
+                    return;
+                }
+            } else if (plugin.skills().level("building") >= 2) {
+                String project = plugin.houseBuilder().nextProjectType();
+                if (!project.isBlank() && plugin.houseBuilder().startProject(bot.getLocation())) {
+                    navigator.stop();
+                    goal = GoalPlanner.Goal.IDLE;
+                    state = "Строю новый проект: " + project;
+                    decisionReason = "Первое убежище готово, а строительный опыт вырос. Теперь пробую новый проект из собственных материалов.";
+                    decisionConfidence = 0.94;
+                    return;
+                }
             }
         }
 
