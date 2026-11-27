@@ -35,6 +35,7 @@ final class AgentBrain {
     private final Map<UUID, Long> lastAttackReplyAt = new HashMap<>();
     private final Map<UUID, Long> lastAttackPenaltyAt = new HashMap<>();
     private AgentNavigator navigator;
+    private int navigatorEntityId = Integer.MIN_VALUE;
     private UUID conversationTarget;
     private int conversationUntilTick;
     private final Map<UUID, Long> lastAddressAckAt = new HashMap<>();
@@ -247,6 +248,68 @@ final class AgentBrain {
         state = "Восстанавливаю прежний план: " + goal.name();
     }
 
+    /**
+     * The fake player is replaced with a new ServerPlayer after death. A navigator
+     * keeps a hard reference to its original Bukkit Player, so it must be rebuilt
+     * whenever Minecraft assigns a new entity id.
+     */
+    private void ensureNavigator(Player bot) {
+        if (bot == null) return;
+        int currentEntityId = bot.getEntityId();
+        if (navigator != null && navigatorEntityId == currentEntityId) return;
+
+        boolean respawned = navigatorEntityId != Integer.MIN_VALUE;
+        navigator = new AgentNavigator(bot, plugin.skills());
+        navigatorEntityId = currentEntityId;
+        if (respawned) resetTransientStateAfterRespawn();
+    }
+
+    /**
+     * Clear only temporary orders and combat/navigation state. Skills, personality,
+     * memories and learned danger/caution rules intentionally survive death.
+     */
+    private void resetTransientStateAfterRespawn() {
+        threat = null;
+        defensivePlayerId = null;
+        defensiveDestination = null;
+        defensiveUntilTick = 0;
+        nextDefensiveMoveTick = tickCounter;
+        conversationTarget = null;
+        conversationUntilTick = 0;
+        followTarget = null;
+        foodTarget = null;
+        miningRequested = false;
+        miningTarget = null;
+        miningTicks = 0;
+        minedThisTask = 0;
+        attackRequested = false;
+        explorationRequested = false;
+        exploreTarget = null;
+        manualOrderActive = false;
+        pausedByPlayer = false;
+        idleWanderTarget = null;
+        idlePauseUntilTick = 0;
+        nextIdleWanderTick = tickCounter + 40;
+        combatRetreatUntilTick = tickCounter;
+        nextAttackTick = tickCounter;
+        nextCombatMoveTick = tickCounter;
+        combatMoveUntilTick = tickCounter;
+        nextSearchTick = tickCounter + 20;
+        nextExploreTick = tickCounter + 40;
+        monitoredGoal = null;
+        lastTaskPosition = null;
+        lastTaskProgressTick = tickCounter;
+        lastTaskMinedCount = 0;
+        taskRecoveryAttempts = 0;
+        builderWasActive = false;
+        pauseAfterFailureUntilTick = tickCounter;
+        goal = GoalPlanner.Goal.IDLE;
+        state = "Вернулся после смерти и заново оцениваю обстановку";
+        decisionReason = "После возрождения старые маршруты и задания сброшены; выбираю новую безопасную цель.";
+        decisionConfidence = 0.85;
+        plugin.getLogger().info("Igrok получил новый объект игрока после возрождения; навигация и временные цели восстановлены.");
+    }
+
     void tick() {
         tickCounter += 2;
         if (tickCounter < pauseAfterFailureUntilTick) return;
@@ -271,7 +334,7 @@ final class AgentBrain {
         if (!plugin.getConfig().getBoolean("brain.enabled", true) || !plugin.controller().isSpawned()) return;
         Player bot = plugin.controller().bukkitPlayer();
         if (bot == null || !bot.isOnline() || bot.isDead()) return;
-        if (navigator == null) navigator = new AgentNavigator(bot, plugin.skills());
+        ensureNavigator(bot);
         survival.tick(bot, tickCounter);
         monitorTaskProgress(bot);
 
@@ -532,7 +595,7 @@ final class AgentBrain {
 
         if (distanceSquared > 20.25 && distanceSquared <= 24.0 * 24.0) {
             if (pausedByPlayer) return;
-            if (navigator == null) navigator = new AgentNavigator(bot, plugin.skills());
+            ensureNavigator(bot);
             if (plugin.houseBuilder().isBuilding()) plugin.houseBuilder().cancel(false);
             conversationTarget = playerId;
             conversationUntilTick = tickCounter + 200; // 10 seconds of approach
@@ -575,7 +638,7 @@ final class AgentBrain {
         }
 
         if (plugin.houseBuilder().isBuilding()) plugin.houseBuilder().cancel(false);
-        if (navigator == null) navigator = new AgentNavigator(bot, plugin.skills());
+        ensureNavigator(bot);
         boolean moving = navigator.moveTo(speaker.getLocation());
         Vector horizontalVelocity = bot.getVelocity().clone().setY(0.0);
         if (!moving || horizontalVelocity.lengthSquared() < 0.0004) {
@@ -613,6 +676,12 @@ final class AgentBrain {
                 || target.getWorld() != bot.getWorld()
                 || bot.getLocation().distanceSquared(target.getLocation()) > 9.0
                 || !bot.hasLineOfSight(target)) return false;
+        Location origin = bot.getLocation();
+        Location targetLocation = target.getLocation();
+        double dx = targetLocation.getX() - origin.getX();
+        double dz = targetLocation.getZ() - origin.getZ();
+        float targetYaw = (float) Math.toDegrees(Math.atan2(-dx, dz));
+        if (Math.abs(wrapDegrees(targetYaw - origin.getYaw())) > 35.0F) return false;
         if (bot.getAttackCooldown() < 0.95F) return false;
 
         bot.swingMainHand();
@@ -672,7 +741,7 @@ final class AgentBrain {
         if (bot != null && bot.isOnline() && player.getWorld() == bot.getWorld()) {
             face(bot, player.getEyeLocation());
             if (player.getLocation().distanceSquared(bot.getLocation()) <= 256.0) {
-                if (navigator == null) navigator = new AgentNavigator(bot, plugin.skills());
+                ensureNavigator(bot);
                 defensivePlayerId = playerId;
                 defensiveUntilTick = tickCounter + 40;
                 defensiveDestination = findRetreatDestination(bot, player);
@@ -705,17 +774,17 @@ final class AgentBrain {
         if (attacker == null || attacker.isDead() || !attacker.isValid()) return;
         Player bot = plugin.controller().bukkitPlayer();
         if (bot == null || !bot.isOnline() || attacker.getWorld() != bot.getWorld()) return;
-        if (navigator == null) navigator = new AgentNavigator(bot, plugin.skills());
+        ensureNavigator(bot);
 
         threat = attacker;
         defensivePlayerId = null;
         defensiveDestination = null;
         attackRequested = false;
-        manualOrderActive = false;
+        // Keep a player-requested task queued; resume it after this attacker is gone.
         nextAttackTick = tickCounter;
         goal = "CREEPER".equals(attacker.getType().name())
                 ? GoalPlanner.Goal.FLEE : GoalPlanner.Goal.DEFEND;
-        face(bot, attacker.getEyeLocation());
+        faceCombatTarget(bot, attacker.getEyeLocation());
         state = "Отвечаю на атаку " + attacker.getName();
 
         if (tickCounter >= nextCombatMessageTick) {
@@ -737,7 +806,7 @@ final class AgentBrain {
         }
 
         if (plugin.houseBuilder().isBuilding()) plugin.houseBuilder().cancel(false);
-        if (navigator == null) navigator = new AgentNavigator(bot, plugin.skills());
+        ensureNavigator(bot);
 
         if (defensiveDestination == null && tickCounter >= nextDefensiveMoveTick) {
             defensiveDestination = findRetreatDestination(bot, attacker);
@@ -772,7 +841,7 @@ final class AgentBrain {
 
     private Location findRetreatDestination(Player bot, LivingEntity attacker) {
         if (bot == null || attacker == null || bot.getWorld() != attacker.getWorld()) return null;
-        if (navigator == null) navigator = new AgentNavigator(bot, plugin.skills());
+        ensureNavigator(bot);
         Vector away = bot.getLocation().toVector().subtract(attacker.getLocation().toVector());
         away.setY(0.0);
         if (away.lengthSquared() < 0.0001) away = new Vector(1.0, 0.0, 0.0);
@@ -1103,7 +1172,7 @@ final class AgentBrain {
                 .filter(entity -> aggressive || entity.getTarget() == bot
                         || (entity.getType().name().equals("CREEPER")
                             ? entity.getLocation().distanceSquared(bot.getLocation()) <= 64.0
-                            : entity.getLocation().distanceSquared(bot.getLocation()) <= 20.25))
+                            : entity.getLocation().distanceSquared(bot.getLocation()) <= 9.0))
                 .min(Comparator.comparingDouble(entity -> entity.getLocation().distanceSquared(bot.getLocation())))
                 .orElse(null);
     }
@@ -1135,7 +1204,6 @@ final class AgentBrain {
         if (threat == null || threat.isDead() || !threat.isValid()
                 || threat.getWorld() != bot.getWorld()) {
             attackRequested = false;
-            manualOrderActive = false;
             goal = GoalPlanner.Goal.IDLE;
             navigator.stop();
             return;
@@ -1182,7 +1250,7 @@ final class AgentBrain {
             state = "Маневрирую в бою с " + threat.getName();
         }
 
-        face(bot, threat.getEyeLocation());
+        faceCombatTarget(bot, threat.getEyeLocation());
         // Paper's LivingEntity.attack uses the server's normal attack attributes,
         // held item and cooldown. An empty main hand still uses vanilla fist damage.
         if (distance <= 3.0 && tickCounter >= nextAttackTick
@@ -1623,6 +1691,7 @@ final class AgentBrain {
         conversationUntilTick = 0;
         manualOrderActive = false;
         foodTarget = null;
+        threat = null;
         followTarget = null;
         miningRequested = false;
         attackRequested = false;
@@ -1644,6 +1713,27 @@ final class AgentBrain {
     String opinion(String message, UUID player) {
         return personality.opinion(message, memory.trust(player));
     }
+    /**
+     * Combat orientation is intentionally immediate: movement may strafe sideways,
+     * but the head and torso must still point at the enemy before a melee attack.
+     */
+    private void faceCombatTarget(Player bot, Location target) {
+        if (bot == null || target == null || target.getWorld() != bot.getWorld()) return;
+        double dx = target.getX() - bot.getLocation().getX();
+        double dy = target.getY() - (bot.getLocation().getY() + 1.6);
+        double dz = target.getZ() - bot.getLocation().getZ();
+        double horizontal = Math.sqrt(dx * dx + dz * dz);
+        float yaw = (float) Math.toDegrees(Math.atan2(-dx, dz));
+        float pitch = (float) -Math.toDegrees(Math.atan2(dy, horizontal));
+        pitch = Math.max(-75.0F, Math.min(75.0F, pitch));
+
+        bot.setRotation(yaw, pitch);
+        org.bukkit.craftbukkit.entity.CraftPlayer craftPlayer =
+                (org.bukkit.craftbukkit.entity.CraftPlayer) bot;
+        craftPlayer.getHandle().setYHeadRot(yaw);
+        craftPlayer.getHandle().setYBodyRot(yaw);
+    }
+
     private void face(Player bot, Location target) {
         if (bot == null || target == null || target.getWorld() != bot.getWorld()) return;
         double dx = target.getX() - bot.getLocation().getX();
