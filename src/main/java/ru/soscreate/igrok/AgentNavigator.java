@@ -24,6 +24,7 @@ final class AgentNavigator {
     private record OpenNode(Node node, double g, double f) { }
 
     private final Player bot;
+    private final AgentSkillBook skills;
     private final List<Node> path = new ArrayList<>();
     private Node plannedDestination;
     private int pathIndex;
@@ -39,7 +40,22 @@ final class AgentNavigator {
     private boolean sprinting;
 
     AgentNavigator(Player bot) {
+        this(bot, null);
+    }
+
+    AgentNavigator(Player bot, AgentSkillBook skills) {
         this.bot = bot;
+        this.skills = skills;
+    }
+
+    private int pathSearchBudget() {
+        int level = skills == null ? 0 : skills.level("navigation");
+        return 450 + Math.min(10, level) * 150;
+    }
+
+    private int pathRadius() {
+        int level = skills == null ? 0 : skills.level("navigation");
+        return 20 + Math.min(10, level);
     }
 
     boolean moveTo(Location destination) {
@@ -323,7 +339,7 @@ final class AgentNavigator {
         Node found = null;
         int expanded = 0;
 
-        while (!open.isEmpty() && expanded < 450) {
+        while (!open.isEmpty() && expanded < pathSearchBudget()) {
             OpenNode current = open.poll();
             if (current.g() > costs.getOrDefault(current.node(), Double.POSITIVE_INFINITY)) continue;
             if (current.node().equals(requestedGoal)) {
@@ -336,8 +352,8 @@ final class AgentNavigator {
                 for (int dy = 1; dy >= -1; dy--) {
                     Node candidate = new Node(current.node().x() + dir[0],
                             current.node().y() + dy, current.node().z() + dir[1]);
-                    if (Math.abs(candidate.x() - start.x()) > 20
-                            || Math.abs(candidate.z() - start.z()) > 20
+                    if (Math.abs(candidate.x() - start.x()) > pathRadius()
+                            || Math.abs(candidate.z() - start.z()) > pathRadius()
                             || !standable(world, candidate)) continue;
                     if (dir[0] != 0 && dir[1] != 0) {
                         Node sideA = new Node(current.node().x() + dir[0], current.node().y(), current.node().z());
