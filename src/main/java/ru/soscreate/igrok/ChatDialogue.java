@@ -97,6 +97,14 @@ final class ChatDialogue implements Listener {
 
         if (addressed && sender != null) {
             plugin.brain().onPlayerAddressed(sender);
+            if (plugin.controller() != null && plugin.controller().isSpawned()) {
+                plugin.skills().gain("social", 1);
+                plugin.skills().gain("communication", 1);
+                if (lower.contains("спасибо") || lower.contains("привет") || lower.contains("помоги")
+                        || lower.contains("друг") || lower.contains("please") || lower.contains("thanks")) {
+                    plugin.skills().gain("trust", 1);
+                }
+            }
         }
 
         PendingMessage pending = pendingMessages.get(senderId);
