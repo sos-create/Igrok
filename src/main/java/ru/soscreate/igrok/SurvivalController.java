@@ -142,7 +142,7 @@ final class SurvivalController {
 
         AutonomousPlanner.Decision decision = autonomousPlanner.choose(snapshot);
         if (decision == null) return null;
-        return new AutonomyDecision(decision.goal(), decision.confidence(),
+        return new AutonomyDecision(decision.goal(), decision.utility(),
                 "[" + decision.phase() + "] " + decision.reason(), decision.miningMode());
     }
 
