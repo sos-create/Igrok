@@ -421,7 +421,7 @@ final class SurvivalController {
         if (bot.getNearbyEntities(10, 6, 10).stream().anyMatch(entity -> entity instanceof Monster)) return;
         int planks = countBySuffix(bot, "_PLANKS");
         int logs = countBySuffix(bot, "_LOG") + countBySuffix(bot, "_WOOD");
-        int plankReserve = plugin.houseBuilder().hasCompleted() ? 32 : 112;
+        int plankReserve = plugin.houseBuilder().hasCompleted() ? 32 : 64;
         if (planks < plankReserve && logs > 0) {
             for (int batch = 0; batch < 4 && planks < plankReserve && logs > 0; batch++) {
                 if (!craftMatching(bot, type -> type.name().endsWith("_PLANKS"))) break;
@@ -766,6 +766,7 @@ final class SurvivalController {
                 Material.GOLD_ORE, Material.DEEPSLATE_GOLD_ORE
         };
         for (Material material : priority) if (count(bot, material) > 0) return material;
+        if (count(bot, Material.RAW_IRON) > 0) return Material.RAW_IRON;
 
         // Charcoal is a valid coal substitute. Feed ordinary logs into the
         // furnace when ores and food are not waiting to be smelted.
