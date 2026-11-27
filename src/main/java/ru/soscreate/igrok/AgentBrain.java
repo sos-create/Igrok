@@ -563,7 +563,7 @@ final class AgentBrain {
         }
 
         if (plugin.houseBuilder().isBuilding()) plugin.houseBuilder().cancel(false);
-        if (navigator == null) navigator = new AgentNavigator(bot);
+        if (navigator == null) navigator = new AgentNavigator(bot, plugin.skills());
         boolean moving = navigator.moveTo(speaker.getLocation());
         Vector horizontalVelocity = bot.getVelocity().clone().setY(0.0);
         if (!moving || horizontalVelocity.lengthSquared() < 0.0004) {
@@ -658,7 +658,7 @@ final class AgentBrain {
         if (bot != null && bot.isOnline() && player.getWorld() == bot.getWorld()) {
             face(bot, player.getEyeLocation());
             if (player.getLocation().distanceSquared(bot.getLocation()) <= 256.0) {
-                if (navigator == null) navigator = new AgentNavigator(bot);
+                if (navigator == null) navigator = new AgentNavigator(bot, plugin.skills());
                 defensivePlayerId = playerId;
                 defensiveUntilTick = tickCounter + 40;
                 defensiveDestination = findRetreatDestination(bot, player);
@@ -691,7 +691,7 @@ final class AgentBrain {
         if (attacker == null || attacker.isDead() || !attacker.isValid()) return;
         Player bot = plugin.controller().bukkitPlayer();
         if (bot == null || !bot.isOnline() || attacker.getWorld() != bot.getWorld()) return;
-        if (navigator == null) navigator = new AgentNavigator(bot);
+        if (navigator == null) navigator = new AgentNavigator(bot, plugin.skills());
 
         threat = attacker;
         defensivePlayerId = null;
@@ -723,7 +723,7 @@ final class AgentBrain {
         }
 
         if (plugin.houseBuilder().isBuilding()) plugin.houseBuilder().cancel(false);
-        if (navigator == null) navigator = new AgentNavigator(bot);
+        if (navigator == null) navigator = new AgentNavigator(bot, plugin.skills());
 
         if (defensiveDestination == null && tickCounter >= nextDefensiveMoveTick) {
             defensiveDestination = findRetreatDestination(bot, attacker);
@@ -758,7 +758,7 @@ final class AgentBrain {
 
     private Location findRetreatDestination(Player bot, LivingEntity attacker) {
         if (bot == null || attacker == null || bot.getWorld() != attacker.getWorld()) return null;
-        if (navigator == null) navigator = new AgentNavigator(bot);
+        if (navigator == null) navigator = new AgentNavigator(bot, plugin.skills());
         Vector away = bot.getLocation().toVector().subtract(attacker.getLocation().toVector());
         away.setY(0.0);
         if (away.lengthSquared() < 0.0001) away = new Vector(1.0, 0.0, 0.0);
