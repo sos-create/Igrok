@@ -1268,14 +1268,26 @@ final class AgentBrain {
     private Block findMiningTarget(Player bot) {
         World world = bot.getWorld();
         Location origin = bot.getLocation();
-        int radius = Math.max(6, Math.min(12, plugin.getConfig().getInt("brain.mining.search-radius", 10)));
+        int configuredRadius = Math.max(6, Math.min(12,
+                plugin.getConfig().getInt("brain.mining.search-radius", 10)));
+        // Ore searches go deeper but use a tighter horizontal radius to keep the
+        // scan bounded on busy Paper servers.
+        int radius = miningMode.equals("coal") || miningMode.equals("iron")
+                ? Math.min(7, configuredRadius) : configuredRadius;
         Block best = null;
         double bestDistance = Double.POSITIVE_INFINITY;
         boolean woodMode = miningMode.equals("wood");
         int minimumToolTier = miningMode.equals("iron") ? 3 : 1;
         if (!woodMode && survivalToolTier(bot, "PICKAXE") < minimumToolTier) return null;
-        int minY = Math.max(world.getMinHeight() + 1, origin.getBlockY() - (woodMode ? 4 : 10));
-        int maxY = Math.min(world.getMaxHeight() - 2, origin.getBlockY() + (woodMode ? 8 : 4));
+        int depth = switch (miningMode) {
+            case "stone" -> 14;
+            case "coal" -> 32;
+            case "iron" -> 48;
+            default -> 4;
+        };
+        int height = woodMode ? 8 : miningMode.equals("iron") ? 8 : 12;
+        int minY = Math.max(world.getMinHeight() + 1, origin.getBlockY() - depth);
+        int maxY = Math.min(world.getMaxHeight() - 2, origin.getBlockY() + height);
         Location eye = bot.getEyeLocation();
         for (int x = origin.getBlockX() - radius; x <= origin.getBlockX() + radius; x++) {
             for (int z = origin.getBlockZ() - radius; z <= origin.getBlockZ() + radius; z++) {
