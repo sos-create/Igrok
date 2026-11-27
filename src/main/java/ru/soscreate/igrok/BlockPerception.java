@@ -48,7 +48,7 @@ final class BlockPerception {
 
             Block hitBlock = hit.getHitBlock();
             if (sameBlock(hitBlock, target)) return true;
-            if (!transparentForVision(hitBlock.getType())) return false;
+            if (!isTransparentForVision(hitBlock.getType())) return false;
 
             double advance = rayStart.toVector().distance(hit.getHitPosition()) + 0.06;
             if (!Double.isFinite(advance) || advance < 0.02) advance = 0.06;
