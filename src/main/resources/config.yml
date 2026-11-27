@@ -1,4 +1,4 @@
-# Igrok 0.9.30 configuration
+# Igrok 0.9.34 configuration
 # Optional Mojang account name whose signed player skin Igrok should use.
 # Leave empty to use the standard Steve/Alex fallback skin.
 skin-owner: ""
@@ -52,7 +52,7 @@ autonomy:
 # Igrok chunk streaming. Keeps nearby terrain available without loading a
 # complete 17x17 square at once.
 chunks:
-  enabled: true
+  enabled: false
   view-radius: 8
   active-radius: 1
   scout-cache: 24
