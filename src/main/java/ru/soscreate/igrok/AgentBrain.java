@@ -829,10 +829,27 @@ final class AgentBrain {
                 chosen = autonomous.goal();
                 decisionReason = autonomous.reason();
                 decisionConfidence = autonomous.confidence();
-                if (chosen == GoalPlanner.Goal.MINE && !miningRequested) {
-                    miningMode = autonomous.miningMode();
-                    miningRequested = true;
-                    minedThisTask = 0;
+                if (chosen == GoalPlanner.Goal.MINE) {
+                    String plannedMode = autonomous.miningMode();
+                    boolean newMiningPlan = !miningRequested || !miningMode.equals(plannedMode);
+                    if (newMiningPlan) {
+                        miningMode = plannedMode;
+                        miningRequested = true;
+                        minedThisTask = 0;
+                        miningTarget = null;
+                        miningTicks = 0;
+                        nextSearchTick = 0;
+                        explorationRequested = false;
+                        exploreTarget = null;
+                    }
+                } else {
+                    // A new strategic phase (crafting, building, sleeping or
+                    // exploring) must release the previous mining subtask. Otherwise
+                    // GoalPlanner keeps resurrecting an obsolete resource request.
+                    miningRequested = false;
+                    miningTarget = null;
+                    miningTicks = 0;
+                    nextSearchTick = 0;
                 }
             }
         }
@@ -864,6 +881,8 @@ final class AgentBrain {
         }
 
         if (chosen != goal) {
+            plugin.getLogger().info("[Igrok AI] " + goal + " -> " + chosen
+                    + " | " + decisionReason);
             navigator.stop();
             goal = chosen;
         }
