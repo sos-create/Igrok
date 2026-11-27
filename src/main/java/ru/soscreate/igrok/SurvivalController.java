@@ -172,9 +172,8 @@ final class SurvivalController {
                 tick >= nextRedstoneGoalTick,
                 count(bot, Material.PISTON),
                 count(bot, Material.REDSTONE_BLOCK),
-                plugin.skills().level("building") >= 5
-                        && plugin.houseBuilder().hasCompletedProject("workshop"),
-                plugin.houseBuilder().hasCompletedProject("piston_lab"),
+                "piston_lab".equals(builder.nextProjectType()),
+                builder.hasCompletedProject("piston_lab"),
                 shelterMissingPlanks,
                 shelterMissingCobblestone,
                 projectMissingCobblestone,
