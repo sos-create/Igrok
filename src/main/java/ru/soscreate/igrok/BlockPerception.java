@@ -146,9 +146,7 @@ final class BlockPerception {
     private static boolean isInteresting(Material material) {
         String name = material.name();
         return name.endsWith("_LOG") || name.endsWith("_WOOD")
-                || name.endsWith("_LEAVES")
                 || name.endsWith("_ORE")
-                || name.equals("STONE") || name.equals("COBBLESTONE")
                 || name.equals("WATER") || name.equals("LAVA")
                 || name.equals("CHEST") || name.equals("BARREL")
                 || name.equals("CRAFTING_TABLE") || name.equals("FURNACE")
