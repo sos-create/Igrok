@@ -81,6 +81,11 @@ final class AgentBrain {
     private int combatRetreatUntilTick;
     private int pauseAfterFailureUntilTick;
     private boolean builderWasActive;
+    private GoalPlanner.Goal monitoredGoal;
+    private Location lastTaskPosition;
+    private int lastTaskProgressTick;
+    private int lastTaskMinedCount;
+    private int taskRecoveryAttempts;
     private String lastLesson = "Пока не было смертельных ошибок.";
 
     AgentBrain(IgrokPlugin plugin, AgentMemory memory) {
@@ -199,6 +204,7 @@ final class AgentBrain {
         if (bot == null || !bot.isOnline() || bot.isDead()) return;
         if (navigator == null) navigator = new AgentNavigator(bot);
         survival.tick(bot, tickCounter);
+        monitorTaskProgress(bot);
 
         // A recent player attack temporarily overrides every voluntary activity.
         // This keeps an attack from behind from being overwritten by IDLE/MINE/FOLLOW.
@@ -242,6 +248,66 @@ final class AgentBrain {
         int socialInterval = Math.max(10, plugin.getConfig().getInt("chat.social.scan-interval-ticks", 20));
         if (tickCounter % socialInterval == 0) socialize(bot);
     }
+    private void monitorTaskProgress(Player bot) {
+        if (goal != monitoredGoal) {
+            monitoredGoal = goal;
+            lastTaskPosition = bot.getLocation().clone();
+            lastTaskProgressTick = tickCounter;
+            lastTaskMinedCount = minedThisTask;
+            taskRecoveryAttempts = 0;
+            return;
+        }
+        if (goal != GoalPlanner.Goal.MINE && goal != GoalPlanner.Goal.EXPLORE) return;
+        if (tickCounter - lastTaskProgressTick < 100) return;
+
+        boolean minedSomething = goal == GoalPlanner.Goal.MINE
+                && minedThisTask != lastTaskMinedCount;
+        boolean changedPosition = lastTaskPosition == null
+                || lastTaskPosition.getWorld() != bot.getWorld()
+                || lastTaskPosition.distanceSquared(bot.getLocation()) >= 1.0;
+        if (minedSomething || changedPosition) {
+            lastTaskPosition = bot.getLocation().clone();
+            lastTaskProgressTick = tickCounter;
+            lastTaskMinedCount = minedThisTask;
+            taskRecoveryAttempts = 0;
+            return;
+        }
+
+        // A route that reports "moving" but produces no position or inventory
+        // change must not pin the agent to one task forever.
+        if (tickCounter - lastTaskProgressTick < 1200) return;
+        taskRecoveryAttempts++;
+        navigator.stop();
+        if (goal == GoalPlanner.Goal.MINE) {
+            survival.deferMining(miningMode, tickCounter);
+            miningRequested = false;
+            miningTarget = null;
+            miningTicks = 0;
+            minedThisTask = 0;
+            manualOrderActive = false;
+            goal = GoalPlanner.Goal.EXPLORE;
+            explorationRequested = true;
+            exploreTarget = null;
+            decisionReason = "Добыча не давала результата минуту: прекращаю повторять маршрут и меняю место поиска.";
+            state = "Меняю место добычи после отсутствия прогресса";
+        } else {
+            exploreTarget = null;
+            explorationRequested = taskRecoveryAttempts < 3;
+            nextExploreTick = tickCounter + 40;
+            if (taskRecoveryAttempts >= 3) {
+                goal = GoalPlanner.Goal.IDLE;
+                state = "Не нашёл безопасный маршрут; временно осматриваюсь";
+                decisionReason = "Три маршрута подряд не дали прогресса; прекращаю зацикливание и попробую позже.";
+            } else {
+                state = "Маршрут не дал прогресса; выбираю другую точку";
+                decisionReason = "Путь не продвинулся; пересчитываю точку исследования.";
+            }
+        }
+        lastTaskPosition = bot.getLocation().clone();
+        lastTaskProgressTick = tickCounter;
+        lastTaskMinedCount = minedThisTask;
+    }
+
     private void idle(Player bot) {
         if (idleWanderTarget != null) {
             if (bot.getFoodLevel() <= 10 || bot.getHealth() < bot.getMaxHealth() * 0.60) {
