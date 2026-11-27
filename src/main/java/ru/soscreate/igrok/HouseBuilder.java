@@ -87,7 +87,7 @@ final class HouseBuilder {
         completedProjects.clear();
         completedProjects.addAll(data.getStringList("builder.completed-projects"));
         projectType = data.getString("builder.project-type", "shelter");
-        if (!Set.of("shelter", "watchtower", "workshop").contains(projectType)) projectType = "shelter";
+        if (!Set.of("shelter", "watchtower", "workshop", "piston_lab").contains(projectType)) projectType = "shelter";
         if (!data.getBoolean("builder.active", false) || isBuilding()) return;
         World world = Bukkit.getWorld(data.getString("builder.world", ""));
         Player bot = plugin.controller().bukkitPlayer();
@@ -144,6 +144,8 @@ final class HouseBuilder {
         if (workshopReady) return "workshop";
         if (skill >= 2 && !completedProjects.contains("watchtower")) return "watchtower";
         if (skill >= 4 && !completedProjects.contains("workshop")) return "workshop";
+        if (skill >= 5 && completedProjects.contains("workshop")
+                && !completedProjects.contains("piston_lab")) return "piston_lab";
         return "";
     }
 
@@ -484,6 +486,7 @@ final class HouseBuilder {
         String completedName = switch (projectType) {
             case "watchtower" -> "смотровую башню";
             case "workshop" -> "мастерскую";
+            case "piston_lab" -> "испытательный стенд с поршневым механизмом";
             default -> "убежище";
         };
         say("Готово! Я построил " + completedName + " из " + placed
@@ -558,6 +561,7 @@ final class HouseBuilder {
         switch (type) {
             case "watchtower" -> createWatchtowerPlan();
             case "workshop" -> createWorkshopPlan();
+            case "piston_lab" -> createPistonLabPlan();
             default -> createCabinPlan();
         }
     }
@@ -624,6 +628,21 @@ final class HouseBuilder {
         for (int x = -1; x <= 1; x++) {
             for (int z = -1; z <= 1; z++) add(x, 3, z, wallMaterial);
         }
+    }
+
+    private void createPistonLabPlan() {
+        // A compact powered piston demonstration. The redstone block is placed
+        // last, after the piston and pushable test block, so it activates the rig.
+        for (int x = -2; x <= 2; x++) {
+            for (int z = -1; z <= 1; z++) add(x, 0, z, Material.COBBLESTONE);
+        }
+        BlockData piston = Material.PISTON.createBlockData();
+        if (piston instanceof org.bukkit.block.data.Directional directional) {
+            directional.setFacing(BlockFace.EAST);
+        }
+        addData(0, 1, 0, Material.PISTON, piston, true);
+        add(1, 1, 0, Material.STONE);
+        add(-1, 1, 0, Material.REDSTONE_BLOCK);
     }
 
     private void createCabinPlan() {
