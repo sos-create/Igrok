@@ -4,12 +4,10 @@ plugins {
 }
 
 group = "ru.soscreate"
-version = "0.9.31"
+version = "0.9.32"
 
 java {
-    toolchain {
-        languageVersion = JavaLanguageVersion.of(21)
-    }
+    toolchain { languageVersion = JavaLanguageVersion.of(21) }
 }
 
 repositories {
@@ -22,9 +20,7 @@ dependencies {
 }
 
 tasks {
-    jar {
-        archiveBaseName.set("Igrok")
-    }
+    jar { archiveBaseName.set("Igrok") }
     compileJava {
         options.release = 21
         options.encoding = "UTF-8"
