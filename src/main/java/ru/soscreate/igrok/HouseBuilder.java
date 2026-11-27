@@ -84,7 +84,7 @@ final class HouseBuilder {
             return;
         }
         actor = bot;
-        navigator = new AgentNavigator(actor);
+        navigator = new AgentNavigator(actor, plugin.skills());
         workStandPosition = null;
         navigationFailures = 0;
         wallMaterial = materialOr(data.getString("builder.wall-material", ""), Material.OAK_PLANKS);
@@ -334,8 +334,7 @@ final class HouseBuilder {
 
     private boolean withinPlacementReach(Block target) {
         Location center = target.getLocation().add(0.5, 0.5, 0.5);
-        return actor.getEyeLocation().distanceSquared(center) <= 4.5 * 4.5
-                && actor.hasLineOfSight(center);
+        return BlockPerception.canSee(actor.getEyeLocation(), target, 4.5);
     }
 
     private Location findBuildStandPosition(Block target) {
@@ -358,9 +357,7 @@ final class HouseBuilder {
                         Vector direction = center.toVector().subtract(eye.toVector());
                         double distance = direction.length();
                         if (distance < 0.1 || distance > 4.5) continue;
-                        RayTraceResult hit = world.rayTraceBlocks(eye, direction.normalize(), distance,
-                                FluidCollisionMode.NEVER, true);
-                        if (hit != null && hit.getHitBlock() != null) continue;
+                        if (!BlockPerception.canSee(eye, target, 4.5)) continue;
                         double score = current.distanceSquared(candidate) + distance * 0.15;
                         if (score < bestScore) {
                             bestScore = score;
