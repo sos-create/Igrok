@@ -39,7 +39,7 @@ brain:
     aggressive: false
     radius: 12
   mining:
-    search-radius: 8
+    search-radius: 10
     break-ticks: 28
     blocks-per-order: 4
     # Automatic priorities: survival > iron upgrades > wood/stone/coal > exploration.
