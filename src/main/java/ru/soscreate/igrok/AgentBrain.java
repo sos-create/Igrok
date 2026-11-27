@@ -300,7 +300,8 @@ final class AgentBrain {
             taskRecoveryAttempts = 0;
             return;
         }
-        if (goal != GoalPlanner.Goal.MINE && goal != GoalPlanner.Goal.EXPLORE) return;
+        if (goal != GoalPlanner.Goal.MINE && goal != GoalPlanner.Goal.EXPLORE
+                && goal != GoalPlanner.Goal.FOLLOW) return;
         if (tickCounter - lastTaskProgressTick < 100) return;
 
         boolean minedSomething = goal == GoalPlanner.Goal.MINE
