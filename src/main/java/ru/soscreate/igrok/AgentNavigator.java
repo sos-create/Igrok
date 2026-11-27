@@ -218,7 +218,8 @@ final class AgentNavigator {
             int z = current.getBlockZ() + dir[1];
             if (!world.isChunkLoaded(x >> 4, z >> 4)) continue;
             Node candidate = findStandable(world, x, current.getBlockY(), z);
-            if (candidate == null || Math.abs(candidate.y() - current.getBlockY()) > 1) continue;
+            if (candidate == null || candidate.y() - current.getBlockY() > 1
+                    || current.getBlockY() - candidate.y() > 3) continue;
             if (dir[0] != 0 && dir[1] != 0) {
                 Node sideA = findStandable(world, current.getBlockX() + dir[0],
                         current.getBlockY(), current.getBlockZ());
@@ -372,7 +373,7 @@ final class AgentNavigator {
             expanded++;
 
             for (int[] dir : DIRECTIONS) {
-                for (int dy = 1; dy >= -1; dy--) {
+                for (int dy = 1; dy >= -3; dy--) {
                     Node candidate = new Node(current.node().x() + dir[0],
                             current.node().y() + dy, current.node().z() + dir[1]);
                     if (Math.abs(candidate.x() - start.x()) > pathRadius()
@@ -384,8 +385,9 @@ final class AgentNavigator {
                         if (!standable(world, sideA) || !standable(world, sideB)) continue;
                     }
 
+                    double verticalCost = dy > 0 ? 0.85 : Math.max(0, -dy) * 0.38;
                     double step = (dir[0] == 0 || dir[1] == 0 ? 1.0 : 1.414)
-                            + Math.abs(dy) * 0.65;
+                            + verticalCost;
                     double nextCost = current.g() + step + terrainPenalty(world, candidate);
                     if (nextCost >= costs.getOrDefault(candidate, Double.POSITIVE_INFINITY)) continue;
                     costs.put(candidate, nextCost);
