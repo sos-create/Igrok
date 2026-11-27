@@ -342,7 +342,8 @@ final class AgentBrain {
                 .orElse(null);
         if (nearest == null) return;
 
-        face(bot, nearest.getEyeLocation());
+        // idle() owns gradual head tracking. Re-facing every social scan caused
+        // repeated snapping between random looks and the nearest player's eyes.
         memory.rememberPlayerName(nearest.getUniqueId(), nearest.getName());
         long greetCooldown = Math.max(30L, plugin.getConfig().getLong("chat.social.greeting-cooldown-seconds", 300)) * 1000L;
         if (memory.shouldGreet(nearest.getUniqueId(), greetCooldown)
