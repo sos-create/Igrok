@@ -23,6 +23,13 @@ final class DialogueComposer {
         LanguageProcessor.Parsed parsed = thought.parsed();
         String name = player.getName();
 
+        String normalizedMessage = parsed.cleaned().replace('ё', 'е');
+        if (contains(normalizedMessage, "что видишь", "что ты видишь", "видишь ли",
+                "посмотри вокруг", "осмотрись", "какой блок", "насколько далеко",
+                "что находится рядом")) {
+            return avoidImmediateRepeat(id, plugin.brain().worldObservation());
+        }
+
         String response = switch (thought.intent()) {
             case GREETING -> choose(
                     "Привет, " + name + "! Рад, что ты заглянул.",
