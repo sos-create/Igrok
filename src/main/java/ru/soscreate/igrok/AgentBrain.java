@@ -757,6 +757,14 @@ final class AgentBrain {
         if (pausedByPlayer && "follow".equals(normalized)) return true;
         if (plugin.getConfig().getBoolean("autonomy.refuse-all-player-orders", false)) return false;
 
+        // Basic resource requests should not be rejected by a random personality roll.
+        // They may interrupt low-priority mining/exploration, but never combat, fleeing,
+        // urgent survival tasks, or an active house construction.
+        if (("wood".equals(normalized) || "stone".equals(normalized))
+                && (goal == GoalPlanner.Goal.IDLE || goal == GoalPlanner.Goal.EXPLORE
+                    || goal == GoalPlanner.Goal.MINE)
+                && !plugin.houseBuilder().isBuilding()) return true;
+
         int trust = memory.trust(playerId);
         double willingness = 0.42 + personality.sociability() * 0.18
                 + personality.patience() * 0.12 + Math.max(-5, Math.min(5, trust)) * 0.055;
@@ -906,6 +914,17 @@ final class AgentBrain {
                 chosen = autonomous.goal();
                 decisionReason = autonomous.reason();
                 decisionConfidence = autonomous.confidence();
+
+                // Do not immediately restart the same autonomous exploration after
+                // a failed route/empty scan. The combat and survival checks above still
+                // run on every planning pulse; only low-priority wandering is backed off.
+                if (chosen == GoalPlanner.Goal.EXPLORE && exploreTarget == null
+                        && !explorationRequested && tickCounter < nextExploreTick) {
+                    chosen = GoalPlanner.Goal.IDLE;
+                    decisionReason = "Недавняя разведка не дала подходящего пути; выдерживаю паузу перед новой попыткой.";
+                    decisionConfidence = 0.60;
+                }
+
                 if (chosen == GoalPlanner.Goal.MINE) {
                     String plannedMode = autonomous.miningMode();
                     boolean newMiningPlan = !miningRequested || !miningMode.equals(plannedMode);
@@ -1331,7 +1350,7 @@ final class AgentBrain {
                 exploreTarget = null;
                 manualOrderActive = false;
                 goal = GoalPlanner.Goal.IDLE;
-                nextExploreTick = tickCounter + ThreadLocalRandom.current().nextInt(100, 181);
+                nextExploreTick = tickCounter + ThreadLocalRandom.current().nextInt(160, 241);
                 navigator.stop();
                 state = "Осмотрел окрестности; выбираю следующую цель";
                 return;
@@ -1339,8 +1358,12 @@ final class AgentBrain {
             // Learned danger zones are 28 blocks wide. Explore beyond that radius
             // when necessary; otherwise the bot could reject every local destination
             // after a death and remain at spawn forever.
-            int radius = 20 + (int) (personality.curiosity() * 12);
-            for (int attempt = 0; attempt < 40; attempt++) {
+            // Keep routine waypoints inside the navigator's normal A* horizon.
+            // Only leave the wider radius when escaping a learned danger zone.
+            int radius = isLearnedDanger(bot.getLocation())
+                    ? 30 + (int) (personality.curiosity() * 4)
+                    : 10 + (int) (personality.curiosity() * 8);
+            for (int attempt = 0; attempt < 16; attempt++) {
                 int x = bot.getLocation().getBlockX() + ThreadLocalRandom.current().nextInt(-radius, radius + 1);
                 int z = bot.getLocation().getBlockZ() + ThreadLocalRandom.current().nextInt(-radius, radius + 1);
                 if (!bot.getWorld().isChunkLoaded(x >> 4, z >> 4)) continue;
@@ -1353,9 +1376,6 @@ final class AgentBrain {
                 }
                 int y = groundY + 1;
                 Location candidate = new Location(bot.getWorld(), x + 0.5, y, z + 0.5);
-                Block floor = bot.getWorld().getBlockAt(x, y - 1, z);
-                Block feet = bot.getWorld().getBlockAt(x, y, z);
-                Block head = bot.getWorld().getBlockAt(x, y + 1, z);
                 if (navigator.canStandAt(candidate) && !isLearnedDanger(candidate)) {
                     exploreTarget = candidate;
                     break;
@@ -1364,7 +1384,12 @@ final class AgentBrain {
             if (exploreTarget == null) {
                 goal = GoalPlanner.Goal.IDLE;
                 explorationRequested = false;
-                nextExploreTick = tickCounter + 100;
+                manualOrderActive = false;
+                nextExploreTick = tickCounter + 200;
+                navigator.stop();
+                state = "Не нашёл безопасную точку в загруженной области";
+                decisionReason = "В текущих загруженных чанках нет подходящей точки; прекращаю перебор и повторю поиск позже.";
+                decisionConfidence = 0.60;
                 return;
             }
             explorationRequested = false;
@@ -1376,7 +1401,12 @@ final class AgentBrain {
         if (!navigator.moveTo(exploreTarget, canSprint)) {
             exploreTarget = null;
             explorationRequested = false;
-            nextExploreTick = tickCounter + 100;
+            manualOrderActive = false;
+            nextExploreTick = tickCounter + 200;
+            navigator.stop();
+            state = "Маршрут не найден; временно откладываю разведку";
+            decisionReason = "Не удалось построить безопасный маршрут к точке; не повторяю тот же поиск каждую секунду.";
+            decisionConfidence = 0.60;
         }
     }
 
