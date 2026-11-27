@@ -13,6 +13,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.PriorityQueue;
+import java.util.concurrent.ThreadLocalRandom;
 
 /**
  * Bounded A* ground navigation. It only examines already-loaded chunks and
@@ -32,12 +33,22 @@ final class AgentNavigator {
     private Location lastRequestedDestination;
     private Node cachedGoal;
     private int goalLookupCooldown;
+    private int gaitTick;
+    private int nextSprintDecisionTick;
+    private int sprintUntilTick;
+    private boolean sprinting;
 
     AgentNavigator(Player bot) {
         this.bot = bot;
     }
 
     boolean moveTo(Location destination) {
+        return moveTo(destination, false);
+    }
+
+    /** Walk normally; sprint is used only when the caller marks the journey urgent or long. */
+    boolean moveTo(Location destination, boolean allowSprint) {
+        updateGait(allowSprint);
         if (retryCooldown > 0) {
             retryCooldown--;
             return true;
@@ -116,7 +127,6 @@ final class AgentNavigator {
         dz /= horizontal;
         float yaw = (float) Math.toDegrees(Math.atan2(-dx, dz));
         bot.setRotation(yaw, 0.0F);
-        bot.setSprinting(false);
 
         double vertical = bot.isOnGround() ? 0.0 : bot.getVelocity().getY();
         if (bot.isOnGround() && next.y() > current.getBlockY()) {
@@ -124,7 +134,8 @@ final class AgentNavigator {
             if (feet.getRelative(0, 1, 0).isPassable()
                     && feet.getRelative(0, 2, 0).isPassable()) vertical = 0.42;
         }
-        bot.setVelocity(new Vector(dx * 0.12, vertical, dz * 0.12));
+        double speed = movementSpeed();
+        bot.setVelocity(new Vector(dx * speed, vertical, dz * speed));
 
         Location now = bot.getLocation();
         if (previousPosition != null && now.distanceSquared(previousPosition) < 0.0025) {
@@ -158,6 +169,10 @@ final class AgentNavigator {
         Vector velocity = bot.getVelocity();
         bot.setVelocity(new Vector(0.0, bot.isOnGround() ? 0.0 : velocity.getY(), 0.0));
         bot.setSprinting(false);
+        sprinting = false;
+        gaitTick = 0;
+        nextSprintDecisionTick = 0;
+        sprintUntilTick = 0;
         path.clear();
         pathIndex = 0;
         plannedDestination = null;
@@ -199,7 +214,8 @@ final class AgentNavigator {
             double dz = candidate.z() + 0.5 - destination.getZ();
             double distance = dx * dx + dz * dz;
             if (distance >= currentDistance - 0.02) continue;
-            double score = distance + Math.abs(candidate.y() - current.getBlockY()) * 0.8;
+            double score = distance + Math.abs(candidate.y() - current.getBlockY()) * 0.8
+                    + terrainPenalty(world, candidate);
             if (score < bestScore) {
                 bestScore = score;
                 best = candidate;
@@ -213,15 +229,36 @@ final class AgentNavigator {
         dx /= length;
         dz /= length;
         bot.setRotation((float) Math.toDegrees(Math.atan2(-dx, dz)), 0.0F);
-        bot.setSprinting(false);
         double vertical = bot.isOnGround() ? 0.0 : bot.getVelocity().getY();
         if (bot.isOnGround() && best.y() > current.getBlockY()) {
             Block feet = current.getBlock();
             if (feet.getRelative(0, 1, 0).isPassable()
                     && feet.getRelative(0, 2, 0).isPassable()) vertical = 0.42;
         }
-        bot.setVelocity(new Vector(dx * 0.12, vertical, dz * 0.12));
+        double speed = movementSpeed();
+        bot.setVelocity(new Vector(dx * speed, vertical, dz * speed));
         return true;
+    }
+
+    private void updateGait(boolean allowSprint) {
+        gaitTick++;
+        boolean canSprint = allowSprint && bot.getFoodLevel() >= 9 && bot.getHealth() >= 7.0;
+        if (!canSprint) {
+            sprinting = false;
+            bot.setSprinting(false);
+            return;
+        }
+        if (gaitTick >= nextSprintDecisionTick) {
+            sprinting = ThreadLocalRandom.current().nextDouble() < 0.78;
+            sprintUntilTick = gaitTick + ThreadLocalRandom.current().nextInt(24, 56);
+            nextSprintDecisionTick = sprintUntilTick + ThreadLocalRandom.current().nextInt(12, 29);
+        }
+        if (gaitTick > sprintUntilTick) sprinting = false;
+        bot.setSprinting(sprinting);
+    }
+
+    private double movementSpeed() {
+        return sprinting ? 0.18 : 0.135;
     }
 
     private void failPath() {
@@ -310,7 +347,7 @@ final class AgentNavigator {
 
                     double step = (dir[0] == 0 || dir[1] == 0 ? 1.0 : 1.414)
                             + Math.abs(dy) * 0.65;
-                    double nextCost = current.g() + step;
+                    double nextCost = current.g() + step + terrainPenalty(world, candidate);
                     if (nextCost >= costs.getOrDefault(candidate, Double.POSITIVE_INFINITY)) continue;
                     costs.put(candidate, nextCost);
                     parents.put(candidate, current.node());
@@ -350,9 +387,10 @@ final class AgentNavigator {
                     for (int dy = 1; dy >= -1; dy--) {
                         Node candidate = findStandable(world, x + dx, y + dy, z + dz);
                         if (candidate == null) continue;
-                        double d = candidate.x() * 0.0 + square(candidate.x() + 0.5 - destination.getX())
+                        double d = square(candidate.x() + 0.5 - destination.getX())
                                 + square(candidate.y() - destination.getY())
-                                + square(candidate.z() + 0.5 - destination.getZ());
+                                + square(candidate.z() + 0.5 - destination.getZ())
+                                + terrainPenalty(world, candidate);
                         if (d < bestDistance) {
                             bestDistance = d;
                             best = candidate;
@@ -384,6 +422,30 @@ final class AgentNavigator {
         return feet.isPassable() && head.isPassable() && !feet.isLiquid() && !head.isLiquid()
                 && !isHazard(feet.getType()) && !isHazard(head.getType())
                 && floor.getType().isSolid() && !floor.isLiquid() && !isHazard(floor.getType());
+    }
+
+    /** Prefer paths with support underfoot and a little room from fire, lava and ledges. */
+    private double terrainPenalty(World world, Node node) {
+        int unsupportedSides = 0;
+        int nearbyHazards = 0;
+        int[][] sides = {{1, 0}, {-1, 0}, {0, 1}, {0, -1}};
+        for (int[] side : sides) {
+            int x = node.x() + side[0];
+            int z = node.z() + side[1];
+            if (!world.isChunkLoaded(x >> 4, z >> 4)) {
+                unsupportedSides++;
+                continue;
+            }
+            Block sideFloor = world.getBlockAt(x, node.y() - 1, z);
+            Block sideFeet = world.getBlockAt(x, node.y(), z);
+            if (!sideFloor.getType().isSolid() || sideFloor.isLiquid()) unsupportedSides++;
+            if (sideFeet.isLiquid() || isHazard(sideFeet.getType()) || isHazard(sideFloor.getType())) {
+                nearbyHazards++;
+            }
+        }
+        double edgePenalty = Math.max(0, unsupportedSides - 1) * 0.75;
+        if (unsupportedSides >= 3) edgePenalty += 2.5;
+        return edgePenalty + nearbyHazards * 1.8;
     }
 
     private boolean reached(Node node) {
