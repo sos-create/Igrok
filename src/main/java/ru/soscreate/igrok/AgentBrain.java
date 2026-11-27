@@ -103,6 +103,46 @@ final class AgentBrain {
     AgentPersonality personality() { return personality; }
     AgentMemory memory() { return memory; }
     String state() { return state; }
+
+    String worldObservation() {
+        Player bot = plugin.controller().bukkitPlayer();
+        if (bot == null || !bot.isOnline()) return "Сейчас я не нахожусь в мире и не могу осмотреться.";
+        Location position = bot.getLocation();
+        String[] directions = {"юг", "юго-запад", "запад", "северо-запад",
+                "север", "северо-восток", "восток", "юго-восток"};
+        int directionIndex = Math.floorMod(Math.round(position.getYaw() / 45.0F), 8);
+        StringBuilder report = new StringBuilder("Я нахожусь в ")
+                .append(position.getBlockX()).append(", ")
+                .append(position.getBlockY()).append(", ")
+                .append(position.getBlockZ()).append(" и смотрю на ")
+                .append(directions[directionIndex]).append(". ");
+        org.bukkit.block.Block underfoot = bot.getWorld().getBlockAt(
+                position.getBlockX(), position.getBlockY() - 1, position.getBlockZ());
+        report.append("Под ногами — ").append(BlockPerception.russianName(underfoot.getType()))
+                .append(". ");
+        List<BlockPerception.Observation> visible = BlockPerception.nearbyVisible(
+                bot, 10 + Math.min(4, plugin.skills().level("awareness")), 5);
+        if (visible.isEmpty()) {
+            report.append("Пока не вижу рядом заметных ресурсов или объектов.");
+        } else {
+            report.append("Вижу: ");
+            for (int i = 0; i < visible.size(); i++) {
+                BlockPerception.Observation item = visible.get(i);
+                if (i > 0) report.append("; ");
+                report.append(BlockPerception.russianName(item.material()))
+                        .append(" примерно в ")
+                        .append(String.format(Locale.ROOT, "%.1f", item.distance()))
+                        .append(" блока от меня");
+            }
+            report.append('.');
+        }
+        report.append(" За сплошными стенами блоки не распознаю; стекло и деревянные заборы не закрывают обзор.");
+        return report.toString();
+    }
+
+    String skillSummary() {
+        return plugin.skills().summary();
+    }
     String decisionReason() { return decisionReason; }
     double decisionConfidence() { return decisionConfidence; }
     String personalityDescription() { return personality.describe(); }
@@ -205,7 +245,7 @@ final class AgentBrain {
         if (!plugin.getConfig().getBoolean("brain.enabled", true) || !plugin.controller().isSpawned()) return;
         Player bot = plugin.controller().bukkitPlayer();
         if (bot == null || !bot.isOnline() || bot.isDead()) return;
-        if (navigator == null) navigator = new AgentNavigator(bot);
+        if (navigator == null) navigator = new AgentNavigator(bot, plugin.skills());
         survival.tick(bot, tickCounter);
         monitorTaskProgress(bot);
 
@@ -269,6 +309,11 @@ final class AgentBrain {
                 || lastTaskPosition.getWorld() != bot.getWorld()
                 || lastTaskPosition.distanceSquared(bot.getLocation()) >= 1.0;
         if (minedSomething || changedPosition) {
+            if (changedPosition && lastTaskPosition != null
+                    && lastTaskPosition.getWorld() == bot.getWorld()
+                    && lastTaskPosition.distanceSquared(bot.getLocation()) >= 1.0) {
+                plugin.skills().gain("navigation", 1);
+            }
             lastTaskPosition = bot.getLocation().clone();
             lastTaskProgressTick = tickCounter;
             lastTaskMinedCount = minedThisTask;
@@ -1208,8 +1253,7 @@ final class AgentBrain {
 
         Location blockLocation = miningTarget.getLocation().add(0.5, 0.5, 0.5);
         // Same 4.5-block eye reach and line-of-sight rule as a survival player.
-        boolean canReach = bot.getEyeLocation().distanceSquared(blockLocation) <= 4.5 * 4.5
-                && bot.hasLineOfSight(blockLocation);
+        boolean canReach = BlockPerception.canSee(bot.getEyeLocation(), miningTarget, 4.5);
         if (!canReach) {
             state = "Подхожу к блоку " + miningTarget.getType().name().toLowerCase(Locale.ROOT);
             if (!navigator.moveTo(miningTarget.getLocation())) {
@@ -1302,7 +1346,7 @@ final class AgentBrain {
                     // Prefer resources the bot can actually see and reach. Selecting
                     // a log hidden behind another trunk made it repeatedly walk to a
                     // blocked side, discard the target, and select the same log again.
-                    if (!bot.hasLineOfSight(center)) continue;
+                    if (!BlockPerception.canSee(eye, block, radius + 2.0)) continue;
                     if (woodMode && !hasNearbyLeaves(block)) continue;
                     best = block;
                     bestDistance = distance;
