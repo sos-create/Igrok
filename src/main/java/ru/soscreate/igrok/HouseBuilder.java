@@ -416,7 +416,7 @@ final class HouseBuilder {
 
     private Location findSite(Location anchor) {
         World world = anchor.getWorld();
-        int radius = Math.max(8, Math.min(12, plugin.getConfig().getInt("building.search-radius", 10)));
+        int radius = Math.max(12, Math.min(20, plugin.getConfig().getInt("building.search-radius", 16)));
         int originX = anchor.getBlockX();
         int originZ = anchor.getBlockZ();
         List<int[]> offsets = new ArrayList<>();
