@@ -70,6 +70,9 @@ final class AgentBrain {
     private int nextHuntAttackTick;
     private int nextBuildAttemptTick;
     private int nextIdleLookTick;
+    private float idleLookTargetYaw;
+    private float idleLookTargetPitch;
+    private boolean idleLookTargetSet;
     private int nextIdleWanderTick;
     private int idlePauseUntilTick;
     private Location idleWanderTarget;
@@ -351,10 +354,18 @@ final class AgentBrain {
             nextIdleLookTick = tickCounter + ThreadLocalRandom.current().nextInt(35, 81);
             state = "Наблюдаю за " + nearby.getName();
         } else if (tickCounter >= nextIdleLookTick) {
-            float yaw = bot.getLocation().getYaw() + ThreadLocalRandom.current().nextInt(-75, 76);
-            float pitch = ThreadLocalRandom.current().nextInt(-12, 13);
-            bot.setRotation(yaw, pitch);
-            nextIdleLookTick = tickCounter + ThreadLocalRandom.current().nextInt(40, 101);
+            idleLookTargetYaw = bot.getLocation().getYaw()
+                    + ThreadLocalRandom.current().nextInt(-75, 76);
+            idleLookTargetPitch = ThreadLocalRandom.current().nextInt(-12, 13);
+            idleLookTargetSet = true;
+            nextIdleLookTick = tickCounter + ThreadLocalRandom.current().nextInt(70, 141);
+        }
+        if (idleLookTargetSet) {
+            rotateToward(bot, idleLookTargetYaw, idleLookTargetPitch, 7.0F, 4.0F);
+            if (Math.abs(wrapDegrees(idleLookTargetYaw - bot.getLocation().getYaw())) < 2.0F
+                    && Math.abs(idleLookTargetPitch - bot.getLocation().getPitch()) < 2.0F) {
+                idleLookTargetSet = false;
+            }
         }
 
         // Do not rely on a 0.25% random roll every AI pulse: that could leave
@@ -1483,11 +1494,31 @@ final class AgentBrain {
         float yaw = (float) Math.toDegrees(Math.atan2(-dx, dz));
         float pitch = (float) -Math.toDegrees(Math.atan2(dy, horizontal));
         pitch = Math.max(-75.0F, Math.min(75.0F, pitch));
+        rotateToward(bot, yaw, pitch, 18.0F, 12.0F);
+    }
+
+    private void rotateToward(Player bot, float targetYaw, float targetPitch,
+                              float maxYawStep, float maxPitchStep) {
+        float currentYaw = bot.getLocation().getYaw();
+        float currentPitch = bot.getLocation().getPitch();
+        float yawDelta = wrapDegrees(targetYaw - currentYaw);
+        float pitchDelta = targetPitch - currentPitch;
+        float yaw = currentYaw + Math.max(-maxYawStep, Math.min(maxYawStep, yawDelta));
+        float pitch = currentPitch + Math.max(-maxPitchStep, Math.min(maxPitchStep, pitchDelta));
         bot.setRotation(yaw, pitch);
         org.bukkit.craftbukkit.entity.CraftPlayer craftPlayer =
                 (org.bukkit.craftbukkit.entity.CraftPlayer) bot;
         craftPlayer.getHandle().setYHeadRot(yaw);
-        craftPlayer.getHandle().setYBodyRot(yaw);
+        // Body follows the head without instantaneous 180-degree snaps.
+        craftPlayer.getHandle().setYBodyRot(currentYaw
+                + Math.max(-maxYawStep * 0.65F, Math.min(maxYawStep * 0.65F, yawDelta)));
+    }
+
+    private float wrapDegrees(float degrees) {
+        float wrapped = degrees % 360.0F;
+        if (wrapped <= -180.0F) wrapped += 360.0F;
+        if (wrapped > 180.0F) wrapped -= 360.0F;
+        return wrapped;
     }
 
 
