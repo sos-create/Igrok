@@ -487,7 +487,7 @@ final class HouseBuilder {
             }
         }
 
-        for (int y = 1; y <= 3; y++) {
+        for (int y = 1; y <= 2; y++) {
             for (int x = -2; x <= 2; x++) {
                 for (int z = -2; z <= 2; z++) {
                     if (Math.abs(x) != 2 && Math.abs(z) != 2) continue;
@@ -515,8 +515,10 @@ final class HouseBuilder {
             add(0, 2, -2, glassMaterial);
         }
 
-        for (int x = -3; x <= 3; x++) {
-            for (int z = -3; z <= 3; z++) add(x, 4, z, wallMaterial);
+        // Compact roof keeps the shelter affordable so it remains one
+        // possible project among several, rather than a long mandatory grind.
+        for (int x = -2; x <= 2; x++) {
+            for (int z = -2; z <= 2; z++) add(x, 3, z, wallMaterial);
         }
         add(0, 0, 3, Material.COBBLESTONE);
     }
