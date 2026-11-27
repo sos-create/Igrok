@@ -132,9 +132,29 @@ final class AgentBrain {
                 report.append(BlockPerception.russianName(item.material()))
                         .append(" примерно в ")
                         .append(String.format(Locale.ROOT, "%.1f", item.distance()))
-                        .append(" блока от меня");
+                        .append(" блока от меня (")
+                        .append(item.location().getBlockX()).append(", ")
+                        .append(item.location().getBlockY()).append(", ")
+                        .append(item.location().getBlockZ()).append(')');
             }
             report.append('.');
+        }
+
+        List<org.bukkit.entity.LivingEntity> entities = bot.getNearbyEntities(12.0, 6.0, 12.0).stream()
+                .filter(entity -> entity instanceof org.bukkit.entity.LivingEntity)
+                .map(entity -> (org.bukkit.entity.LivingEntity) entity)
+                .filter(entity -> entity != bot && entity.isValid() && !entity.isDead())
+                .filter(bot::hasLineOfSight)
+                .sorted(Comparator.comparingDouble(entity -> entity.getLocation().distanceSquared(position)))
+                .limit(2).toList();
+        for (org.bukkit.entity.LivingEntity entity : entities) {
+            report.append(" Также вижу ")
+                    .append(entity instanceof Player other ? "игрока " + other.getName()
+                            : entity.getType().name().toLowerCase(Locale.ROOT).replace('_', ' '))
+                    .append(" примерно в ")
+                    .append(String.format(Locale.ROOT, "%.1f",
+                            Math.sqrt(entity.getLocation().distanceSquared(position))))
+                    .append(" блока.");
         }
         report.append(" За сплошными стенами блоки не распознаю; стекло и деревянные заборы не закрывают обзор.");
         return report.toString();
@@ -500,7 +520,7 @@ final class AgentBrain {
 
         if (distanceSquared > 20.25 && distanceSquared <= 24.0 * 24.0) {
             if (pausedByPlayer) return;
-            if (navigator == null) navigator = new AgentNavigator(bot);
+            if (navigator == null) navigator = new AgentNavigator(bot, plugin.skills());
             if (plugin.houseBuilder().isBuilding()) plugin.houseBuilder().cancel(false);
             conversationTarget = playerId;
             conversationUntilTick = tickCounter + 200; // 10 seconds of approach
@@ -1356,6 +1376,9 @@ final class AgentBrain {
                     Block block = world.getBlockAt(x, y, z);
                     Material type = block.getType();
                     if (!isWantedResource(type)) continue;
+                    // Never choose a block under the floor as a mining target.
+                    // A tunnel is opened one visible surface block at a time.
+                    if (block.getY() < origin.getBlockY() - 1) continue;
                     Location center = block.getLocation().add(0.5, 0.5, 0.5);
                     double distance = center.distanceSquared(eye);
                     if (distance >= bestDistance || distance > (radius + 2.0) * (radius + 2.0)) continue;
