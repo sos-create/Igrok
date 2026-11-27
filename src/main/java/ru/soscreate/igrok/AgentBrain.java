@@ -1164,6 +1164,13 @@ final class AgentBrain {
 
     private Monster findThreat(Player bot) {
         double radius = Math.max(4.0, plugin.getConfig().getDouble("brain.combat.radius", 12.0));
+        // Keep the same opponent while it is still close. Without this lock the
+        // planner could drop DEFEND between two hits and turn the bot back to walking.
+        if (threat != null && threat.isValid() && !threat.isDead()
+                && threat.getWorld() == bot.getWorld()
+                && threat.getLocation().distanceSquared(bot.getLocation()) <= (radius + 2.0) * (radius + 2.0)) {
+            return threat;
+        }
         boolean aggressive = attackRequested || plugin.getConfig().getBoolean("brain.combat.aggressive", false);
         return bot.getNearbyEntities(radius, 6.0, radius).stream()
                 .filter(entity -> entity instanceof Monster)
@@ -1450,19 +1457,23 @@ final class AgentBrain {
                         + Math.min(2, miningSkill / 4)));
         // Better miners can search a little farther, while ore scans remain tightly bounded.
         int radius = miningMode.equals("coal") || miningMode.equals("iron")
+                || miningMode.equals("redstone")
                 ? Math.min(8, configuredRadius + awarenessSkill / 5) : configuredRadius;
         Block best = null;
         double bestDistance = Double.POSITIVE_INFINITY;
         boolean woodMode = miningMode.equals("wood");
-        int minimumToolTier = miningMode.equals("iron") ? 3 : 1;
+        int minimumToolTier = miningMode.equals("redstone") ? 4
+                : miningMode.equals("iron") ? 3 : 1;
         if (!woodMode && survivalToolTier(bot, "PICKAXE") < minimumToolTier) return null;
         int depth = switch (miningMode) {
             case "stone" -> 14;
             case "coal" -> 32;
             case "iron" -> 48;
+            case "redstone" -> 56;
             default -> 4;
         };
-        int height = woodMode ? 8 : miningMode.equals("iron") ? 8 : 12;
+        int height = woodMode ? 8
+                : (miningMode.equals("iron") || miningMode.equals("redstone")) ? 8 : 12;
         int minY = Math.max(world.getMinHeight() + 1, origin.getBlockY() - depth);
         int maxY = Math.min(world.getMaxHeight() - 2, origin.getBlockY() + height);
         Location eye = bot.getEyeLocation();
@@ -1478,9 +1489,12 @@ final class AgentBrain {
                             && failedMiningTarget.getBlockX() == x
                             && failedMiningTarget.getBlockY() == y
                             && failedMiningTarget.getBlockZ() == z) continue;
-                    // Never choose a block under the floor as a mining target.
-                    // A tunnel is opened one visible surface block at a time.
-                    if (block.getY() < origin.getBlockY() - 1) continue;
+                    // Surface gathering stays near the bot, but cave ore may be far
+                    // below its feet. Only select ore that is actually exposed and
+                    // visible; the navigator still has to find a walkable route to it.
+                    boolean undergroundOre = miningMode.equals("coal")
+                            || miningMode.equals("iron") || miningMode.equals("redstone");
+                    if (!undergroundOre && block.getY() < origin.getBlockY() - 1) continue;
                     Location center = block.getLocation().add(0.5, 0.5, 0.5);
                     double distance = center.distanceSquared(eye);
                     if (distance >= bestDistance || distance > (radius + 2.0) * (radius + 2.0)) continue;
@@ -1506,6 +1520,7 @@ final class AgentBrain {
                     && !name.startsWith("STRIPPED_");
             case "coal" -> name.endsWith("_COAL_ORE");
             case "iron" -> name.endsWith("_IRON_ORE");
+            case "redstone" -> name.endsWith("_REDSTONE_ORE");
             case "stone" -> name.equals("STONE") || name.equals("COBBLESTONE");
             default -> false;
         };
@@ -1621,7 +1636,7 @@ final class AgentBrain {
 
     boolean requestMining(String mode) {
         String value = mode == null ? "wood" : mode.toLowerCase(Locale.ROOT);
-        if (!java.util.Set.of("wood", "stone", "coal", "iron").contains(value)) return false;
+        if (!java.util.Set.of("wood", "stone", "coal", "iron", "redstone").contains(value)) return false;
         pausedByPlayer = false;
         miningMode = value;
         manualOrderActive = true;
@@ -1727,11 +1742,9 @@ final class AgentBrain {
         float pitch = (float) -Math.toDegrees(Math.atan2(dy, horizontal));
         pitch = Math.max(-75.0F, Math.min(75.0F, pitch));
 
-        bot.setRotation(yaw, pitch);
-        org.bukkit.craftbukkit.entity.CraftPlayer craftPlayer =
-                (org.bukkit.craftbukkit.entity.CraftPlayer) bot;
-        craftPlayer.getHandle().setYHeadRot(yaw);
-        craftPlayer.getHandle().setYBodyRot(yaw);
+        // Keep turning over multiple AI updates; the fake player's tick preserves
+        // this orientation while its velocity moves independently (including strafing).
+        rotateToward(bot, yaw, pitch, 24.0F, 14.0F);
     }
 
     private void face(Player bot, Location target) {
