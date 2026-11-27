@@ -54,6 +54,9 @@ final class AutonomousPlanner {
         int stage = Math.max(0, Math.min(4, s.developmentStage()));
         double independentBias = stage >= 3 ? 0.08 + (stage - 3) * 0.05 : 0.0;
         double explorerBias = "exploration".equals(s.preferredBranch()) ? 0.06 : 0.0;
+        double survivalBias = "survival".equals(s.preferredBranch()) ? 0.07 : 0.0;
+        double craftBias = "craft".equals(s.preferredBranch()) ? 0.07 : 0.0;
+        boolean socialFocus = "social".equals(s.preferredBranch());
         Decision best = decision(GoalPlanner.Goal.EXPLORE, "",
                 Math.min(0.86, 0.38 + curiosity * 0.25 + independentBias + explorerBias),
                 stage >= 3 ? "INDEPENDENT_LIFE" : "DISCOVERY",
@@ -68,7 +71,7 @@ final class AutonomousPlanner {
         }
         if (s.foodLevel() <= 12 && !s.hasFood()) {
             Decision foodDecision = s.huntReady()
-                    ? decision(GoalPlanner.Goal.HUNT, "", 0.91, "SURVIVAL",
+                    ? decision(GoalPlanner.Goal.HUNT, "", 0.91 + survivalBias * 0.5, "SURVIVAL",
                         "Голод: ищу животное, но не трачу последние силы на дальний поход.")
                     : decision(GoalPlanner.Goal.EXPLORE, "", 0.82, "SURVIVAL",
                         "Рядом пищи не нашлось недавно; меняю район поиска.");
@@ -93,10 +96,10 @@ final class AutonomousPlanner {
             }
         } else if (s.pickaxeTier() < 3) {
             if (s.cobblestone() < 3) {
-                best = better(best, collect(s.stoneSearchReady(), "stone", 0.86,
+                best = better(best, collect(s.stoneSearchReady(), "stone", 0.86 + craftBias * 0.4,
                         "STONE_TOOLS", "Каменная кирка откроет больше рецептов и безопасную добычу руд.", false));
             } else if (s.cobblestone() < 8) {
-                best = better(best, collect(s.stoneSearchReady(), "stone", 0.74,
+                best = better(best, collect(s.stoneSearchReady(), "stone", 0.74 + craftBias,
                         "STONE_TOOLS", "Добираю камень для кирки, печи или другого полезного снаряжения.", false));
             } else if (s.cobblestone() < 12) {
                 best = better(best, collect(s.stoneSearchReady(), "stone", 0.61,
@@ -123,7 +126,7 @@ final class AutonomousPlanner {
                 best = better(best, decision(GoalPlanner.Goal.IDLE, "", 0.68, "CHARCOAL",
                         "Уголь искать необязательно: использую печь и древесину, чтобы получать древесный уголь."));
             } else if (s.pickaxeTier() >= 1) {
-                best = better(best, collect(s.coalSearchReady(), "coal", 0.63,
+                best = better(best, collect(s.coalSearchReady(), "coal", 0.63 + craftBias * 0.8,
                         "FUEL", "Нужен свет и топливо: проверяю уголь, если путь к нему сейчас доступен.", false));
             } else if (s.cobblestone() >= 8 && s.craftingTableAvailable()) {
                 best = better(best, decision(GoalPlanner.Goal.IDLE, "", 0.57, "FURNACE",
@@ -134,7 +137,7 @@ final class AutonomousPlanner {
         // Iron is optional until the agent has a stone pick. No pointless digging without it.
         int iron = s.rawIron() + s.ironIngots();
         if (s.pickaxeTier() >= 3 && iron < 6) {
-            best = better(best, collect(s.ironSearchReady(), "iron", 0.61,
+            best = better(best, collect(s.ironSearchReady(), "iron", 0.61 + craftBias,
                     "IRON", "Железо даст более прочные инструменты, но я ищу его только с подходящей киркой.", false));
         }
 
@@ -200,7 +203,8 @@ final class AutonomousPlanner {
             }
         }
         if (stage >= 4 && !s.night() && s.foodLevel() >= 14) {
-            best = better(best, decision(GoalPlanner.Goal.IDLE, "", 0.43 + creativity * 0.10,
+            best = better(best, decision(GoalPlanner.Goal.IDLE, "",
+                    Math.min(0.90, 0.58 + creativity * 0.18 + (socialFocus ? 0.08 : 0.0)),
                     "PERSONAL_TIME", "Мне не обязательно постоянно добывать ресурсы: иногда полезно осмотреться, передохнуть и пожить обычной жизнью."));
         }
 
