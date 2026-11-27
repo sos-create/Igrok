@@ -15,6 +15,7 @@ final class AutonomousPlanner {
             boolean hasFood,
             boolean night,
             boolean bedAvailable,
+            boolean huntReady,
             int logs,
             int planks,
             int cobblestone,
@@ -38,9 +39,13 @@ final class AutonomousPlanner {
 
     Decision choose(Snapshot s) {
         // Reflex-level needs always outrank the long-term technology tree.
-        if (s.foodLevel() <= 12 && !s.hasFood()) {
+        if (s.foodLevel() <= 12 && !s.hasFood() && s.huntReady()) {
             return decision(GoalPlanner.Goal.HUNT, "", 1.0, "SURVIVAL",
                     "Голод: сначала найти пищу, затем продолжить развитие.");
+        }
+        if (s.foodLevel() <= 12 && !s.hasFood()) {
+            return decision(GoalPlanner.Goal.EXPLORE, "", 0.68, "SURVIVAL",
+                    "Рядом не нашёл пищу недавно; меняю маршрут и ищу другие источники еды.");
         }
         if (s.night() && s.bedAvailable()) {
             return decision(GoalPlanner.Goal.SLEEP, "", 0.96, "RECOVERY",
