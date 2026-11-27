@@ -577,20 +577,18 @@ final class HouseBuilder {
     }
 
     private void createWorkshopPlan() {
-        // A second, slightly larger project: storage/workbench room with a stone rim.
-        for (int x = -2; x <= 2; x++) {
-            for (int z = -2; z <= 2; z++) {
-                add(x, 0, z, Math.abs(x) == 2 || Math.abs(z) == 2
-                        ? Material.COBBLESTONE : wallMaterial);
-            }
+        // A compact 3x3 workroom: inexpensive enough to be a second project,
+        // but with a real door, light from windows and a roof.
+        for (int x = -1; x <= 1; x++) {
+            for (int z = -1; z <= 1; z++) add(x, 0, z, Material.COBBLESTONE);
         }
         for (int y = 1; y <= 2; y++) {
-            for (int x = -2; x <= 2; x++) {
-                for (int z = -2; z <= 2; z++) {
-                    if (Math.abs(x) != 2 && Math.abs(z) != 2) continue;
-                    boolean doorway = z == 2 && x == 0 && y <= 2;
+            for (int x = -1; x <= 1; x++) {
+                for (int z = -1; z <= 1; z++) {
+                    if (Math.abs(x) != 1 && Math.abs(z) != 1) continue;
+                    boolean doorway = z == 1 && x == 0 && y <= 2;
                     boolean window = glassMaterial != null && y == 2
-                            && ((z == -2 && x == 0) || (x == -2 && z == 0) || (x == 2 && z == 0));
+                            && ((z == -1 && x == 0) || (x == -1 && z == 0));
                     if (doorway || window) continue;
                     add(x, y, z, wallMaterial);
                 }
@@ -602,16 +600,15 @@ final class HouseBuilder {
             lower.setHalf(Bisected.Half.BOTTOM);
             Door upper = (Door) lower.clone();
             upper.setHalf(Bisected.Half.TOP);
-            addData(0, 1, 2, doorMaterial, lower, true);
-            addData(0, 2, 2, doorMaterial, upper, false);
+            addData(0, 1, 1, doorMaterial, lower, true);
+            addData(0, 2, 1, doorMaterial, upper, false);
         }
         if (glassMaterial != null) {
-            add(-2, 2, 0, glassMaterial);
-            add(2, 2, 0, glassMaterial);
-            add(0, 2, -2, glassMaterial);
+            add(0, 2, -1, glassMaterial);
+            add(-1, 2, 0, glassMaterial);
         }
-        for (int x = -2; x <= 2; x++) {
-            for (int z = -2; z <= 2; z++) add(x, 3, z, wallMaterial);
+        for (int x = -1; x <= 1; x++) {
+            for (int z = -1; z <= 1; z++) add(x, 3, z, wallMaterial);
         }
     }
 
