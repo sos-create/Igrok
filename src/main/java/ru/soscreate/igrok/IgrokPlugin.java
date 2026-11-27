@@ -366,8 +366,12 @@ public final class IgrokPlugin extends JavaPlugin implements Listener {
             skills.gain("mining", 2);
             skills.gain("awareness", 1);
             Material type = event.getBlock().getType();
-            if (isCropMaterial(type)) skills.gain("farming", 2);
-            if (isEngineeringMaterial(type)) skills.gain("engineering", 1);
+            if (isCropMaterial(type)) { skills.gain("farming", 2); skills.gain("harvesting", 1); }
+            String blockName = type.name();
+            if (blockName.endsWith("_LOG") || blockName.endsWith("_WOOD") || blockName.endsWith("_STEM") || blockName.equals("BAMBOO_BLOCK")) skills.gain("woodcutting", 2);
+            if (type == Material.DIRT || type == Material.GRAVEL || type == Material.SAND || type == Material.CLAY) skills.gain("excavation", 1);
+            if (blockName.endsWith("_ORE") || blockName.equals("ANCIENT_DEBRIS")) skills.gain("ore_lore", 2);
+            if (isEngineeringMaterial(type)) { skills.gain("engineering", 1); skills.gain("redstone", 1); }
         }
     }
 
@@ -378,8 +382,12 @@ public final class IgrokPlugin extends JavaPlugin implements Listener {
         if (controller != null && controller.isBot(event.getPlayer()) && skills != null) {
             skills.gain("building", 1);
             Material type = event.getBlockPlaced().getType();
-            if (isCropMaterial(type) || type == Material.FARMLAND) skills.gain("farming", 1);
-            if (isEngineeringMaterial(type)) skills.gain("engineering", 1);
+            if (isCropMaterial(type) || type == Material.FARMLAND) { skills.gain("farming", 1); skills.gain("gardening", 1); }
+            String blockName = type.name();
+            if (blockName.contains("STAIRS") || blockName.contains("SLAB") || blockName.contains("BRICK") || blockName.contains("QUARTZ")) skills.gain("architecture", 1);
+            if (blockName.contains("BANNER") || blockName.contains("CARPET") || blockName.contains("FLOWER") || blockName.contains("CANDLE") || blockName.contains("GLAZED")) skills.gain("decoration", 1);
+            if (blockName.contains("WALL") || blockName.contains("FENCE") || blockName.contains("BARS") || blockName.contains("GATE")) skills.gain("fortification", 1);
+            if (isEngineeringMaterial(type)) { skills.gain("engineering", 1); skills.gain("redstone", 1); }
         }
     }
 
@@ -392,6 +400,8 @@ public final class IgrokPlugin extends JavaPlugin implements Listener {
             if (controller != null && controller.isBot(killer) && skills != null) {
                 skills.gain("combat", 3);
                 skills.gain("survival", 1);
+                if (event.getEntity() instanceof Monster) skills.gain("melee_combat", 2);
+                else skills.gain("hunting", 2);
             }
         }
     }
@@ -409,6 +419,8 @@ public final class IgrokPlugin extends JavaPlugin implements Listener {
             cognition.observeBehavior("explore");
             if (controller != null && controller.isBot(event.getPlayer()) && skills != null) {
                 skills.gain("exploration", 1);
+                skills.gain("navigation_memory", 1);
+                skills.gain("exploration_lore", 1);
             }
             lastExplorationObservation.put(id, now);
         }
@@ -419,6 +431,7 @@ public final class IgrokPlugin extends JavaPlugin implements Listener {
         if (controller == null || skills == null || !controller.isBot(event.getPlayer())) return;
         if (event.getState() == PlayerFishEvent.State.CAUGHT_FISH) {
             skills.gain("fishing", 3);
+            skills.gain("fishing_lore", 2);
             skills.gain("survival", 1);
         }
     }
@@ -428,6 +441,7 @@ public final class IgrokPlugin extends JavaPlugin implements Listener {
         if (!(event.getBreeder() instanceof Player breeder)
                 || controller == null || skills == null || !controller.isBot(breeder)) return;
         skills.gain("animal_care", 3);
+        skills.gain("herding", 2);
         skills.gain("survival", 1);
     }
 
@@ -436,7 +450,9 @@ public final class IgrokPlugin extends JavaPlugin implements Listener {
         if (controller == null || skills == null || !controller.isBot(event.getPlayer())) return;
         String material = event.getItemType().name();
         if (material.startsWith("COOKED_") || material.equals("BAKED_POTATO")) {
-            skills.gain("cooking", Math.max(1, Math.min(3, event.getItemAmount())));
+            int amount = Math.max(1, Math.min(3, event.getItemAmount()));
+            skills.gain("cooking", amount);
+            skills.gain("cooking_lore", amount);
         }
     }
 
