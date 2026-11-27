@@ -54,8 +54,12 @@ final class AutonomousPlanner {
                     "Еда стала срочной задачей: сначала найду пищу, а затем вернусь к другим проектам.");
         }
         if (s.foodLevel() <= 12 && !s.hasFood()) {
-            best = better(best, collect(s.huntReady(), "", 0.91, "SURVIVAL",
-                    "Голод: ищу животных или новые места с источниками еды.", false));
+            Decision foodDecision = s.huntReady()
+                    ? decision(GoalPlanner.Goal.HUNT, "", 0.91, "SURVIVAL",
+                        "Голод: ищу животное, но не трачу последние силы на дальний поход.")
+                    : decision(GoalPlanner.Goal.EXPLORE, "", 0.82, "SURVIVAL",
+                        "Рядом пищи не нашлось недавно; меняю район поиска.");
+            best = better(best, foodDecision);
         }
         if (s.night() && s.bedAvailable()) {
             best = better(best, decision(GoalPlanner.Goal.SLEEP, "", 0.97, "REST",
