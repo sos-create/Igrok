@@ -1,13 +1,15 @@
 package ru.soscreate.igrok;
 
 /**
- * Lightweight autonomous progression planner.
+ * Multi-project survival planner.
  *
- * It combines a dependency graph (wood -> table/tools -> stone tools ->
- * shelter -> iron/fuel) with utility-based survival priorities. It is fully
- * deterministic, bounded, and deliberately independent of an online model.
- * The planner only chooses the next verified task; SurvivalController and
- * AgentBrain remain the authorities that perform and validate game actions.
+ * There is no mandatory linear progression. Each planning pass scores several
+ * independent projects (equipment, food, shelter, fuel, iron, exploration) and
+ * chooses the best currently useful one. Missing resources lower a project's
+ * score or redirect it to exploration instead of pinning the agent to a dead end.
+ *
+ * Actual crafting, mining, building and movement remain in the controllers;
+ * this class only chooses the next verified intention.
  */
 final class AutonomousPlanner {
     record Snapshot(
@@ -20,6 +22,8 @@ final class AutonomousPlanner {
             int planks,
             int cobblestone,
             int coal,
+            int charcoal,
+            int torches,
             int rawIron,
             int ironIngots,
             int pickaxeTier,
@@ -32,104 +36,147 @@ final class AutonomousPlanner {
             boolean stoneSearchReady,
             boolean coalSearchReady,
             boolean ironSearchReady,
-            double curiosity) { }
+            double curiosity,
+            double creativity) { }
 
     record Decision(GoalPlanner.Goal goal, String miningMode, double utility,
                     String phase, String reason) { }
 
     Decision choose(Snapshot s) {
-        // Reflex-level needs always outrank the long-term technology tree.
-        if (s.foodLevel() <= 12 && !s.hasFood() && s.huntReady()) {
+        double curiosity = clamp(s.curiosity());
+        double creativity = clamp(s.creativity());
+        Decision best = decision(GoalPlanner.Goal.EXPLORE, "", 0.38 + curiosity * 0.25,
+                "DISCOVERY", "Ищу новые места и возможности; дальнейший выбор зависит от того, что найду.");
+
+        // Immediate survival is a hard constraint, not just another optional project.
+        if (s.foodLevel() <= 8 && !s.hasFood() && s.huntReady()) {
             return decision(GoalPlanner.Goal.HUNT, "", 1.0, "SURVIVAL",
-                    "Голод: сначала найти пищу, затем продолжить развитие.");
+                    "Еда стала срочной задачей: сначала найду пищу, а затем вернусь к другим проектам.");
         }
         if (s.foodLevel() <= 12 && !s.hasFood()) {
-            return decision(GoalPlanner.Goal.EXPLORE, "", 0.68, "SURVIVAL",
-                    "Рядом не нашёл пищу недавно; меняю маршрут и ищу другие источники еды.");
+            best = better(best, collect(s.huntReady(), "", 0.91, "SURVIVAL",
+                    "Голод: ищу животных или новые места с источниками еды.", false));
         }
         if (s.night() && s.bedAvailable()) {
-            return decision(GoalPlanner.Goal.SLEEP, "", 0.96, "RECOVERY",
-                    "Ночь: безопаснее поспать и восстановить силы.");
+            best = better(best, decision(GoalPlanner.Goal.SLEEP, "", 0.97, "REST",
+                    "Наступила ночь, рядом есть кровать: безопаснее восстановиться."));
         }
 
-        int effectivePlanks = s.planks() + s.logs() * 4;
+        int usableWood = s.logs() * 4 + s.planks();
 
-        // Phase 1: establish the minimum work chain. CraftingController creates
-        // planks, sticks, table, axe and wooden pick as soon as materials exist.
+        // Equipment is a project with a short dependency chain, not a fixed stage.
+        // If the wooden pick is missing, wood is useful only until a real tool can be crafted.
         if (s.pickaxeTier() < 1) {
-            if (effectivePlanks < 16 || (!s.craftingTableAvailable() && effectivePlanks < 8)) {
-                return gatherOrExplore(s.woodSearchReady(), "wood", 0.94, "WOOD_TOOLS",
-                        "Этап 1: собираю древесину для досок, верстака, топора и первой кирки.");
+            if (usableWood < 10) {
+                best = better(best, collect(s.woodSearchReady(), "wood", 0.92,
+                        "BASIC_TOOLS", "Для первой кирки и рабочего места не хватает древесины.", true));
+            } else {
+                best = better(best, decision(GoalPlanner.Goal.IDLE, "", 0.84, "BASIC_TOOLS",
+                        "Древесины уже достаточно: позволяю системе крафта изготовить верстак, палки и деревянные инструменты."));
             }
-            return decision(GoalPlanner.Goal.IDLE, "", 0.72, "WOOD_TOOLS",
-                    "Материал для первых инструментов собран: даю системе крафта изготовить и разместить верстак.");
+        } else if (s.pickaxeTier() < 3) {
+            if (s.cobblestone() < 3) {
+                best = better(best, collect(s.stoneSearchReady(), "stone", 0.86,
+                        "STONE_TOOLS", "Каменная кирка откроет больше рецептов и безопасную добычу руд."));
+            } else if (s.cobblestone() < 8) {
+                best = better(best, collect(s.stoneSearchReady(), "stone", 0.74,
+                        "STONE_TOOLS", "Добираю камень для кирки, печи или другого полезного снаряжения."));
+            } else if (s.cobblestone() < 12) {
+                best = better(best, collect(s.stoneSearchReady(), "stone", 0.61,
+                        "STONE_TOOLS", "Есть смысл сделать небольшой запас камня, но можно заняться и другими делами."));
+            } else {
+                best = better(best, decision(GoalPlanner.Goal.IDLE, "", 0.72, "STONE_TOOLS",
+                        "Камня достаточно: крафтую улучшенные инструменты и не добываю лишнее."));
+            }
         }
 
-        // Phase 2: a wooden pick unlocks stone. Do not waste time looking for
-        // iron before the bot owns a pickaxe capable of mining it.
-        if (s.pickaxeTier() < 3) {
-            if (s.cobblestone() < 12) {
-                return gatherOrExplore(s.stoneSearchReady(), "stone", 0.91, "STONE_TOOLS",
-                        "Этап 2: добываю булыжник для каменной кирки, топора и меча.");
-            }
-            return decision(GoalPlanner.Goal.IDLE, "", 0.74, "STONE_TOOLS",
-                    "Камня достаточно: жду изготовления каменных инструментов и проверяю инвентарь.");
+        // An axe is an independent quality-of-life upgrade. It need not wait for a house.
+        if (s.axeTier() < 1 && usableWood < 14) {
+            best = better(best, collect(s.woodSearchReady(), "wood", 0.57,
+                    "WOODCUTTING", "Топор ускорит сбор древесины; пополню запас, если дерево доступно."));
+        } else if (s.axeTier() < 3 && s.pickaxeTier() >= 1 && s.cobblestone() >= 3) {
+            best = better(best, decision(GoalPlanner.Goal.IDLE, "", 0.49, "WOODCUTTING",
+                    "Материалы для каменного топора уже есть: проверяю возможность его изготовить."));
         }
 
-        // Phase 3: secure a permanent shelter using only the bot's own items.
-        // The exact affordability check is performed by HouseBuilder before
-        // placing the first block; these thresholds guide resource collection.
+        // Fuel has two interchangeable routes: mine coal, or turn logs into charcoal.
+        int fuel = s.coal() + s.charcoal();
+        if (s.torches() < 12 && fuel < 4) {
+            if (s.furnaceAvailable() && s.logs() > 0) {
+                best = better(best, decision(GoalPlanner.Goal.IDLE, "", 0.68, "CHARCOAL",
+                        "Уголь искать необязательно: использую печь и древесину, чтобы получать древесный уголь."));
+            } else if (s.pickaxeTier() >= 1) {
+                best = better(best, collect(s.coalSearchReady(), "coal", 0.63,
+                        "FUEL", "Нужен свет и топливо: проверяю уголь, если путь к нему сейчас доступен."));
+            } else if (s.cobblestone() >= 8 && s.craftingTableAvailable()) {
+                best = better(best, decision(GoalPlanner.Goal.IDLE, "", 0.57, "FURNACE",
+                        "Сначала изготовлю печь из уже имеющегося камня; дальше можно получать древесный уголь."));
+            }
+        }
+
+        // Iron is optional until the agent has a stone pick. No pointless digging without it.
+        int iron = s.rawIron() + s.ironIngots();
+        if (s.pickaxeTier() >= 3 && iron < 6) {
+            best = better(best, collect(s.ironSearchReady(), "iron", 0.61,
+                    "IRON", "Железо даст более прочные инструменты, но я ищу его только с подходящей киркой."));
+        }
+
+        // Furnace is a utility project, not a requirement for every other action.
+        if (!s.furnaceAvailable() && s.cobblestone() >= 8 && s.craftingTableAvailable()) {
+            best = better(best, decision(GoalPlanner.Goal.IDLE, "", 0.59, "FURNACE",
+                    "Материалы для печи собраны: создаю возможность готовить еду и получать древесный уголь."));
+        }
+
+        // A home is an attractive project when affordable, but never blocks exploration
+        // or equipment development just because the builder has not completed it.
         if (!s.shelterCompleted()) {
             if (s.shelterReady()) {
-                return decision(GoalPlanner.Goal.IDLE, "", 0.98, "SHELTER",
-                        "Все материалы для убежища собраны: передаю задачу строителю.");
+                best = better(best, decision(GoalPlanner.Goal.IDLE, "", 0.79, "SHELTER",
+                        "Материалов хватает для убежища. Можно заняться домом, если сейчас нет более срочной цели."));
+            } else {
+                double woodProgress = Math.min(1.0, s.planks() / 64.0);
+                double stoneProgress = Math.min(1.0, s.cobblestone() / 16.0);
+                double shelterInterest = 0.28 + creativity * 0.13
+                        + (woodProgress + stoneProgress) * 0.09;
+                if (s.planks() < 64 && s.woodSearchReady()) {
+                    best = better(best, decision(GoalPlanner.Goal.MINE, "wood",
+                            shelterInterest, "SHELTER_OPTION",
+                            "Дом — один из моих проектов. Постепенно собираю древесину, но могу переключиться на другие занятия."));
+                } else if (s.cobblestone() < 16 && s.stoneSearchReady()
+                        && s.pickaxeTier() >= 1) {
+                    best = better(best, decision(GoalPlanner.Goal.MINE, "stone",
+                            shelterInterest, "SHELTER_OPTION",
+                            "Для будущего убежища пригодится камень. Соберу часть материалов, не превращая дом в обязательную задачу."));
+                }
             }
-            if (s.planks() < 100) {
-                return gatherOrExplore(s.woodSearchReady(), "wood", 0.82, "SHELTER",
-                        "Этап 3: собираю доски для собственного дома; после добычи переработаю брёвна.");
-            }
-            if (s.cobblestone() < 17) {
-                return gatherOrExplore(s.stoneSearchReady(), "stone", 0.78, "SHELTER",
-                        "Для дома не хватает каменного основания: добываю булыжник.");
-            }
-            // If the coarse thresholds are met but the builder's exact bill of
-            // materials is not, gather more planks rather than pretending ready.
-            return gatherOrExplore(s.woodSearchReady(), "wood", 0.66, "SHELTER",
-                    "Проверяю недостающие материалы для проекта убежища.");
         }
 
-        // Phase 4: independent progression after a secure home exists.
-        if (s.coal() < 8 && s.pickaxeTier() >= 1) {
-            return gatherOrExplore(s.coalSearchReady(), "coal", 0.70, "FUEL",
-                    "Пополняю запас угля для факелов и плавки руды.");
-        }
-        int iron = s.rawIron() + s.ironIngots();
-        if (iron < 6 && s.pickaxeTier() >= 3) {
-            return gatherOrExplore(s.ironSearchReady(), "iron", 0.74, "IRON_TOOLS",
-                    "Добываю железо для улучшенных инструментов и экипировки.");
-        }
-        if (!s.furnaceAvailable() && s.cobblestone() >= 8) {
-            return decision(GoalPlanner.Goal.IDLE, "", 0.60, "FURNACE",
-                    "Материалы для печи есть: система крафта и размещения должна подготовить плавку.");
-        }
-
-        double curiosity = Math.max(0.0, Math.min(1.0, s.curiosity()));
-        double exploreUtility = 0.42 + curiosity * 0.34;
-        return decision(GoalPlanner.Goal.EXPLORE, "", exploreUtility, "DISCOVERY",
-                "Основные нужды закрыты: ищу новые биомы, ресурсы, животных и полезные места.");
+        // A lack of a nearby resource must never become a permanent wait state.
+        // The caller moves to a new area and cooldowns prevent immediate retry loops.
+        return best;
     }
 
-    private Decision gatherOrExplore(boolean ready, String mode, double utility,
-                                     String phase, String reason) {
-        if (!ready) {
-            return decision(GoalPlanner.Goal.EXPLORE, "", utility * 0.82, phase,
-                    "В знакомом радиусе ресурс не найден; меняю район поиска. " + reason);
+    private Decision collect(boolean searchReady, String mode, double utility,
+                             String phase, String reason, boolean fallbackToExplore) {
+        if (searchReady) {
+            return decision(GoalPlanner.Goal.MINE, mode, utility, phase, reason);
         }
-        return decision(GoalPlanner.Goal.MINE, mode, utility, phase, reason);
+        double exploreUtility = Math.min(0.88, utility * (fallbackToExplore ? 0.86 : 0.91));
+        return decision(GoalPlanner.Goal.EXPLORE, "", exploreUtility, phase,
+                "В доступном районе этого ресурса сейчас недостаточно; меняю местность. " + reason);
+    }
+
+    private Decision better(Decision current, Decision candidate) {
+        return candidate.utility() > current.utility() ? candidate : current;
     }
 
     private Decision decision(GoalPlanner.Goal goal, String mode, double utility,
                               String phase, String reason) {
         return new Decision(goal, mode, utility, phase, reason);
+    }
+
+    private double clamp(double value) {
+        if (!Double.isFinite(value)) return 0.5;
+        return Math.max(0.0, Math.min(1.0, value));
     }
 }
