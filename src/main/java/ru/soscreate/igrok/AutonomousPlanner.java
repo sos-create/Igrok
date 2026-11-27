@@ -49,7 +49,13 @@ final class AutonomousPlanner {
             int pistons,
             int redstoneBlocks,
             boolean pistonLabUnlocked,
-            boolean pistonLabCompleted) { }
+            boolean pistonLabCompleted,
+            int shelterMissingPlanks,
+            int shelterMissingCobblestone,
+            int projectMissingCobblestone,
+            int projectMissingPiston,
+            int projectMissingRedstoneBlock,
+            boolean projectReady) { }
 
     record Decision(GoalPlanner.Goal goal, String miningMode, double utility,
                     String phase, String reason) { }
@@ -157,27 +163,16 @@ final class AutonomousPlanner {
         // or equipment development just because the builder has not completed it.
         if (!s.shelterCompleted()) {
             if (s.shelterReady()) {
-                best = better(best, decision(GoalPlanner.Goal.IDLE, "", 0.79, "SHELTER",
-                        "Материалов хватает для убежища. Можно заняться домом, если сейчас нет более срочной цели."));
-            } else {
-                double woodProgress = Math.min(1.0, s.planks() / 64.0);
-                double stoneProgress = Math.min(1.0, s.cobblestone() / 17.0);
-                // Give the first shelter a real long-term priority. Exploration
-                // remains possible, but it must not permanently outrank collecting
-                // the planks and stone needed to build a home.
-                double shelterInterest = 0.74 + creativity * 0.10
-                        + (woodProgress + stoneProgress) * 0.10
-                        + ("builder".equals(s.preferredBranch()) ? 0.08 : 0.0);
-                if (s.planks() < 64 && s.woodSearchReady()) {
-                    best = better(best, decision(GoalPlanner.Goal.MINE, "wood",
-                            shelterInterest, "SHELTER_OPTION",
-                            "Дом — один из моих проектов. Постепенно собираю древесину, но могу переключиться на другие занятия."));
-                } else if (s.cobblestone() < 16 && s.stoneSearchReady()
-                        && s.pickaxeTier() >= 1) {
-                    best = better(best, decision(GoalPlanner.Goal.MINE, "stone",
-                            shelterInterest, "SHELTER_OPTION",
-                            "Для будущего убежища пригодится камень. Соберу часть материалов, не превращая дом в обязательную задачу."));
-                }
+                best = better(best, decision(GoalPlanner.Goal.IDLE, "", 0.98, "SHELTER_READY",
+                        "Все материалы для убежища собраны. Перехожу к строительству."));
+            } else if (s.shelterMissingPlanks() > 0) {
+                best = better(best, collect(s.woodSearchReady(), "wood", 0.91,
+                        "SHELTER_WOOD", "Проверил план дома: не хватает " + s.shelterMissingPlanks()
+                                + " блоков древесины. Иду рубить деревья."));
+            } else if (s.shelterMissingCobblestone() > 0 && s.pickaxeTier() >= 1) {
+                best = better(best, collect(s.stoneSearchReady(), "stone", 0.90,
+                        "SHELTER_STONE", "Проверил план дома: не хватает " + s.shelterMissingCobblestone()
+                                + " булыжника для основания. Иду добывать камень."));
             }
         }
 
@@ -212,21 +207,31 @@ final class AutonomousPlanner {
             }
         }
         if (s.pistonLabUnlocked() && !s.pistonLabCompleted()) {
-            if (s.cobblestone() < 15) {
-                best = better(best, collect(s.stoneSearchReady(), "stone", 0.78,
-                        "PISTON_LAB", "Для стенда с поршнем нужно основание из камня; пополняю запас.", false));
+            if (s.projectMissingCobblestone() > 0 && s.stoneSearchReady()
+                    && s.pickaxeTier() >= 1) {
+                best = better(best, collect(true, "stone", 0.88,
+                        "PISTON_LAB_STONE", "Для поршневого стенда не хватает "
+                                + s.projectMissingCobblestone() + " блоков булыжника."));
             }
-            if (s.redstoneDust() < 9) {
-                best = better(best, collect(s.redstoneSearchReady(), "redstone", 0.84,
-                        "REDSTONE", "Готовлю редстоун для питания поршня и автоматических механизмов. Нужна железная кирка.", false));
+            if (s.redstoneDust() < 9 && s.pickaxeTier() >= 4) {
+                best = better(best, collect(s.redstoneSearchReady(), "redstone", 0.86,
+                        "REDSTONE", "Готовлю пыль редстоуна для питания поршневого механизма."));
             }
-            if (s.redstoneDust() >= 9 && s.pistons() < 1) {
-                best = better(best, decision(GoalPlanner.Goal.IDLE, "", 0.78, "PISTON_CRAFT",
-                        "Ресурсы для поршня собраны. Изготавливаю компонент и готовлю стенд."));
+            if (s.projectMissingPiston() > 0 && s.ironIngots() < 1
+                    && s.pickaxeTier() >= 3) {
+                best = better(best, collect(s.ironSearchReady(), "iron", 0.84,
+                        "PISTON_IRON", "Для поршня не хватает железа; добываю руду, чтобы изготовить механизм."));
+            } else if (s.projectMissingPiston() > 0) {
+                best = better(best, decision(GoalPlanner.Goal.IDLE, "", 0.85, "PISTON_CRAFT",
+                        "Для стенда нужен поршень. Проверяю ингредиенты и изготавливаю его из своего инвентаря."));
             }
-            if (s.pistons() >= 1 && s.redstoneBlocks() < 1 && s.redstoneDust() >= 9) {
-                best = better(best, decision(GoalPlanner.Goal.IDLE, "", 0.80, "REDSTONE_BLOCK",
-                        "Поршень готов. Теперь делаю источник питания для испытательного механизма."));
+            if (s.projectMissingRedstoneBlock() > 0 && s.redstoneDust() >= 9) {
+                best = better(best, decision(GoalPlanner.Goal.IDLE, "", 0.87, "REDSTONE_BLOCK",
+                        "Поршень готов. Собираю блок редстоуна как источник питания испытательного стенда."));
+            }
+            if (s.projectReady()) {
+                best = better(best, decision(GoalPlanner.Goal.IDLE, "", 0.97, "PISTON_LAB_READY",
+                        "Все детали готовы. Можно собрать и испытать поршневой механизм."));
             }
         }
         if (stage >= 4 && !s.night() && s.foodLevel() >= 14) {
