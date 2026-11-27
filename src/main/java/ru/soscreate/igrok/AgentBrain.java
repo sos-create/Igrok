@@ -139,7 +139,9 @@ final class AgentBrain {
         miningMode = data.getString("brain.mining-mode", "wood");
         if (!java.util.Set.of("wood", "stone", "coal", "iron").contains(miningMode)) miningMode = "wood";
         minedThisTask = Math.max(0, data.getInt("brain.mined-this-task", 0));
-        attackRequested = data.getBoolean("brain.attack-requested", false);
+        // Combat targets disappear when the server stops. Do not restore a
+        // stale attack order that would suppress autonomous survival forever.
+        attackRequested = false;
         explorationRequested = data.getBoolean("brain.exploration-requested", false);
         String worldName = data.getString("brain.explore-world", "");
         World world = worldName.isBlank() ? null : Bukkit.getWorld(worldName);
@@ -165,7 +167,7 @@ final class AgentBrain {
         lastLesson = data.getString("learning.last-lesson", "Пока не было смертельных ошибок.");
         survival.setLearnedFoodCaution(learnedFoodCaution);
         if (goal == GoalPlanner.Goal.MINE) miningRequested = true;
-        if (goal == GoalPlanner.Goal.DEFEND) { attackRequested = true; threat = null; }
+        if (goal == GoalPlanner.Goal.DEFEND) goal = GoalPlanner.Goal.IDLE;
         if (goal == GoalPlanner.Goal.FOLLOW && followTarget == null) goal = GoalPlanner.Goal.IDLE;
         manualOrderActive = followTarget != null || miningRequested || attackRequested || explorationRequested;
         state = "Восстанавливаю прежний план: " + goal.name();
