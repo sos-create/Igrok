@@ -243,7 +243,7 @@ final class SurvivalController {
     }
 
     Animals findFoodAnimal(Player bot, double radius) {
-        return bot.getNearbyEntities(radius, 8.0, radius).stream()
+        List<Animals> candidates = bot.getNearbyEntities(radius, 8.0, radius).stream()
                 .filter(entity -> entity instanceof Animals)
                 .map(entity -> (Animals) entity)
                 .filter(animal -> animal.isValid() && !animal.isDead())
@@ -256,6 +256,18 @@ final class SurvivalController {
                             || type.equals("SHEEP") || type.equals("RABBIT");
                 })
                 .filter(animal -> animal.getLocation().getWorld() == bot.getWorld())
+                .toList();
+
+        // Preserve small herds while food is not yet critical. A lone animal is
+        // treated as emergency food only when hunger has become genuinely dangerous.
+        Map<String, Integer> herdSizes = new HashMap<>();
+        for (Animals animal : candidates) {
+            herdSizes.merge(animal.getType().name(), 1, Integer::sum);
+        }
+        boolean emergencyHunger = bot.getFoodLevel() <= 7;
+        return candidates.stream()
+                .filter(animal -> emergencyHunger
+                        || herdSizes.getOrDefault(animal.getType().name(), 0) >= 3)
                 .min((a, b) -> Double.compare(
                         a.getLocation().distanceSquared(bot.getLocation()),
                         b.getLocation().distanceSquared(bot.getLocation())))
