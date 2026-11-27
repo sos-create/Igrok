@@ -103,6 +103,32 @@ final class BlockPerception {
 
     static String russianName(Material material) {
         String name = material.name();
+        String wood = woodType(name);
+        if (wood != null) {
+            String base = name.startsWith("STRIPPED_") ? name.substring("STRIPPED_".length()) : name;
+            if (base.endsWith("_LOG")) return "бревно " + wood;
+            if (base.endsWith("_WOOD") || base.endsWith("_HYPHAE")) return "древесина " + wood;
+            if (base.endsWith("_PLANKS")) return "доски " + wood;
+            if (base.endsWith("_LEAVES")) return "листва " + wood;
+            if (base.endsWith("_FENCE_GATE")) return "калитка из древесины " + wood;
+            if (base.endsWith("_FENCE")) return "забор из древесины " + wood;
+            if (base.endsWith("_STAIRS")) return "ступени из древесины " + wood;
+            if (base.endsWith("_SLAB")) return "плита из древесины " + wood;
+            if (base.endsWith("_DOOR")) return "дверь из древесины " + wood;
+            if (base.endsWith("_TRAPDOOR")) return "люк из древесины " + wood;
+            if (base.endsWith("_BUTTON")) return "деревянная кнопка (" + wood + ")";
+            if (base.endsWith("_PRESSURE_PLATE")) return "деревянная нажимная плита (" + wood + ")";
+        }
+        if (name.endsWith("_ORE")) {
+            if (name.contains("COAL")) return "угольная руда";
+            if (name.contains("IRON")) return "железная руда";
+            if (name.contains("GOLD")) return "золотая руда";
+            if (name.contains("COPPER")) return "медная руда";
+            if (name.contains("DIAMOND")) return "алмазная руда";
+            if (name.contains("EMERALD")) return "изумрудная руда";
+            if (name.contains("LAPIS")) return "лазуритовая руда";
+            if (name.contains("REDSTONE")) return "редстоуновая руда";
+        }
         return switch (name) {
             case "AIR", "CAVE_AIR", "VOID_AIR" -> "воздух";
             case "STONE" -> "камень";
@@ -134,6 +160,30 @@ final class BlockPerception {
             case "CHERRY_LOG" -> "вишнёвое бревно";
             default -> name.toLowerCase(Locale.ROOT).replace('_', ' ');
         };
+    }
+
+    private static String woodType(String name) {
+        String normalized = name.startsWith("STRIPPED_")
+                ? name.substring("STRIPPED_".length()) : name;
+        if (!(normalized.endsWith("_LOG") || normalized.endsWith("_WOOD")
+                || normalized.endsWith("_HYPHAE") || normalized.endsWith("_PLANKS")
+                || normalized.endsWith("_LEAVES") || normalized.endsWith("_FENCE")
+                || normalized.endsWith("_FENCE_GATE") || normalized.endsWith("_STAIRS")
+                || normalized.endsWith("_SLAB") || normalized.endsWith("_DOOR")
+                || normalized.endsWith("_TRAPDOOR") || normalized.endsWith("_BUTTON")
+                || normalized.endsWith("_PRESSURE_PLATE"))) return null;
+        if (normalized.startsWith("OAK_")) return "дуба";
+        if (normalized.startsWith("SPRUCE_")) return "ели";
+        if (normalized.startsWith("BIRCH_")) return "берёзы";
+        if (normalized.startsWith("JUNGLE_")) return "тропического дерева";
+        if (normalized.startsWith("ACACIA_")) return "акации";
+        if (normalized.startsWith("DARK_OAK_")) return "тёмного дуба";
+        if (normalized.startsWith("MANGROVE_")) return "мангрового дерева";
+        if (normalized.startsWith("CHERRY_")) return "вишни";
+        if (normalized.startsWith("BAMBOO_")) return "бамбука";
+        if (normalized.startsWith("CRIMSON_")) return "багрового дерева";
+        if (normalized.startsWith("WARPED_")) return "искажённого дерева";
+        return null;
     }
 
     private static boolean sameBlock(Block first, Block second) {
