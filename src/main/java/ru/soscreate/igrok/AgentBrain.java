@@ -1031,6 +1031,16 @@ final class AgentBrain {
             }
         }
 
+        // Enforce the exploration cooldown for every planner path, not only the
+        // autonomous-survival branch. Otherwise GoalPlanner can immediately select
+        // EXPLORE again after a failed scan and produce IDLE <-> EXPLORE oscillation.
+        if (chosen == GoalPlanner.Goal.EXPLORE && exploreTarget == null
+                && !explorationRequested && tickCounter < nextExploreTick) {
+            chosen = GoalPlanner.Goal.IDLE;
+            decisionReason = "Разведка недавно не нашла безопасный путь; жду перед следующей попыткой.";
+            decisionConfidence = 0.65;
+        }
+
         // A critical survival rule is stronger than follow/attack requests.
         if (chosen != GoalPlanner.Goal.FLEE && followed != null) {
             chosen = GoalPlanner.Goal.FOLLOW;
