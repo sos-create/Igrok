@@ -235,6 +235,13 @@ final class AgentBrain {
     }
     private void idle(Player bot) {
         if (idleWanderTarget != null) {
+            if (bot.getFoodLevel() <= 10 || bot.getHealth() < bot.getMaxHealth() * 0.60) {
+                idleWanderTarget = null;
+                navigator.stop();
+                nextIdleWanderTick = tickCounter + 100;
+                state = "Отдыхаю и берегу силы";
+                return;
+            }
             if (bot.getLocation().distanceSquared(idleWanderTarget) <= 2.25) {
                 idleWanderTarget = null;
                 idlePauseUntilTick = tickCounter + ThreadLocalRandom.current().nextInt(30, 91);
@@ -278,7 +285,13 @@ final class AgentBrain {
         // Do not rely on a 0.25% random roll every AI pulse: that could leave
         // Igrok stationary for several minutes. Take a short, safe walk every
         // 12-24 seconds while otherwise idle.
+        if ((bot.getFoodLevel() <= 10 || bot.getHealth() < bot.getMaxHealth() * 0.60)
+                && tickCounter >= nextIdleWanderTick) {
+            nextIdleWanderTick = tickCounter + 100;
+            state = "Не трачу силы на прогулку, пока не восстановлюсь";
+        }
         if (plugin.getConfig().getBoolean("brain.idle-wander.enabled", true)
+                && bot.getFoodLevel() > 10 && bot.getHealth() >= bot.getMaxHealth() * 0.60
                 && tickCounter >= nextIdleWanderTick) {
             World world = bot.getWorld();
             for (int attempt = 0; attempt < 8 && idleWanderTarget == null; attempt++) {
@@ -409,8 +422,12 @@ final class AgentBrain {
     }
 
     private boolean moveTowardSafely(Player bot, Location destination, double speed) {
+        return moveTowardSafely(bot, destination, speed, false);
+    }
+
+    private boolean moveTowardSafely(Player bot, Location destination, double speed, boolean allowSprint) {
         if (destination == null || destination.getWorld() != bot.getWorld()) return false;
-        boolean moving = navigator.moveTo(destination);
+        boolean moving = navigator.moveTo(destination, allowSprint);
         Vector velocity = bot.getVelocity().clone();
         velocity.setY(0.0);
         if (!moving || velocity.lengthSquared() < 0.0004) {
@@ -556,7 +573,8 @@ final class AgentBrain {
         }
 
         if (defensiveDestination != null) {
-            boolean travelling = navigator.moveTo(defensiveDestination);
+            boolean canSprint = bot.getFoodLevel() >= 9 && bot.getHealth() >= 7.0;
+            boolean travelling = navigator.moveTo(defensiveDestination, canSprint);
             if (!travelling || bot.getLocation().distanceSquared(defensiveDestination) <= 1.0) {
                 defensiveDestination = null;
             }
@@ -580,7 +598,7 @@ final class AgentBrain {
         return true;
     }
 
-    private Location findRetreatDestination(Player bot, Player attacker) {
+    private Location findRetreatDestination(Player bot, LivingEntity attacker) {
         if (bot == null || attacker == null || bot.getWorld() != attacker.getWorld()) return null;
         if (navigator == null) navigator = new AgentNavigator(bot);
         Vector away = bot.getLocation().toVector().subtract(attacker.getLocation().toVector());
@@ -590,15 +608,18 @@ final class AgentBrain {
 
         Location best = null;
         double bestScore = Double.NEGATIVE_INFINITY;
+        double currentThreatDistance = bot.getLocation().distanceSquared(attacker.getLocation());
         for (int direction = 0; direction < 8; direction++) {
             Vector offset = away.clone().rotateAroundY(direction * Math.PI / 4.0);
-            for (double distance : new double[]{2.5, 3.5, 4.5}) {
+            for (double distance : new double[]{4.0, 6.0, 8.0, 10.0}) {
                 double x = Math.floor(bot.getLocation().getX() + offset.getX() * distance) + 0.5;
                 double z = Math.floor(bot.getLocation().getZ() + offset.getZ() * distance) + 0.5;
                 Location candidate = new Location(bot.getWorld(), x, bot.getLocation().getY(), z);
-                if (!navigator.canStandAt(candidate)) continue;
-                double score = candidate.distanceSquared(attacker.getLocation())
-                        - candidate.distanceSquared(bot.getLocation()) * 0.12;
+                if (!navigator.canStandAt(candidate) || isLearnedDanger(candidate)) continue;
+                double distanceGain = candidate.distanceSquared(attacker.getLocation()) - currentThreatDistance;
+                if (distanceGain < 4.0) continue;
+                double travelCost = candidate.distanceSquared(bot.getLocation());
+                double score = distanceGain - travelCost * 0.07;
                 if (score > bestScore) {
                     bestScore = score;
                     best = candidate;
@@ -842,22 +863,23 @@ final class AgentBrain {
     }
 
     private void flee(Player bot) {
-        if (threat == null || threat.isDead()) {
+        if (threat == null || threat.isDead() || !threat.isValid()
+                || threat.getWorld() != bot.getWorld()) {
             goal = GoalPlanner.Goal.IDLE;
             navigator.stop();
             return;
         }
-        Vector away = bot.getLocation().toVector().subtract(threat.getLocation().toVector());
-        away.setY(0);
-        if (away.lengthSquared() < 0.01) away = new Vector(1, 0, 0);
-        away.normalize().multiply(9.0);
-        Location destination = bot.getLocation().clone().add(away);
-        if (destination.getWorld().isChunkLoaded(destination.getBlockX() >> 4, destination.getBlockZ() >> 4)) {
-            state = "Отступаю от угрозы";
-            navigator.moveTo(destination);
-        } else {
-            navigator.stop();
+        Location destination = findRetreatDestination(bot, threat);
+        if (destination == null) {
+            Vector away = bot.getLocation().toVector().subtract(threat.getLocation().toVector());
+            away.setY(0.0);
+            if (away.lengthSquared() < 0.01) away = new Vector(1, 0, 0);
+            destination = bot.getLocation().clone().add(away.normalize().multiply(8.0));
         }
+        state = "Быстро отступаю и ищу безопасное место";
+        decisionReason = "Опасность слишком высока: выбираю свободный участок подальше от противника и экономлю здоровье.";
+        decisionConfidence = 1.0;
+        navigator.moveTo(destination, true);
     }
 
     private int nextCombatMoveTick;
@@ -878,7 +900,8 @@ final class AgentBrain {
 
         if (distance > 4.0) {
             state = "Сближаюсь с противником";
-            if (!moveTowardSafely(bot, target, 0.15)) {
+            boolean canSprint = distance > 8.0 && bot.getFoodLevel() >= 12 && bot.getHealth() > 8.0;
+            if (!moveTowardSafely(bot, target, 0.15, canSprint)) {
                 Vector toward = target.toVector().subtract(bot.getLocation().toVector());
                 toward.setY(0.0);
                 tryCombatMove(toward, 0.15);
@@ -994,7 +1017,9 @@ final class AgentBrain {
             state = "Держусь рядом с " + target.getName();
         } else {
             state = "Иду рядом с " + target.getName();
-            navigator.moveTo(behind);
+            boolean canSprint = distance > 12.0 && bot.getFoodLevel() >= 14
+                    && bot.getHealth() >= bot.getMaxHealth() * 0.65;
+            navigator.moveTo(behind, canSprint);
         }
     }
 
