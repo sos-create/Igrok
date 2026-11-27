@@ -1,4 +1,4 @@
-# Igrok 0.9.34 configuration
+# Igrok 0.9.35 configuration
 # Optional Mojang account name whose signed player skin Igrok should use.
 # Leave empty to use the standard Steve/Alex fallback skin.
 skin-owner: ""
