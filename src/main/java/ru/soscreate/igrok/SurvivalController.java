@@ -147,7 +147,12 @@ final class SurvivalController {
                 tick >= nextCoalGoalTick,
                 tick >= nextIronGoalTick,
                 personality.curiosity(),
-                personality.creativity());
+                personality.creativity(),
+                DevelopmentTree.stage(plugin.skills()),
+                DevelopmentTree.preferredBranch(plugin.skills()),
+                plugin.skills().level("building") >= 4
+                        && (plugin.houseBuilder().hasCompletedProject("watchtower")
+                            || plugin.skills().level("crafting") >= 2));
 
         AutonomousPlanner.Decision decision = autonomousPlanner.choose(snapshot);
         if (decision == null) return null;

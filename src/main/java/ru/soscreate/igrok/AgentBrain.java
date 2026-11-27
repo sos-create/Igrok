@@ -163,6 +163,10 @@ final class AgentBrain {
     String skillSummary() {
         return plugin.skills().summary();
     }
+
+    String selfModelSummary() {
+        return DevelopmentTree.selfModel(plugin.skills());
+    }
     String decisionReason() { return decisionReason; }
     double decisionConfidence() { return decisionConfidence; }
     String personalityDescription() { return personality.describe(); }
@@ -613,6 +617,7 @@ final class AgentBrain {
         memory.rememberPlayerName(player.getUniqueId(), player.getName());
         memory.rememberMessage(player.getUniqueId(), message);
         memory.recordConversation(player.getUniqueId(), message, false);
+        plugin.skills().gain("social", 1);
         Player bot = plugin.controller().bukkitPlayer();
         if (bot != null && player.getWorld() == bot.getWorld()
                 && player.getLocation().distanceSquared(bot.getLocation()) <= 24.0 * 24.0) {
@@ -637,6 +642,7 @@ final class AgentBrain {
         memory.recordConversation(playerId, "[подошёл и взаимодействовал со мной]", false);
         memory.observeAction(playerId, "social");
         plugin.cognition().observeBehavior("social");
+        plugin.skills().gain("social", 1);
 
         Player bot = plugin.controller().bukkitPlayer();
         if (bot != null) {

@@ -139,9 +139,11 @@ final class HouseBuilder {
 
     String nextProjectType() {
         int skill = plugin.skills().level("building");
+        boolean workshopReady = skill >= 4 && !completedProjects.contains("workshop")
+                && (completedProjects.contains("watchtower") || plugin.skills().level("crafting") >= 2);
+        if (workshopReady) return "workshop";
         if (skill >= 2 && !completedProjects.contains("watchtower")) return "watchtower";
-        if (skill >= 4 && completedProjects.contains("watchtower")
-                && !completedProjects.contains("workshop")) return "workshop";
+        if (skill >= 4 && !completedProjects.contains("workshop")) return "workshop";
         return "";
     }
 

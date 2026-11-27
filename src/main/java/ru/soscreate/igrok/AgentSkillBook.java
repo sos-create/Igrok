@@ -7,27 +7,23 @@ import java.io.IOException;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
-/**
- * Compact persistent skill progression earned from successful in-world actions.
- * Skills do not grant items or bypass game rules; they improve how well the
- * agent plans, navigates and performs tasks it has already learned.
- */
+/** Persistent experience for independent development branches. */
 final class AgentSkillBook {
-    private static final int[] LEVEL_THRESHOLDS = {
-            0, 8, 22, 42, 68, 102, 145, 198, 264, 344, 440
-    };
-
+    private static final int[] LEVEL_THRESHOLDS = {0, 8, 22, 42, 68, 102, 145, 198, 264, 344, 440};
     private static final String[] SKILLS = {
-            "navigation", "mining", "building", "crafting", "survival", "awareness"
+            "navigation", "mining", "building", "crafting", "survival", "awareness",
+            "combat", "farming", "fishing", "cooking", "social", "animal_care",
+            "engineering", "exploration", "logistics"
     };
-
-    private static final Map<String, String> LABELS = Map.of(
-            "navigation", "ориентирование",
-            "mining", "добыча",
-            "building", "строительство",
-            "crafting", "крафт",
-            "survival", "выживание",
-            "awareness", "наблюдательность"
+    private static final Map<String, String> LABELS = Map.ofEntries(
+            Map.entry("navigation", "ориентирование"), Map.entry("mining", "добыча"),
+            Map.entry("building", "строительство"), Map.entry("crafting", "крафт"),
+            Map.entry("survival", "выживание"), Map.entry("awareness", "наблюдательность"),
+            Map.entry("combat", "бой"), Map.entry("farming", "фермерство"),
+            Map.entry("fishing", "рыбалка"), Map.entry("cooking", "кулинария"),
+            Map.entry("social", "общение"), Map.entry("animal_care", "животноводство"),
+            Map.entry("engineering", "механизмы"), Map.entry("exploration", "исследование"),
+            Map.entry("logistics", "управление ресурсами")
     );
 
     private final File file;
@@ -43,8 +39,7 @@ final class AgentSkillBook {
         if (!file.isFile()) return;
         YamlConfiguration yaml = YamlConfiguration.loadConfiguration(file);
         for (String skill : SKILLS) {
-            experience.put(skill, Math.max(0, Math.min(100_000,
-                    yaml.getInt("skills." + skill, 0))));
+            experience.put(skill, Math.max(0, Math.min(100_000, yaml.getInt("skills." + skill, 0))));
         }
         dirty = false;
     }
@@ -68,9 +63,7 @@ final class AgentSkillBook {
         return level;
     }
 
-    int experience(String skill) {
-        return experience.getOrDefault(skill, 0);
-    }
+    int experience(String skill) { return experience.getOrDefault(skill, 0); }
 
     String summary() {
         StringBuilder result = new StringBuilder("Мои навыки: ");
@@ -85,11 +78,9 @@ final class AgentSkillBook {
                 int next = LEVEL_THRESHOLDS[currentLevel + 1];
                 result.append(" (").append(experience(skill) - current)
                         .append('/').append(next - current).append(" опыта до следующего)");
-            } else {
-                result.append(" (максимум)");
-            }
+            } else result.append(" (максимум)");
         }
-        return result.append('.').toString();
+        return result.append(". ").append(DevelopmentTree.describe(this)).toString();
     }
 
     void save() {
@@ -97,7 +88,7 @@ final class AgentSkillBook {
         if (file.getParentFile() != null && !file.getParentFile().exists()
                 && !file.getParentFile().mkdirs()) return;
         YamlConfiguration yaml = new YamlConfiguration();
-        yaml.set("format-version", 1);
+        yaml.set("format-version", 2);
         for (String skill : SKILLS) yaml.set("skills." + skill, experience.get(skill));
         try {
             yaml.save(file);

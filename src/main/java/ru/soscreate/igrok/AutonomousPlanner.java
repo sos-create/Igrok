@@ -40,7 +40,10 @@ final class AutonomousPlanner {
             boolean coalSearchReady,
             boolean ironSearchReady,
             double curiosity,
-            double creativity) { }
+            double creativity,
+            int developmentStage,
+            String preferredBranch,
+            boolean workshopUnlocked) { }
 
     record Decision(GoalPlanner.Goal goal, String miningMode, double utility,
                     String phase, String reason) { }
@@ -48,8 +51,15 @@ final class AutonomousPlanner {
     Decision choose(Snapshot s) {
         double curiosity = clamp(s.curiosity());
         double creativity = clamp(s.creativity());
-        Decision best = decision(GoalPlanner.Goal.EXPLORE, "", 0.38 + curiosity * 0.25,
-                "DISCOVERY", "Ищу новые места и возможности; дальнейший выбор зависит от того, что найду.");
+        int stage = Math.max(0, Math.min(4, s.developmentStage()));
+        double independentBias = stage >= 3 ? 0.08 + (stage - 3) * 0.05 : 0.0;
+        double explorerBias = "exploration".equals(s.preferredBranch()) ? 0.06 : 0.0;
+        Decision best = decision(GoalPlanner.Goal.EXPLORE, "",
+                Math.min(0.86, 0.38 + curiosity * 0.25 + independentBias + explorerBias),
+                stage >= 3 ? "INDEPENDENT_LIFE" : "DISCOVERY",
+                stage >= 3
+                        ? "Основы освоены. Я сам выбираю занятия: могу отправиться в путь, осмотреть окрестности или заняться новым делом."
+                        : "Ищу новые места и возможности; дальнейший выбор зависит от того, что найду.");
 
         // Immediate survival is a hard constraint, not just another optional project.
         if (s.foodLevel() <= 8 && !s.hasFood() && s.huntReady()) {
@@ -144,7 +154,8 @@ final class AutonomousPlanner {
                 double woodProgress = Math.min(1.0, s.planks() / 64.0);
                 double stoneProgress = Math.min(1.0, s.cobblestone() / 17.0);
                 double shelterInterest = 0.34 + creativity * 0.13
-                        + (woodProgress + stoneProgress) * 0.12;
+                        + (woodProgress + stoneProgress) * 0.12
+                        + ("builder".equals(s.preferredBranch()) ? 0.10 : 0.0);
                 if (s.planks() < 64 && s.woodSearchReady()) {
                     best = better(best, decision(GoalPlanner.Goal.MINE, "wood",
                             shelterInterest, "SHELTER_OPTION",
@@ -161,22 +172,13 @@ final class AutonomousPlanner {
         // Learned construction projects become new goals only after the shelter
         // and enough hands-on building experience. Each project competes with
         // upgrades, fuel and discovery instead of blocking them.
-        if (s.shelterCompleted() && s.buildingSkill() >= 2 && !s.watchtowerCompleted()) {
-            if (usableWood < 29) {
-                best = better(best, collect(s.woodSearchReady(), "wood", 0.67,
-                        "LOOKOUT", "У меня появилась идея построить небольшую смотровую башню; постепенно собираю доски.", false));
-            } else if (s.cobblestone() < 9) {
-                best = better(best, collect(s.stoneSearchReady(), "stone", 0.65,
-                        "LOOKOUT", "Для основания смотровой башни не хватает камня; сначала найду безопасный участок.", false));
-            } else {
-                best = better(best, decision(GoalPlanner.Goal.IDLE, "", 0.76, "LOOKOUT",
-                        "Ресурсы для смотровой башни уже есть. Хочу построить точку обзора и потренировать высотную постройку."));
-            }
-        } else if (s.shelterCompleted() && s.buildingSkill() >= 4
-                && s.watchtowerCompleted() && !s.workshopCompleted()) {
+        // Construction branches are optional. A craft-oriented agent may choose
+        // a workshop without first completing a watchtower; neither project
+        // blocks exploration or the other development branches.
+        if (s.shelterCompleted() && s.workshopUnlocked() && !s.workshopCompleted()) {
             if (usableWood < 24) {
                 best = better(best, collect(s.woodSearchReady(), "wood", 0.64,
-                        "WORKSHOP", "Следующий проект — небольшая мастерская. Соберу древесину, не отказываясь от других целей.", false));
+                        "WORKSHOP", "Я выбрал необязательный проект мастерской. Собираю материалы, но могу переключиться на другое занятие.", false));
             } else if (s.cobblestone() < 9) {
                 best = better(best, collect(s.stoneSearchReady(), "stone", 0.62,
                         "WORKSHOP", "Для мастерской нужно каменное основание; поищу камень в доступной местности.", false));
@@ -184,6 +186,22 @@ final class AutonomousPlanner {
                 best = better(best, decision(GoalPlanner.Goal.IDLE, "", 0.75, "WORKSHOP",
                         "Материалы для мастерской собраны. Можно оборудовать ещё одно полезное место."));
             }
+        }
+        if (s.shelterCompleted() && s.buildingSkill() >= 2 && !s.watchtowerCompleted()) {
+            if (usableWood < 29) {
+                best = better(best, collect(s.woodSearchReady(), "wood", 0.67,
+                        "LOOKOUT", "Смотровая башня — ещё один необязательный проект. Постепенно собираю доски.", false));
+            } else if (s.cobblestone() < 9) {
+                best = better(best, collect(s.stoneSearchReady(), "stone", 0.65,
+                        "LOOKOUT", "Для основания смотровой башни не хватает камня; сначала найду безопасный участок.", false));
+            } else {
+                best = better(best, decision(GoalPlanner.Goal.IDLE, "", 0.76, "LOOKOUT",
+                        "Ресурсы для смотровой башни уже есть. Хочу построить точку обзора и потренировать высотную постройку."));
+            }
+        }
+        if (stage >= 4 && !s.night() && s.foodLevel() >= 14) {
+            best = better(best, decision(GoalPlanner.Goal.IDLE, "", 0.43 + creativity * 0.10,
+                    "PERSONAL_TIME", "Мне не обязательно постоянно добывать ресурсы: иногда полезно осмотреться, передохнуть и пожить обычной жизнью."));
         }
 
         // A lack of a nearby resource must never become a permanent wait state.

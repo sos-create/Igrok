@@ -17,6 +17,9 @@ import org.bukkit.event.block.BlockBreakEvent;
 import org.bukkit.event.block.BlockPlaceEvent;
 import org.bukkit.event.entity.EntityDeathEvent;
 import org.bukkit.event.entity.EntityDamageEvent;
+import org.bukkit.event.entity.EntityBreedEvent;
+import org.bukkit.event.inventory.FurnaceExtractEvent;
+import org.bukkit.event.player.PlayerFishEvent;
 import org.bukkit.event.player.PlayerMoveEvent;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.scheduler.BukkitTask;
@@ -361,6 +364,9 @@ public final class IgrokPlugin extends JavaPlugin implements Listener {
         if (controller != null && controller.isBot(event.getPlayer()) && skills != null) {
             skills.gain("mining", 2);
             skills.gain("awareness", 1);
+            Material type = event.getBlock().getType();
+            if (isCropMaterial(type)) skills.gain("farming", 2);
+            if (isEngineeringMaterial(type)) skills.gain("engineering", 1);
         }
     }
 
@@ -370,6 +376,9 @@ public final class IgrokPlugin extends JavaPlugin implements Listener {
         cognition.observeBehavior("build");
         if (controller != null && controller.isBot(event.getPlayer()) && skills != null) {
             skills.gain("building", 1);
+            Material type = event.getBlockPlaced().getType();
+            if (isCropMaterial(type) || type == Material.FARMLAND) skills.gain("farming", 1);
+            if (isEngineeringMaterial(type)) skills.gain("engineering", 1);
         }
     }
 
@@ -379,6 +388,10 @@ public final class IgrokPlugin extends JavaPlugin implements Listener {
         if (killer != null) {
             memory.observeAction(killer.getUniqueId(), "combat");
             cognition.observeBehavior("combat");
+            if (controller != null && controller.isBot(killer) && skills != null) {
+                skills.gain("combat", 3);
+                skills.gain("survival", 1);
+            }
         }
     }
 
@@ -393,8 +406,54 @@ public final class IgrokPlugin extends JavaPlugin implements Listener {
         if (now - previous >= 15_000L) {
             memory.observeAction(id, "explore");
             cognition.observeBehavior("explore");
+            if (controller != null && controller.isBot(event.getPlayer()) && skills != null) {
+                skills.gain("exploration", 1);
+            }
             lastExplorationObservation.put(id, now);
         }
+    }
+
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    public void onBotFishing(PlayerFishEvent event) {
+        if (controller == null || skills == null || !controller.isBot(event.getPlayer())) return;
+        if (event.getState() == PlayerFishEvent.State.CAUGHT_FISH) {
+            skills.gain("fishing", 3);
+            skills.gain("survival", 1);
+        }
+    }
+
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    public void onBotBreed(EntityBreedEvent event) {
+        if (!(event.getBreeder() instanceof Player breeder)
+                || controller == null || skills == null || !controller.isBot(breeder)) return;
+        skills.gain("animal_care", 3);
+        skills.gain("survival", 1);
+    }
+
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    public void onBotCook(FurnaceExtractEvent event) {
+        if (controller == null || skills == null || !controller.isBot(event.getPlayer())) return;
+        String material = event.getItemType().name();
+        if (material.startsWith("COOKED_") || material.equals("BAKED_POTATO")) {
+            skills.gain("cooking", Math.max(1, Math.min(3, event.getItemAmount())));
+        }
+    }
+
+    private boolean isCropMaterial(Material material) {
+        return switch (material) {
+            case WHEAT, CARROTS, POTATOES, BEETROOTS, MELON_STEM, PUMPKIN_STEM,
+                    ATTACHED_MELON_STEM, ATTACHED_PUMPKIN_STEM, NETHER_WART, COCOA,
+                    SWEET_BERRY_BUSH -> true;
+            default -> false;
+        };
+    }
+
+    private boolean isEngineeringMaterial(Material material) {
+        String name = material.name();
+        return name.contains("REDSTONE") || name.contains("REPEATER")
+                || name.contains("COMPARATOR") || name.contains("OBSERVER")
+                || name.contains("PISTON") || name.equals("LEVER")
+                || name.endsWith("_BUTTON") || name.endsWith("_PRESSURE_PLATE");
     }
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)

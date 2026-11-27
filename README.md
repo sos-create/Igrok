@@ -1,4 +1,4 @@
-# Igrok 0.9.20
+# Igrok 0.9.31
 
 Paper 1.21.4 server-side player agent (Java 21). Igrok is a lightweight autonomous survival agent built around a fake server-side Player, bounded pathfinding, utility-based goals, associative cognition and compact persistent memory.
 
@@ -12,6 +12,14 @@ Paper 1.21.4 server-side player agent (Java 21). Igrok is a lightweight autonomo
 - Harvests mature nearby wheat, carrots, potatoes and beetroot, then replants only when it already has the appropriate seed or crop item.
 - Looks for a bed at night and sleeps when one is available. If it has enough materials, it plans and builds one compact shelter from its own inventory. The builder checks the full material bill first and consumes one item for every block placed.
 - Avoids searching or building through unloaded chunks. Creepers within a larger danger radius trigger retreat rather than closing into melee range.
+
+## Branching development and self-model
+
+- Development is split into independent branches: survival, exploration, craft, construction, combat, social play and fishing. Every branch is available from the start; none requires completing the others.
+- Experience is earned through successful in-world actions such as mining, building, moving through new areas, farming, chatting, combat and cooking. Extra branches grow only when the bot actually performs the corresponding activity.
+- The preferred branch emerges from the bot's accumulated experience. It influences autonomous priorities, so different histories can produce different choices.
+- At higher development stages the planner gradually shifts from resource grinding toward self-chosen exploration, optional projects and ordinary downtime. Critical survival and immediate danger still take priority.
+- "Self-awareness" is an algorithmic self-model: a compact summary of strengths, preferences and lessons from previous actions. It is not sentience or human-level consciousness.
 
 ## Decision and cognition
 
@@ -47,7 +55,7 @@ This is an algorithmic simulation. It does not provide human-level intelligence,
 
 ## Notes
 
-The plugin is compiled against Paper 1.21.4. Version 0.9.12 includes the safe stuck-recovery check and world-border guard; version 0.9.11 corrected the ServerPlayer constructor settings; the 0.9.10 post-login-only distance restriction was insufficient by itself. A successful CI build verifies source compilation and artifact packaging, but actual movement, crop interaction, furnace behavior and protection-plugin compatibility must still be tested on the target live server.
+The plugin is compiled against Paper 1.21.4. Version 0.9.31 adds independent development branches and a persistent self-model; older build notes remain in the repository history. A successful CI build verifies source compilation and artifact packaging, but actual movement, crop interaction, furnace behavior and protection-plugin compatibility must still be tested on the target live server.
 
 Unexpected runtime failures in chat, the brain and construction are isolated: a failed construction step cancels that build, a failed brain tick pauses and retries instead of cancelling the scheduler, and duplicate stack traces are rate-limited. Chat input is length-limited before parsing. These safeguards prevent cascading errors; they do not repair invalid chunk data already stored in a world region file.\n\nIgrok is explicitly placed in Survival mode and is never an operator. It starts with an empty inventory, 20 health, 20 food and normal saturation; saved inventory and vitals are restored across restarts. Vanilla item entities handle pickup, so the bot no longer vacuums items from four blocks away. Mining, farming, container access and building are limited to ordinary player reach and line of sight; building walks to a legal standing position and respects BlockPlaceEvent cancellation. Death uses vanilla inventory and experience loss before automatic respawn.
 
