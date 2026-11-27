@@ -1348,12 +1348,14 @@ final class AgentBrain {
     private Block findMiningTarget(Player bot) {
         World world = bot.getWorld();
         Location origin = bot.getLocation();
+        int miningSkill = plugin.skills().level("mining");
+        int awarenessSkill = plugin.skills().level("awareness");
         int configuredRadius = Math.max(6, Math.min(12,
-                plugin.getConfig().getInt("brain.mining.search-radius", 10)));
-        // Ore searches go deeper but use a tighter horizontal radius to keep the
-        // scan bounded on busy Paper servers.
+                plugin.getConfig().getInt("brain.mining.search-radius", 10)
+                        + Math.min(2, miningSkill / 4)));
+        // Better miners can search a little farther, while ore scans remain tightly bounded.
         int radius = miningMode.equals("coal") || miningMode.equals("iron")
-                ? Math.min(7, configuredRadius) : configuredRadius;
+                ? Math.min(8, configuredRadius + awarenessSkill / 5) : configuredRadius;
         Block best = null;
         double bestDistance = Double.POSITIVE_INFINITY;
         boolean woodMode = miningMode.equals("wood");
