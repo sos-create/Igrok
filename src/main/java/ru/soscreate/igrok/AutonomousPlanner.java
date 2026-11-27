@@ -43,7 +43,13 @@ final class AutonomousPlanner {
             double creativity,
             int developmentStage,
             String preferredBranch,
-            boolean workshopUnlocked) { }
+            boolean workshopUnlocked,
+            int redstoneDust,
+            boolean redstoneSearchReady,
+            int pistons,
+            int redstoneBlocks,
+            boolean pistonLabUnlocked,
+            boolean pistonLabCompleted) { }
 
     record Decision(GoalPlanner.Goal goal, String miningMode, double utility,
                     String phase, String reason) { }
@@ -156,9 +162,12 @@ final class AutonomousPlanner {
             } else {
                 double woodProgress = Math.min(1.0, s.planks() / 64.0);
                 double stoneProgress = Math.min(1.0, s.cobblestone() / 17.0);
-                double shelterInterest = 0.34 + creativity * 0.13
-                        + (woodProgress + stoneProgress) * 0.12
-                        + ("builder".equals(s.preferredBranch()) ? 0.10 : 0.0);
+                // Give the first shelter a real long-term priority. Exploration
+                // remains possible, but it must not permanently outrank collecting
+                // the planks and stone needed to build a home.
+                double shelterInterest = 0.74 + creativity * 0.10
+                        + (woodProgress + stoneProgress) * 0.10
+                        + ("builder".equals(s.preferredBranch()) ? 0.08 : 0.0);
                 if (s.planks() < 64 && s.woodSearchReady()) {
                     best = better(best, decision(GoalPlanner.Goal.MINE, "wood",
                             shelterInterest, "SHELTER_OPTION",
@@ -200,6 +209,24 @@ final class AutonomousPlanner {
             } else {
                 best = better(best, decision(GoalPlanner.Goal.IDLE, "", 0.76, "LOOKOUT",
                         "Ресурсы для смотровой башни уже есть. Хочу построить точку обзора и потренировать высотную постройку."));
+            }
+        }
+        if (s.pistonLabUnlocked() && !s.pistonLabCompleted()) {
+            if (s.cobblestone() < 15) {
+                best = better(best, collect(s.stoneSearchReady(), "stone", 0.78,
+                        "PISTON_LAB", "Для стенда с поршнем нужно основание из камня; пополняю запас.", false));
+            }
+            if (s.redstoneDust() < 9) {
+                best = better(best, collect(s.redstoneSearchReady(), "redstone", 0.84,
+                        "REDSTONE", "Готовлю редстоун для питания поршня и автоматических механизмов. Нужна железная кирка.", false));
+            }
+            if (s.redstoneDust() >= 9 && s.pistons() < 1) {
+                best = better(best, decision(GoalPlanner.Goal.IDLE, "", 0.78, "PISTON_CRAFT",
+                        "Ресурсы для поршня собраны. Изготавливаю компонент и готовлю стенд."));
+            }
+            if (s.pistons() >= 1 && s.redstoneBlocks() < 1 && s.redstoneDust() >= 9) {
+                best = better(best, decision(GoalPlanner.Goal.IDLE, "", 0.80, "REDSTONE_BLOCK",
+                        "Поршень готов. Теперь делаю источник питания для испытательного механизма."));
             }
         }
         if (stage >= 4 && !s.night() && s.foodLevel() >= 14) {
