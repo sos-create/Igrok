@@ -137,6 +137,32 @@ final class HouseBuilder {
         return completedProjects.contains(type);
     }
 
+    /** Exact number of a material still needed by the currently prepared project. */
+    int missingRequired(Material material) {
+        if (actor == null || material == null) return 0;
+        int required = 0;
+        for (BlockStep step : plan) {
+            if (step.consumeItem() && step.material() == material) required++;
+        }
+        return Math.max(0, required - count(actor, material));
+    }
+
+    /** Sum of missing ingredients by material suffix, e.g. all wood plank variants. */
+    int missingRequiredSuffix(String suffix) {
+        if (actor == null || suffix == null) return 0;
+        Map<Material, Integer> required = new EnumMap<>(Material.class);
+        for (BlockStep step : plan) {
+            if (step.consumeItem() && step.material().name().endsWith(suffix)) {
+                required.merge(step.material(), 1, Integer::sum);
+            }
+        }
+        int missing = 0;
+        for (Map.Entry<Material, Integer> entry : required.entrySet()) {
+            missing += Math.max(0, entry.getValue() - count(actor, entry.getKey()));
+        }
+        return missing;
+    }
+
     String nextProjectType() {
         int skill = plugin.skills().level("building");
         boolean workshopReady = skill >= 4 && !completedProjects.contains("workshop")
@@ -159,9 +185,7 @@ final class HouseBuilder {
         choosePalette();
         plan.clear();
         createProjectPlan(projectType);
-        if (hasAllMaterials()) return true;
-        plan.clear();
-        return false;
+        return hasAllMaterials();
     }
 
     boolean startProject(Location anchor) {
@@ -641,7 +665,7 @@ final class HouseBuilder {
             directional.setFacing(BlockFace.EAST);
         }
         addData(0, 1, 0, Material.PISTON, piston, true);
-        add(1, 1, 0, Material.STONE);
+        add(1, 1, 0, Material.COBBLESTONE);
         add(-1, 1, 0, Material.REDSTONE_BLOCK);
     }
 
