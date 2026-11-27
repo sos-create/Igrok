@@ -71,8 +71,9 @@ final class SurvivalController {
     }
 
     void tick(Player bot, int tick) {
-        int foodReserve = learnedFoodCaution ? 19 : 17;
-        int recoveryReserve = learnedFoodCaution ? 20 : 19;
+        int learnedSurvival = plugin.skills().level("survival");
+        int foodReserve = Math.min(19, (learnedFoodCaution ? 19 : 17) + learnedSurvival / 3);
+        int recoveryReserve = Math.min(20, (learnedFoodCaution ? 20 : 19) + learnedSurvival / 3);
         if (tick % 20 == 0 && (bot.getFoodLevel() <= foodReserve
                 || (bot.getHealth() < bot.getMaxHealth() - 2.0 && bot.getFoodLevel() <= recoveryReserve))) {
             eatFromInventory(bot);
@@ -427,7 +428,8 @@ final class SurvivalController {
         int logs = countBySuffix(bot, "_LOG") + countBySuffix(bot, "_WOOD");
         int plankReserve = plugin.houseBuilder().hasCompleted() ? 32 : 64;
         if (planks < plankReserve && logs > 0) {
-            for (int batch = 0; batch < 4 && planks < plankReserve && logs > 0; batch++) {
+            int batchLimit = 4 + Math.min(4, plugin.skills().level("crafting") / 3);
+            for (int batch = 0; batch < batchLimit && planks < plankReserve && logs > 0; batch++) {
                 if (!craftMatching(bot, type -> type.name().endsWith("_PLANKS"))) break;
                 planks = countBySuffix(bot, "_PLANKS");
                 logs = countBySuffix(bot, "_LOG") + countBySuffix(bot, "_WOOD");
