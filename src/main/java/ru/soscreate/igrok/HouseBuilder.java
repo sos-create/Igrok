@@ -25,6 +25,8 @@ import java.util.Comparator;
 import java.util.EnumMap;
 import java.util.List;
 import java.util.Map;
+import java.util.HashSet;
+import java.util.Set;
 
 /**
  * Resource-aware shelter builder.
@@ -45,6 +47,8 @@ final class HouseBuilder {
     private int cursor;
     private int placed;
     private boolean completed;
+    private String projectType = "shelter";
+    private final Set<String> completedProjects = new HashSet<>();
     private Material wallMaterial = Material.OAK_PLANKS;
     private Material glassMaterial;
     private Material doorMaterial;
@@ -59,6 +63,8 @@ final class HouseBuilder {
     void saveState(YamlConfiguration data) {
         data.set("builder.active", isBuilding());
         data.set("builder.completed", completed);
+        data.set("builder.project-type", projectType);
+        data.set("builder.completed-projects", new ArrayList<>(completedProjects));
         if (!isBuilding() || base == null || base.getWorld() == null) return;
         data.set("builder.world", base.getWorld().getName());
         data.set("builder.x", base.getX());
@@ -73,6 +79,10 @@ final class HouseBuilder {
 
     void resumeSavedState(YamlConfiguration data) {
         completed = data.getBoolean("builder.completed", false);
+        completedProjects.clear();
+        completedProjects.addAll(data.getStringList("builder.completed-projects"));
+        projectType = data.getString("builder.project-type", "shelter");
+        if (!Set.of("shelter", "watchtower", "workshop").contains(projectType)) projectType = "shelter";
         if (!data.getBoolean("builder.active", false) || isBuilding()) return;
         World world = Bukkit.getWorld(data.getString("builder.world", ""));
         Player bot = plugin.controller().bukkitPlayer();
@@ -91,7 +101,7 @@ final class HouseBuilder {
         glassMaterial = optionalMaterial(data.getString("builder.glass-material", ""));
         doorMaterial = optionalMaterial(data.getString("builder.door-material", ""));
         plan.clear();
-        createCabinPlan();
+        createProjectPlan(projectType);
         cursor = Math.max(0, Math.min(plan.size(), data.getInt("builder.cursor", 0)));
         placed = Math.max(0, data.getInt("builder.placed", cursor));
         int interval = Math.max(1, plugin.getConfig().getInt("building.block-interval-ticks", 2));
@@ -111,14 +121,67 @@ final class HouseBuilder {
         if (bot == null || !bot.isOnline() || isBuilding() || completed
                 || !plugin.getConfig().getBoolean("building.enabled", true)) return false;
         actor = bot;
+        projectType = "shelter";
         choosePalette();
         plan.clear();
-        createCabinPlan();
+        createProjectPlan(projectType);
         return hasAllMaterials();
     }
 
+    boolean hasCompletedProject(String type) {
+        return completedProjects.contains(type);
+    }
+
+    String nextProjectType() {
+        int skill = plugin.skills().level("building");
+        if (skill >= 2 && !completedProjects.contains("watchtower")) return "watchtower";
+        if (skill >= 4 && completedProjects.contains("watchtower")
+                && !completedProjects.contains("workshop")) return "workshop";
+        return "";
+    }
+
+    boolean canBuildProject(Player bot) {
+        if (bot == null || !bot.isOnline() || isBuilding() || !completed
+                || !plugin.getConfig().getBoolean("building.enabled", true)) return false;
+        String next = nextProjectType();
+        if (next.isBlank()) return false;
+        actor = bot;
+        projectType = next;
+        choosePalette();
+        plan.clear();
+        createProjectPlan(projectType);
+        if (hasAllMaterials()) return true;
+        plan.clear();
+        return false;
+    }
+
+    boolean startProject(Location anchor) {
+        if (anchor == null || anchor.getWorld() == null || !canBuildProject(
+                plugin.controller().bukkitPlayer())) return false;
+        return startPreparedProject(anchor);
+    }
+
+    private boolean startPreparedProject(Location anchor) {
+        if (actor == null || !actor.isOnline()) return false;
+        navigator = new AgentNavigator(actor, plugin.skills());
+        workStandPosition = null;
+        navigationFailures = 0;
+        Location site = findSite(anchor);
+        if (site == null) {
+            plan.clear();
+            return false;
+        }
+        base = site;
+        cursor = 0;
+        placed = 0;
+        int interval = Math.max(1, plugin.getConfig().getInt("building.block-interval-ticks", 2));
+        task = Bukkit.getScheduler().runTaskTimer(plugin, this::runPlacementSafely, 1L, interval);
+        return true;
+    }
+
     boolean start(Location anchor, Player ignoredPlacingPlayer) {
-        if (isBuilding() || completed || !plugin.getConfig().getBoolean("building.enabled", true)
+        if (completed) return startProject(anchor);
+        if (isBuilding() || !plugin.getConfig().getBoolean("building.enabled", true)
                 || anchor == null || anchor.getWorld() == null) return false;
 
         // The fake player is the builder and pays the materials; a command sender
@@ -129,9 +192,10 @@ final class HouseBuilder {
         navigator = new AgentNavigator(actor);
         workStandPosition = null;
         navigationFailures = 0;
+        projectType = "shelter";
         choosePalette();
         plan.clear();
-        createCabinPlan();
+        createProjectPlan(projectType);
         if (!hasAllMaterials()) {
             plan.clear();
             return false;
@@ -404,11 +468,19 @@ final class HouseBuilder {
     private void finish() {
         if (task != null) task.cancel();
         task = null;
-        completed = true;
+        if ("shelter".equals(projectType)) completed = true;
+        else completedProjects.add(projectType);
         plan.clear();
         workStandPosition = null;
         if (navigator != null) navigator.stop();
-        say("Дом готов! Я построил убежище из " + placed + " блоков, потратив собственные ресурсы.");
+        plugin.skills().gain("building", 4);
+        String completedName = switch (projectType) {
+            case "watchtower" -> "смотровую башню";
+            case "workshop" -> "мастерскую";
+            default -> "убежище";
+        };
+        say("Готово! Я построил " + completedName + " из " + placed
+                + " блоков, используя собственные ресурсы. Это новый опыт для моих строительных навыков.");
     }
 
     private Location findSite(Location anchor) {
@@ -472,6 +544,75 @@ final class HouseBuilder {
         return name.equals("TNT") || name.equals("FIRE") || name.equals("SOUL_FIRE")
                 || name.equals("CAMPFIRE") || name.equals("SOUL_CAMPFIRE")
                 || name.equals("FIRE_CHARGE");
+    }
+
+    private void createProjectPlan(String type) {
+        plan.clear();
+        switch (type) {
+            case "watchtower" -> createWatchtowerPlan();
+            case "workshop" -> createWorkshopPlan();
+            default -> createCabinPlan();
+        }
+    }
+
+    private void createWatchtowerPlan() {
+        // Compact lookout: a stone base, four timber supports and a raised roof deck.
+        for (int x = -1; x <= 1; x++) {
+            for (int z = -1; z <= 1; z++) add(x, 0, z, Material.COBBLESTONE);
+        }
+        for (int y = 1; y <= 3; y++) {
+            add(-1, y, -1, wallMaterial);
+            add(1, y, -1, wallMaterial);
+            add(-1, y, 1, wallMaterial);
+            add(1, y, 1, wallMaterial);
+        }
+        for (int x = -1; x <= 1; x++) {
+            for (int z = -1; z <= 1; z++) add(x, 4, z, wallMaterial);
+        }
+        // Open sides make the platform useful as a lookout rather than a sealed box.
+        add(0, 3, -1, wallMaterial);
+        add(0, 3, 1, wallMaterial);
+        add(-1, 3, 0, wallMaterial);
+        add(1, 3, 0, wallMaterial);
+    }
+
+    private void createWorkshopPlan() {
+        // A second, slightly larger project: storage/workbench room with a stone rim.
+        for (int x = -2; x <= 2; x++) {
+            for (int z = -2; z <= 2; z++) {
+                add(x, 0, z, Math.abs(x) == 2 || Math.abs(z) == 2
+                        ? Material.COBBLESTONE : wallMaterial);
+            }
+        }
+        for (int y = 1; y <= 2; y++) {
+            for (int x = -2; x <= 2; x++) {
+                for (int z = -2; z <= 2; z++) {
+                    if (Math.abs(x) != 2 && Math.abs(z) != 2) continue;
+                    boolean doorway = z == 2 && x == 0 && y <= 2;
+                    boolean window = glassMaterial != null && y == 2
+                            && ((z == -2 && x == 0) || (x == -2 && z == 0) || (x == 2 && z == 0));
+                    if (doorway || window) continue;
+                    add(x, y, z, wallMaterial);
+                }
+            }
+        }
+        if (doorMaterial != null) {
+            Door lower = (Door) doorMaterial.createBlockData();
+            lower.setFacing(BlockFace.SOUTH);
+            lower.setHalf(Bisected.Half.BOTTOM);
+            Door upper = (Door) lower.clone();
+            upper.setHalf(Bisected.Half.TOP);
+            addData(0, 1, 2, doorMaterial, lower, true);
+            addData(0, 2, 2, doorMaterial, upper, false);
+        }
+        if (glassMaterial != null) {
+            add(-2, 2, 0, glassMaterial);
+            add(2, 2, 0, glassMaterial);
+            add(0, 2, -2, glassMaterial);
+        }
+        for (int x = -2; x <= 2; x++) {
+            for (int z = -2; z <= 2; z++) add(x, 3, z, wallMaterial);
+        }
     }
 
     private void createCabinPlan() {
