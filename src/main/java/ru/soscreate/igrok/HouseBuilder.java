@@ -189,7 +189,7 @@ final class HouseBuilder {
         Player chosenActor = plugin.controller().bukkitPlayer();
         if (chosenActor == null || !chosenActor.isOnline()) return false;
         actor = chosenActor;
-        navigator = new AgentNavigator(actor);
+        navigator = new AgentNavigator(actor, plugin.skills());
         workStandPosition = null;
         navigationFailures = 0;
         projectType = "shelter";
@@ -567,13 +567,20 @@ final class HouseBuilder {
             add(1, y, 1, wallMaterial);
         }
         for (int x = -1; x <= 1; x++) {
-            for (int z = -1; z <= 1; z++) add(x, 4, z, wallMaterial);
+            for (int z = -1; z <= 1; z++) {
+                if (x == 0 && z == 0) continue; // Leave a hatch onto the lookout deck.
+                add(x, 4, z, wallMaterial);
+            }
         }
-        // Open sides make the platform useful as a lookout rather than a sealed box.
+        // Open rails and a short block staircase let the agent climb onto the deck.
         add(0, 3, -1, wallMaterial);
         add(0, 3, 1, wallMaterial);
         add(-1, 3, 0, wallMaterial);
         add(1, 3, 0, wallMaterial);
+        add(0, 0, 2, wallMaterial);
+        add(0, 1, 1, wallMaterial);
+        add(0, 2, 0, wallMaterial);
+        add(0, 3, 0, wallMaterial);
     }
 
     private void createWorkshopPlan() {
