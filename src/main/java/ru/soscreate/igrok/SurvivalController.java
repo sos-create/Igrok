@@ -79,7 +79,9 @@ final class SurvivalController {
         if (tick >= nextCraftTick) {
             craftUsefulItems(bot, tick);
             equipBestArmor(bot);
-            nextCraftTick = tick + 200;
+            // Crafting is a continuous work queue, not a once-per-10-second action.
+            // The method below batches a few safe recipes per pass.
+            nextCraftTick = tick + 40;
         }
         if (tick >= nextFurnaceTick) {
             maintainFurnace(bot);
@@ -335,8 +337,11 @@ final class SurvivalController {
     private boolean hasTool(Player bot, String suffix) {
         for (int slot = 0; slot < 36; slot++) {
             ItemStack item = bot.getInventory().getItem(slot);
-            if (item != null && item.getType().name().endsWith("_" + suffix)
-                    && item.getType().getMaxDurability() > 0) return true;
+            if (item == null || !item.getType().name().endsWith("_" + suffix)
+                    || item.getType().getMaxDurability() <= 0) continue;
+            if (item.getItemMeta() instanceof org.bukkit.inventory.meta.Damageable damageable
+                    && item.getType().getMaxDurability() - damageable.getDamage() <= 1) continue;
+            return true;
         }
         return false;
     }
@@ -447,7 +452,11 @@ final class SurvivalController {
         int logs = countBySuffix(bot, "_LOG") + countBySuffix(bot, "_WOOD");
         int plankReserve = plugin.houseBuilder().hasCompleted() ? 32 : 112;
         if (planks < plankReserve && logs > 0) {
-            if (craftMatching(bot, type -> type.name().endsWith("_PLANKS"))) return;
+            for (int batch = 0; batch < 4 && planks < plankReserve && logs > 0; batch++) {
+                if (!craftMatching(bot, type -> type.name().endsWith("_PLANKS"))) break;
+                planks = countBySuffix(bot, "_PLANKS");
+                logs = countBySuffix(bot, "_LOG") + countBySuffix(bot, "_WOOD");
+            }
         }
         if (count(bot, Material.STICK) < 8 && planks >= 2) {
             if (craftResult(bot, Material.STICK)) return;
@@ -459,6 +468,20 @@ final class SurvivalController {
             if (craftResult(bot, Material.CHEST)) return;
         }
         if (hasNearbyCraftingTable(bot)) {
+            // A real survival woodcutter needs an axe, not only a pickaxe and sword.
+            int axeTier = bestToolTier(bot, "AXE");
+            if (axeTier < 1 && planks >= 3 && count(bot, Material.STICK) >= 2) {
+                if (craftResult(bot, Material.WOODEN_AXE)) return;
+            }
+            if (axeTier < 3 && count(bot, Material.COBBLESTONE) >= 3
+                    && count(bot, Material.STICK) >= 2) {
+                if (craftResult(bot, Material.STONE_AXE)) return;
+            }
+            if (axeTier < 4 && count(bot, Material.IRON_INGOT) >= 3
+                    && count(bot, Material.STICK) >= 2) {
+                if (craftResult(bot, Material.IRON_AXE)) return;
+            }
+
             int pickTier = bestToolTier(bot, "PICKAXE");
             if (pickTier < 4 && count(bot, Material.IRON_INGOT) >= 3) {
                 if (craftResult(bot, Material.IRON_PICKAXE)) return;
