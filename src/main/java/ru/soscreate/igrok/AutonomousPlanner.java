@@ -168,13 +168,11 @@ final class AutonomousPlanner {
             } else if (s.shelterMissingPlanks() > 0) {
                 best = better(best, collect(s.woodSearchReady(), "wood", 0.91,
                         "SHELTER_WOOD", "Проверил план дома: не хватает " + s.shelterMissingPlanks()
-                                + " блоков древесины. Иду рубить деревья."));
-                                true);
+                                + " блоков древесины. Иду рубить деревья.", true));
             } else if (s.shelterMissingCobblestone() > 0 && s.pickaxeTier() >= 1) {
                 best = better(best, collect(s.stoneSearchReady(), "stone", 0.90,
                         "SHELTER_STONE", "Проверил план дома: не хватает " + s.shelterMissingCobblestone()
-                                + " булыжника для основания. Иду добывать камень."));
-                                true);
+                                + " булыжника для основания. Иду добывать камень.", true));
             }
         }
 
@@ -213,19 +211,16 @@ final class AutonomousPlanner {
                     && s.pickaxeTier() >= 1) {
                 best = better(best, collect(true, "stone", 0.88,
                         "PISTON_LAB_STONE", "Для поршневого стенда не хватает "
-                                + s.projectMissingCobblestone() + " блоков булыжника."));
-                                false);
+                                + s.projectMissingCobblestone() + " блоков булыжника.", false));
             }
             if (s.redstoneDust() < 9 && s.pickaxeTier() >= 4) {
                 best = better(best, collect(s.redstoneSearchReady(), "redstone", 0.86,
-                        "REDSTONE", "Готовлю пыль редстоуна для питания поршневого механизма."));
-                                false);
+                        "REDSTONE", "Готовлю пыль редстоуна для питания поршневого механизма.", false));
             }
             if (s.projectMissingPiston() > 0 && s.ironIngots() < 1
                     && s.pickaxeTier() >= 3) {
                 best = better(best, collect(s.ironSearchReady(), "iron", 0.84,
-                        "PISTON_IRON", "Для поршня не хватает железа; добываю руду, чтобы изготовить механизм."));
-                                false);
+                        "PISTON_IRON", "Для поршня не хватает железа; добываю руду, чтобы изготовить механизм.", false));
             } else if (s.projectMissingPiston() > 0) {
                 best = better(best, decision(GoalPlanner.Goal.IDLE, "", 0.85, "PISTON_CRAFT",
                         "Для стенда нужен поршень. Проверяю ингредиенты и изготавливаю его из своего инвентаря."));
