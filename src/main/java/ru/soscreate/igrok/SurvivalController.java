@@ -443,7 +443,16 @@ final class SurvivalController {
     }
 
     private void craftUsefulItems(Player bot, int tick) {
-        if (bot.getNearbyEntities(10, 6, 10).stream().anyMatch(entity -> entity instanceof Monster)) return;
+        // Nearby mobs are not enough to cancel all crafting. Pause only when
+        // a hostile is actually targeting Igrok; otherwise it can never prepare
+        // tools or mechanisms while living in a dangerous biome.
+        boolean underAttack = bot.getNearbyEntities(6.0, 4.0, 6.0).stream()
+                .filter(Monster.class::isInstance)
+                .map(Monster.class::cast)
+                .anyMatch(monster -> monster.isValid() && !monster.isDead()
+                        && monster.getTarget() != null
+                        && monster.getTarget().getUniqueId().equals(bot.getUniqueId()));
+        if (underAttack) return;
         int planks = countBySuffix(bot, "_PLANKS");
         int logs = countBySuffix(bot, "_LOG") + countBySuffix(bot, "_WOOD");
         int plankReserve = plugin.houseBuilder().hasCompleted() ? 32 : 64;
