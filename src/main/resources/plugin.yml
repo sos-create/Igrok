@@ -1,5 +1,5 @@
 name: Igrok
-version: 0.9.27
+version: 0.9.28
 main: ru.soscreate.igrok.IgrokPlugin
 api-version: '1.21'
 load: POSTWORLD
