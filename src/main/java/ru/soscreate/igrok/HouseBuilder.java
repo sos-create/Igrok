@@ -312,7 +312,7 @@ final class HouseBuilder {
 
         // A normal survival player must physically reach the block and have line of sight.
         if (!withinPlacementReach(target)) {
-            if (navigator == null) navigator = new AgentNavigator(actor);
+            if (navigator == null) navigator = new AgentNavigator(actor, plugin.skills());
             if (workStandPosition == null || !isSafeStandingSpot(workStandPosition)) {
                 workStandPosition = findBuildStandPosition(target);
                 navigationFailures = 0;
@@ -402,7 +402,7 @@ final class HouseBuilder {
     }
 
     private Location findBuildStandPosition(Block target) {
-        if (navigator == null) navigator = new AgentNavigator(actor);
+        if (navigator == null) navigator = new AgentNavigator(actor, plugin.skills());
         World world = target.getWorld();
         Location center = target.getLocation().add(0.5, 0.5, 0.5);
         Location current = actor.getLocation();
