@@ -90,6 +90,8 @@ final class AgentBrain {
     private int lastTaskMinedCount;
     private int taskRecoveryAttempts;
     private String lastLesson = "Пока не было смертельных ошибок.";
+    private Location failedMiningTarget;
+    private int failedMiningTargetUntilTick;
 
     AgentBrain(IgrokPlugin plugin, AgentMemory memory) {
         this.plugin = plugin;
@@ -349,14 +351,20 @@ final class AgentBrain {
 
         // A route that reports "moving" but produces no position or inventory
         // change must not pin the agent to one task forever.
-        if (tickCounter - lastTaskProgressTick < 1200) return;
+        // No movement and no mined blocks for 8 seconds is a real stall, not a long task.
+        if (tickCounter - lastTaskProgressTick < 160) return;
         taskRecoveryAttempts++;
         navigator.stop();
         if (goal == GoalPlanner.Goal.MINE) {
+            if (miningTarget != null) {
+                failedMiningTarget = miningTarget.getLocation().clone();
+                failedMiningTargetUntilTick = tickCounter + 20 * 60;
+            }
             survival.deferMining(miningMode, tickCounter);
             miningRequested = false;
             miningTarget = null;
             miningTicks = 0;
+            nextSearchTick = tickCounter + 20;
             minedThisTask = 0;
             manualOrderActive = false;
             goal = GoalPlanner.Goal.EXPLORE;
@@ -1299,9 +1307,12 @@ final class AgentBrain {
         if (!canReach) {
             state = "Подхожу к блоку " + miningTarget.getType().name().toLowerCase(Locale.ROOT);
             if (!navigator.moveTo(miningTarget.getLocation())) {
+                failedMiningTarget = miningTarget.getLocation().clone();
+                failedMiningTargetUntilTick = tickCounter + 20 * 60;
                 miningTarget = null;
                 miningTicks = 0;
-                nextSearchTick = tickCounter + 40;
+                nextSearchTick = tickCounter + 20;
+                state = "Не могу безопасно подойти к блоку; ищу другой";
             }
             return;
         }
@@ -1384,6 +1395,11 @@ final class AgentBrain {
                     Block block = world.getBlockAt(x, y, z);
                     Material type = block.getType();
                     if (!isWantedResource(type)) continue;
+                    if (tickCounter < failedMiningTargetUntilTick && failedMiningTarget != null
+                            && failedMiningTarget.getWorld() == world
+                            && failedMiningTarget.getBlockX() == x
+                            && failedMiningTarget.getBlockY() == y
+                            && failedMiningTarget.getBlockZ() == z) continue;
                     // Never choose a block under the floor as a mining target.
                     // A tunnel is opened one visible surface block at a time.
                     if (block.getY() < origin.getBlockY() - 1) continue;
