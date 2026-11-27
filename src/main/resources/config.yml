@@ -25,7 +25,7 @@ chat:
 building:
   enabled: true
   block-interval-ticks: 4
-  search-radius: 10
+  search-radius: 16
   chat-trigger: true
 
 brain:
