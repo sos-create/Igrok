@@ -139,9 +139,9 @@ final class AutonomousPlanner {
                         "Материалов хватает для убежища. Можно заняться домом, если сейчас нет более срочной цели."));
             } else {
                 double woodProgress = Math.min(1.0, s.planks() / 64.0);
-                double stoneProgress = Math.min(1.0, s.cobblestone() / 16.0);
-                double shelterInterest = 0.28 + creativity * 0.13
-                        + (woodProgress + stoneProgress) * 0.09;
+                double stoneProgress = Math.min(1.0, s.cobblestone() / 17.0);
+                double shelterInterest = 0.34 + creativity * 0.13
+                        + (woodProgress + stoneProgress) * 0.12;
                 if (s.planks() < 64 && s.woodSearchReady()) {
                     best = better(best, decision(GoalPlanner.Goal.MINE, "wood",
                             shelterInterest, "SHELTER_OPTION",
