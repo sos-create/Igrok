@@ -45,6 +45,7 @@ public final class IgrokPlugin extends JavaPlugin implements Listener {
     private AgentMemory memory;
     private AgentSkillBook skills;
     private CognitiveNetwork cognition;
+    private ChunkAreaManager chunkAreaManager;
     private BukkitTask respawnTask;
     private BukkitTask brainTask;
     private BukkitTask memorySaveTask;
@@ -60,6 +61,12 @@ public final class IgrokPlugin extends JavaPlugin implements Listener {
     @Override
     public void onEnable() {
         saveDefaultConfig();
+        getConfig().addDefault("chunks.enabled", true);
+        getConfig().addDefault("chunks.view-radius", 8);
+        getConfig().addDefault("chunks.active-radius", 1);
+        getConfig().addDefault("chunks.scout-cache", 24);
+        getConfig().addDefault("chunks.max-async-loads", 2);
+        getConfig().options().copyDefaults(true);
         // Keep replies quick even when the server already has an older config.yml.
         getConfig().set("chat.reply-delay-min-seconds", 5);
         getConfig().set("chat.reply-delay-max-seconds", 5);
@@ -69,6 +76,7 @@ public final class IgrokPlugin extends JavaPlugin implements Listener {
         stateFile = new File(getDataFolder(), "agent-state.yml");
         stateData = YamlConfiguration.loadConfiguration(stateFile);
         controller = new FakePlayerController(this);
+        chunkAreaManager = new ChunkAreaManager(this, controller);
         houseBuilder = new HouseBuilder(this);
         memory = new AgentMemory(getDataFolder());
         memory.load();
@@ -95,6 +103,7 @@ public final class IgrokPlugin extends JavaPlugin implements Listener {
     @Override
     public void onDisable() {
         if (respawnTask != null) respawnTask.cancel();
+        if (chunkAreaManager != null) chunkAreaManager.stop();
         if (skinFallbackTask != null) skinFallbackTask.cancel();
         if (dialogue != null) dialogue.shutdown();
         if (brainTask != null) brainTask.cancel();
@@ -256,6 +265,9 @@ public final class IgrokPlugin extends JavaPlugin implements Listener {
                 }
                 getLogger().info("Igrok spawned successfully in loaded chunk " + chunkX + ", " + chunkZ + ".");
                 houseBuilder.resumeSavedState(stateData);
+                if (chunkAreaManager != null && getConfig().getBoolean("chunks.enabled", true)) {
+                    chunkAreaManager.start();
+                }
             });
         });
     }
