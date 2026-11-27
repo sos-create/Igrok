@@ -39,8 +39,20 @@ final class IgrokServerPlayer extends ServerPlayer {
         // movement, item pickup and hunger without the network listener snap-back.
         boolean groundedBefore = getBukkitEntity().isOnGround();
         double yBefore = getY();
+        // A real player can move sideways while continuing to look at a target.
+        // Vanilla's no-client movement step otherwise overwrites yaw/head/body with
+        // the velocity direction every tick, making Igrok turn for only one frame.
+        float intendedYaw = getYRot();
+        float intendedPitch = getXRot();
+        float intendedHeadYaw = getYHeadRot();
+        float intendedBodyYaw = getYBodyRot();
         doTick();
         if (isRemoved() || !isAlive()) return;
+
+        setYRot(intendedYaw);
+        setXRot(intendedPitch);
+        setYHeadRot(intendedHeadYaw);
+        setYBodyRot(intendedBodyYaw);
 
         boolean groundedAfter = getBukkitEntity().isOnGround();
         if (groundedBefore && !groundedAfter) {
