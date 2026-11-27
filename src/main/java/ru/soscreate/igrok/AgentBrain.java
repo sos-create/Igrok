@@ -702,10 +702,12 @@ final class AgentBrain {
     void learnFromDeath(Location deathLocation, String damageCause, String killerType) {
         String cause = damageCause == null ? "UNKNOWN" : damageCause.toUpperCase(Locale.ROOT);
         String killer = killerType == null ? "" : killerType.toUpperCase(Locale.ROOT);
-        if (deathLocation != null && deathLocation.getWorld() != null
-                && (cause.equals("FALL") || cause.equals("LAVA") || cause.equals("FIRE")
-                || cause.equals("FIRE_TICK") || cause.equals("HOT_FLOOR") || cause.equals("VOID")
-                || cause.equals("DROWNING") || cause.equals("SUFFOCATION"))) {
+        boolean locationWasDangerous = cause.equals("FALL") || cause.equals("LAVA")
+                || cause.equals("FIRE") || cause.equals("FIRE_TICK") || cause.equals("HOT_FLOOR")
+                || cause.equals("VOID") || cause.equals("DROWNING") || cause.equals("SUFFOCATION")
+                || cause.startsWith("ENTITY_") || cause.equals("PROJECTILE")
+                || cause.equals("MAGIC") || cause.equals("POISON") || cause.equals("WITHER");
+        if (deathLocation != null && deathLocation.getWorld() != null && locationWasDangerous) {
             String zone = deathLocation.getWorld().getName() + "|" + deathLocation.getBlockX()
                     + "|" + deathLocation.getBlockZ() + "|" + System.currentTimeMillis();
             learnedDangerZones.add(zone);
