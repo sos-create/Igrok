@@ -32,6 +32,9 @@ final class AutonomousPlanner {
             boolean furnaceAvailable,
             boolean shelterCompleted,
             boolean shelterReady,
+            int buildingSkill,
+            boolean watchtowerCompleted,
+            boolean workshopCompleted,
             boolean woodSearchReady,
             boolean stoneSearchReady,
             boolean coalSearchReady,
@@ -152,6 +155,34 @@ final class AutonomousPlanner {
                             shelterInterest, "SHELTER_OPTION",
                             "Для будущего убежища пригодится камень. Соберу часть материалов, не превращая дом в обязательную задачу."));
                 }
+            }
+        }
+
+        // Learned construction projects become new goals only after the shelter
+        // and enough hands-on building experience. Each project competes with
+        // upgrades, fuel and discovery instead of blocking them.
+        if (s.shelterCompleted() && s.buildingSkill() >= 2 && !s.watchtowerCompleted()) {
+            if (usableWood < 25) {
+                best = better(best, collect(s.woodSearchReady(), "wood", 0.67,
+                        "LOOKOUT", "У меня появилась идея построить небольшую смотровую башню; постепенно собираю доски.", false));
+            } else if (s.cobblestone() < 9) {
+                best = better(best, collect(s.stoneSearchReady(), "stone", 0.65,
+                        "LOOKOUT", "Для основания смотровой башни не хватает камня; сначала найду безопасный участок.", false));
+            } else {
+                best = better(best, decision(GoalPlanner.Goal.IDLE, "", 0.76, "LOOKOUT",
+                        "Ресурсы для смотровой башни уже есть. Хочу построить точку обзора и потренировать высотную постройку."));
+            }
+        } else if (s.shelterCompleted() && s.buildingSkill() >= 4
+                && s.watchtowerCompleted() && !s.workshopCompleted()) {
+            if (usableWood < 24) {
+                best = better(best, collect(s.woodSearchReady(), "wood", 0.64,
+                        "WORKSHOP", "Следующий проект — небольшая мастерская. Соберу древесину, не отказываясь от других целей.", false));
+            } else if (s.cobblestone() < 9) {
+                best = better(best, collect(s.stoneSearchReady(), "stone", 0.62,
+                        "WORKSHOP", "Для мастерской нужно каменное основание; поищу камень в доступной местности.", false));
+            } else {
+                best = better(best, decision(GoalPlanner.Goal.IDLE, "", 0.75, "WORKSHOP",
+                        "Материалы для мастерской собраны. Можно оборудовать ещё одно полезное место."));
             }
         }
 
