@@ -1033,7 +1033,8 @@ final class SurvivalController {
         for (int x = ox - 5; x <= ox + 5; x++) {
             for (int z = oz - 5; z <= oz + 5; z++) {
                 for (int y = oy - 1; y <= oy + 2; y++) {
-                    if (!world.isChunkLoaded(x >> 4, z >> 4)) continue;
+                    if (y <= world.getMinHeight() || y >= world.getMaxHeight()
+                            || !world.isChunkLoaded(x >> 4, z >> 4)) continue;
                     Material type = world.getBlockAt(x, y, z).getType();
                     if (type == Material.TORCH || type == Material.WALL_TORCH
                             || type == Material.SOUL_TORCH || type == Material.SOUL_WALL_TORCH) {
