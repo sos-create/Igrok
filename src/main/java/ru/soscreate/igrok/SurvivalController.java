@@ -465,9 +465,7 @@ final class SurvivalController {
     }
 
     private void craftUsefulItems(Player bot, int tick) {
-        // Nearby mobs are not enough to cancel all crafting. Pause only when
-        // a hostile is actually targeting Igrok; otherwise it can never prepare
-        // tools or mechanisms while living in a dangerous biome.
+        // Do not spend materials while a hostile is actively targeting Igrok.
         boolean underAttack = bot.getNearbyEntities(6.0, 4.0, 6.0).stream()
                 .filter(Monster.class::isInstance)
                 .map(Monster.class::cast)
@@ -475,122 +473,183 @@ final class SurvivalController {
                         && monster.getTarget() != null
                         && monster.getTarget().getUniqueId().equals(bot.getUniqueId()));
         if (underAttack) return;
-        int planks = countBySuffix(bot, "_PLANKS");
-        int logs = countBySuffix(bot, "_LOG") + countBySuffix(bot, "_WOOD");
-        int plankReserve = plugin.houseBuilder().hasCompleted() ? 32 : 64;
-        if (planks < plankReserve && logs > 0) {
-            int batchLimit = 4 + Math.min(4, plugin.skills().level("crafting") / 3);
-            for (int batch = 0; batch < batchLimit && planks < plankReserve && logs > 0; batch++) {
-                if (!craftMatching(bot, type -> type.name().endsWith("_PLANKS"))) break;
-                planks = countBySuffix(bot, "_PLANKS");
-                logs = countBySuffix(bot, "_LOG") + countBySuffix(bot, "_WOOD");
+
+        HouseBuilder builder = plugin.houseBuilder();
+        String nextProject = builder.hasCompleted() ? builder.nextProjectType() : "shelter";
+        if (!builder.isBuilding()) {
+            if (!builder.hasCompleted()) {
+                builder.canBuild(bot); // prepares the exact shelter blueprint, even when materials are missing
+            } else if (!nextProject.isBlank()) {
+                builder.canBuildProject(bot); // prepares the next optional project's exact bill of materials
             }
         }
-        if (count(bot, Material.STICK) < 8 && planks >= 2) {
-            if (craftResult(bot, Material.STICK)) return;
+        boolean pistonProject = "piston_lab".equals(nextProject);
+        Map<Material, Integer> projectNeeds = builder.isBuilding()
+                ? Map.of() : builder.missingMaterials(bot);
+
+        // The blueprint is the first customer of the crafting queue. Do not craft
+        // generic variants: a spruce-plank deficit must never be "solved" with oak.
+        if (craftProjectMaterials(bot, projectNeeds, pistonProject)) return;
+
+        int planks = countBySuffix(bot, "_PLANKS");
+        int logs = countBySuffix(bot, "_LOG") + countBySuffix(bot, "_WOOD")
+                + countBySuffix(bot, "_STEM") + countBySuffix(bot, "_HYPHAE")
+                + count(bot, Material.BAMBOO_BLOCK);
+        int pickTier = bestToolTier(bot, "PICKAXE");
+        int axeTier = bestToolTier(bot, "AXE");
+        boolean hasTable = hasNearbyCraftingTable(bot);
+        boolean hasTableItem = count(bot, Material.CRAFTING_TABLE) > 0;
+        boolean projectStillNeedsPlanks = projectNeeds.keySet().stream()
+                .anyMatch(material -> material.name().endsWith("_PLANKS"));
+
+        // Only prepare the minimum wood needed for a workbench and first tools.
+        // Blueprint deficits above take precedence; no 32/64-plank stockpiling.
+        int basicPlankNeed = Math.max(!hasTable && !hasTableItem ? 4 : 0,
+                Math.max(pickTier < 1 ? 3 : 0, axeTier < 1 ? 3 : 0));
+        if (!projectStillNeedsPlanks && planks < basicPlankNeed && logs > 0
+                && craftAnyPlanksFromLogs(bot)) return;
+
+        if (!hasTable && hasTableItem) {
+            placeCraftingTable(bot);
+            return;
         }
-        if (count(bot, Material.CRAFTING_TABLE) == 0 && planks >= 4) {
+        if (!hasTable && !hasTableItem && planks >= 4) {
             if (craftResult(bot, Material.CRAFTING_TABLE)) return;
         }
-        if (count(bot, Material.CHEST) == 0 && planks >= 8 && hasNearbyCraftingTable(bot)) {
-            if (craftResult(bot, Material.CHEST)) return;
+        if (!hasTable) return;
+
+        boolean pistonNeedsPlanks = pistonProject
+                && projectNeeds.getOrDefault(Material.PISTON, 0) > 0 && planks < 3;
+        if (pistonNeedsPlanks && logs > 0 && craftAnyPlanksFromLogs(bot)) return;
+
+        boolean needsSticks = pickTier < 1 || axeTier < 1
+                || (pistonProject && projectNeeds.getOrDefault(Material.PISTON, 0) > 0);
+        if (needsSticks && count(bot, Material.STICK) < 2 && planks >= 2) {
+            if (craftResult(bot, Material.STICK)) return;
         }
-        if (hasNearbyCraftingTable(bot)) {
-            // A real survival woodcutter needs an axe, not only a pickaxe and sword.
-            int axeTier = bestToolTier(bot, "AXE");
-            if (axeTier < 1 && planks >= 3 && count(bot, Material.STICK) >= 2) {
-                if (craftResult(bot, Material.WOODEN_AXE)) return;
-            }
-            if (axeTier < 3 && count(bot, Material.COBBLESTONE) >= 3
-                    && count(bot, Material.STICK) >= 2) {
-                if (craftResult(bot, Material.STONE_AXE)) return;
-            }
-            if (axeTier < 4 && count(bot, Material.IRON_INGOT) >= 3
-                    && count(bot, Material.STICK) >= 2) {
-                if (craftResult(bot, Material.IRON_AXE)) return;
-            }
 
-            int pickTier = bestToolTier(bot, "PICKAXE");
-            if (pickTier < 4 && count(bot, Material.IRON_INGOT) >= 3) {
-                if (craftResult(bot, Material.IRON_PICKAXE)) return;
-            }
-            if (pickTier < 3 && count(bot, Material.COBBLESTONE) >= 3) {
-                if (craftResult(bot, Material.STONE_PICKAXE)) return;
-            }
-            if (pickTier < 1 && planks >= 3) {
-                if (craftResult(bot, Material.WOODEN_PICKAXE)) return;
-            }
-
-            int swordTier = bestToolTier(bot, "SWORD");
-            if (swordTier < 4 && count(bot, Material.IRON_INGOT) >= 2) {
-                if (craftResult(bot, Material.IRON_SWORD)) return;
-            }
-            if (swordTier < 3 && count(bot, Material.COBBLESTONE) >= 2) {
-                if (craftResult(bot, Material.STONE_SWORD)) return;
-            }
-            if (swordTier < 1 && planks >= 2) {
-                if (craftResult(bot, Material.WOODEN_SWORD)) return;
-            }
-
-            if (count(bot, Material.SHIELD) == 0 && count(bot, Material.IRON_INGOT) >= 1
-                    && planks >= 6) {
-                if (craftResult(bot, Material.SHIELD)) return;
-            }
-            if (countBySuffix(bot, "_DOOR") == 0 && planks >= 6) {
-                if (craftMatching(bot, type -> type.name().endsWith("_DOOR"))) return;
-            }
-            if (count(bot, Material.BREAD) < 8 && count(bot, Material.WHEAT) >= 3) {
-                if (craftResult(bot, Material.BREAD)) return;
-            }
+        // Upgrade only a missing or genuinely lower-tier tool; do not manufacture
+        // duplicates that occupy inventory slots or consume project ingredients.
+        if (pickTier < 1 && planks >= 3 && count(bot, Material.STICK) >= 2) {
+            if (craftResult(bot, Material.WOODEN_PICKAXE)) return;
         }
-        if (count(bot, Material.TORCH) < 16 && count(bot, Material.STICK) > 0
+        if (pickTier < 3 && count(bot, Material.COBBLESTONE) >= 3
+                && count(bot, Material.STICK) >= 2) {
+            if (craftResult(bot, Material.STONE_PICKAXE)) return;
+        }
+        int protectedProjectIron = pistonProject
+                && projectNeeds.getOrDefault(Material.PISTON, 0) > 0 ? 1 : 0;
+        if (pickTier < 4 && count(bot, Material.IRON_INGOT) >= 3 + protectedProjectIron) {
+            if (craftResult(bot, Material.IRON_PICKAXE)) return;
+        }
+
+        if (axeTier < 1 && planks >= 3 && count(bot, Material.STICK) >= 2) {
+            if (craftResult(bot, Material.WOODEN_AXE)) return;
+        }
+        if (axeTier < 3 && count(bot, Material.COBBLESTONE) >= 3
+                && count(bot, Material.STICK) >= 2) {
+            if (craftResult(bot, Material.STONE_AXE)) return;
+        }
+        if (axeTier < 4 && count(bot, Material.IRON_INGOT) >= 3 + protectedProjectIron
+                && logs > 0) {
+            if (craftResult(bot, Material.IRON_AXE)) return;
+        }
+
+        // Food is crafted only when hunger is low and there is no edible inventory.
+        if (bot.getFoodLevel() <= 10 && !hasFood(bot)
+                && count(bot, Material.WHEAT) >= 3) {
+            if (craftResult(bot, Material.BREAD)) return;
+        }
+
+        // Workstations are built only when an actual input can be processed.
+        if (!hasProcessingBlock(bot, 4) && count(bot, Material.COBBLESTONE) >= 8
+                && findSmeltable(bot) != null) {
+            if (craftResult(bot, Material.FURNACE)) return;
+        }
+
+        boolean darkArea = bot.getWorld().getEnvironment() != World.Environment.NORMAL
+                || bot.getWorld().getTime() >= 12000L
+                || bot.getLocation().getBlock().getLightFromSky() < 10;
+        if (darkArea && count(bot, Material.TORCH) < 4 && count(bot, Material.STICK) > 0
                 && (count(bot, Material.COAL) > 0 || count(bot, Material.CHARCOAL) > 0)) {
             if (craftResult(bot, Material.TORCH)) return;
         }
-        if (count(bot, Material.FURNACE) == 0 && count(bot, Material.COBBLESTONE) >= 8
-                && hasNearbyCraftingTable(bot)) {
-            if (craftResult(bot, Material.FURNACE)) return;
-        }
-        if (!hasNearbyBed(bot, tick) && !hasBedItem(bot) && countBySuffix(bot, "_WOOL") >= 3
-                && planks >= 3 && hasNearbyCraftingTable(bot)) {
-            craftMatching(bot, type -> type.name().endsWith("_BED"));
+
+        if (isNight(bot) && !hasNearbyBed(bot, tick) && !hasBedItem(bot)
+                && countBySuffix(bot, "_WOOL") >= 3 && planks >= 3) {
+            if (craftMatching(bot, type -> type.name().endsWith("_BED"))) return;
         }
 
-        // Once the first shelter exists, reserve some resources for an actual
-        // piston/logic workshop instead of spending every ingot and plank on gear.
-        if (plugin.houseBuilder().hasCompleted() && hasNearbyCraftingTable(bot)) {
-            if (count(bot, Material.PISTON) < 1
-                    && count(bot, Material.COBBLESTONE) >= 4
-                    && count(bot, Material.IRON_INGOT) >= 1
-                    && count(bot, Material.REDSTONE) >= 1
-                    && countBySuffix(bot, "_PLANKS") >= 3
-                    && craftResult(bot, Material.PISTON)) return;
-            if (count(bot, Material.LEVER) < 2 && count(bot, Material.COBBLESTONE) > 20
-                    && count(bot, Material.STICK) >= 1
-                    && craftResult(bot, Material.LEVER)) return;
-            if (count(bot, Material.REDSTONE_TORCH) < 2
-                    && count(bot, Material.REDSTONE) >= 2
-                    && count(bot, Material.STICK) >= 2
-                    && craftResult(bot, Material.REDSTONE_TORCH)) return;
-            if (count(bot, Material.REPEATER) < 1
-                    && count(bot, Material.REDSTONE) >= 3
-                    && count(bot, Material.REDSTONE_TORCH) >= 2
-                    && count(bot, Material.STONE) >= 3
-                    && craftResult(bot, Material.REPEATER)) return;
-            if (count(bot, Material.OBSERVER) < 1
-                    && count(bot, Material.REDSTONE) >= 2
-                    && count(bot, Material.COBBLESTONE) >= 6
-                    && count(bot, Material.QUARTZ) >= 1
-                    && craftResult(bot, Material.OBSERVER)) return;
-            if (count(bot, Material.DROPPER) < 1 && count(bot, Material.REDSTONE) >= 1
-                    && count(bot, Material.COBBLESTONE) >= 7
-                    && craftResult(bot, Material.DROPPER)) return;
-            if (count(bot, Material.HOPPER) < 1 && count(bot, Material.IRON_INGOT) >= 5
-                    && count(bot, Material.CHEST) >= 1
-                    && craftResult(bot, Material.HOPPER)) return;
-            if (count(bot, Material.REDSTONE_BLOCK) < 1 && count(bot, Material.REDSTONE) >= 9
-                    && craftResult(bot, Material.REDSTONE_BLOCK)) return;
+        // Storage is useful only when the inventory is nearly full and there is
+        // no accessible chest/barrel nearby. A chest is not an automatic craft goal.
+        if (emptyStorageSlots(bot) <= 2 && findNearbyStorage(bot, 4) == null
+                && count(bot, Material.CHEST) == 0 && planks >= 8) {
+            if (craftResult(bot, Material.CHEST)) return;
         }
+
+        // Redstone parts are project components, not general-purpose stock.
+        // Do not make levers, repeaters, droppers or hoppers unless a future
+        // blueprint explicitly asks for them.
+        if (pistonProject) {
+            int missingPiston = projectNeeds.getOrDefault(Material.PISTON, 0);
+            int missingPower = projectNeeds.getOrDefault(Material.REDSTONE_BLOCK, 0);
+            if (missingPiston > 0) {
+                if (count(bot, Material.STICK) < 2 && planks >= 2
+                        && craftResult(bot, Material.STICK)) return;
+                if (craftResult(bot, Material.PISTON)) return;
+            } else if (missingPower > 0) {
+                if (craftResult(bot, Material.REDSTONE_BLOCK)) return;
+            }
+        }
+    }
+
+    private boolean craftProjectMaterials(Player bot, Map<Material, Integer> missing,
+                                          boolean pistonProject) {
+        if (missing == null || missing.isEmpty()) return false;
+
+        for (Map.Entry<Material, Integer> entry : missing.entrySet()) {
+            Material required = entry.getKey();
+            if (entry.getValue() <= 0 || !required.name().endsWith("_PLANKS")) continue;
+            if (craftPlanksFromMatchingLog(bot, required)) return true;
+        }
+
+        if (pistonProject && missing.getOrDefault(Material.PISTON, 0) > 0
+                && craftResult(bot, Material.PISTON)) return true;
+        if (pistonProject && missing.getOrDefault(Material.PISTON, 0) == 0
+                && missing.getOrDefault(Material.REDSTONE_BLOCK, 0) > 0
+                && craftResult(bot, Material.REDSTONE_BLOCK)) return true;
+        return false;
+    }
+
+    private boolean craftAnyPlanksFromLogs(Player bot) {
+        for (int slot = 0; slot < 36; slot++) {
+            ItemStack stack = bot.getInventory().getItem(slot);
+            if (stack == null || stack.getType().isAir() || stack.getAmount() <= 0) continue;
+            Material planks = BlockKnowledge.planksForLog(stack.getType());
+            if (planks != null && recipeKnowledge.knowsRecipeFor(planks)
+                    && craftResult(bot, planks)) return true;
+        }
+        return false;
+    }
+
+    private boolean craftPlanksFromMatchingLog(Player bot, Material requiredPlanks) {
+        for (int slot = 0; slot < 36; slot++) {
+            ItemStack stack = bot.getInventory().getItem(slot);
+            if (stack == null || stack.getType().isAir() || stack.getAmount() <= 0) continue;
+            if (BlockKnowledge.planksForLog(stack.getType()) == requiredPlanks) {
+                return craftResult(bot, requiredPlanks);
+            }
+        }
+        return false;
+    }
+
+    private int emptyStorageSlots(Player bot) {
+        int empty = 0;
+        for (int slot = 0; slot < 36; slot++) {
+            ItemStack item = bot.getInventory().getItem(slot);
+            if (item == null || item.getType().isAir()) empty++;
+        }
+        return empty;
     }
 
     private int bestToolTier(Player bot, String suffix) {
