@@ -21,12 +21,16 @@ import java.util.Map;
  */
 final class RecipeKnowledge {
     private final Map<Material, List<Recipe>> byResult = new EnumMap<>(Material.class);
+    private List<Recipe> allRecipes = List.of();
     private List<Recipe> craftingRecipes = List.of();
+    private final Map<String, Integer> recipeFamilies = new java.util.LinkedHashMap<>();
     private int registeredRecipeCount;
     private boolean loaded;
 
     void refresh() {
         byResult.clear();
+        recipeFamilies.clear();
+        List<Recipe> all = new ArrayList<>();
         List<Recipe> crafting = new ArrayList<>();
         int registered = 0;
         Iterator<Recipe> iterator = Bukkit.recipeIterator();
@@ -34,12 +38,16 @@ final class RecipeKnowledge {
             Recipe recipe = iterator.next();
             if (recipe == null) continue;
             registered++;
+            all.add(recipe);
+            recipeFamilies.merge(recipe.getClass().getSimpleName(), 1, Integer::sum);
             ItemStack result = recipe.getResult();
             if (result == null || result.getType().isAir()) continue;
-            if (!(recipe instanceof ShapedRecipe) && !(recipe instanceof ShapelessRecipe)) continue;
-            crafting.add(recipe);
             byResult.computeIfAbsent(result.getType(), ignored -> new ArrayList<>()).add(recipe);
+            if (recipe instanceof ShapedRecipe || recipe instanceof ShapelessRecipe) {
+                crafting.add(recipe);
+            }
         }
+        allRecipes = List.copyOf(all);
         craftingRecipes = List.copyOf(crafting);
         registeredRecipeCount = registered;
         loaded = true;
@@ -48,9 +56,23 @@ final class RecipeKnowledge {
     boolean isLoaded() { return loaded; }
     int registeredRecipeCount() { return registeredRecipeCount; }
     int craftingRecipeCount() { return craftingRecipes.size(); }
+    List<Recipe> allRecipes() { return allRecipes; }
     List<Recipe> craftingRecipes() { return craftingRecipes; }
+    Map<String, Integer> recipeFamilies() { return Map.copyOf(recipeFamilies); }
     List<Recipe> recipesFor(Material result) {
         return result == null ? List.of() : byResult.getOrDefault(result, List.of());
+    }
+
+    boolean knowsRecipeFor(Material result) {
+        return result != null && byResult.containsKey(result);
+    }
+
+    /** Compact explanation for AI diagnostics or natural-language answers. */
+    String knowledgeSummary() {
+        if (!loaded) return "Ещё загружаю рецепты сервера.";
+        return "Знаю " + registeredRecipeCount + " рецептов сервера, включая "
+                + craftingRecipes.size() + " рецептов верстака и " + recipeFamilies.size()
+                + " типов обработки.";
     }
 
     /** Practical role classification used by goal selection and diagnostics. */
