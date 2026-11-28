@@ -1009,8 +1009,11 @@ final class SurvivalController {
             BlockState state = candidate.getState();
             if (!(state instanceof Furnace furnace)) continue;
             org.bukkit.inventory.FurnaceInventory inventory = furnace.getInventory();
-            if (hasItem(inventory.getSmelting()) || hasItem(inventory.getResult())) return candidate;
-            if (furnace.getBurnTime() > 0 && processorCanHandle(candidate.getType(), foodReady, oreReady)) {
+            if (hasItem(inventory.getResult())) return candidate;
+            ItemStack input = inventory.getSmelting();
+            if (hasItem(input) && canStationSmelt(candidate.getType(), input.getType())) return candidate;
+            if (!hasItem(input) && furnace.getBurnTime() > 0
+                    && processorCanHandle(candidate.getType(), foodReady, oreReady)) {
                 return candidate;
             }
         }
@@ -1019,7 +1022,7 @@ final class SurvivalController {
                 ? new Material[]{Material.SMOKER, Material.FURNACE}
                 : oreReady
                     ? new Material[]{Material.BLAST_FURNACE, Material.FURNACE}
-                    : new Material[]{Material.FURNACE, Material.SMOKER, Material.BLAST_FURNACE};
+                    : new Material[]{Material.FURNACE};
         for (Material type : preference) {
             Block result = findNearbyBlock(bot, type, radius);
             if (result != null) return result;
