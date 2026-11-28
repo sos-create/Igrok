@@ -46,7 +46,7 @@ final class ChatDialogue implements Listener {
         this.composer = new DialogueComposer(plugin);
     }
 
-    @EventHandler(priority = EventPriority.HIGHEST)
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     public void onChat(AsyncChatEvent event) {
         if (!plugin.isEnabled()) return;
         String raw = PlainTextComponentSerializer.plainText().serialize(event.message());
