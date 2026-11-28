@@ -58,6 +58,7 @@ final class HouseBuilder {
     private int navigationFailures;
     private long actorUnavailableSinceMillis;
     private boolean resumePending;
+    private boolean pausedForCombat;
     private int resumeAttempts;
     private long resumeGeneration;
 
@@ -247,6 +248,7 @@ final class HouseBuilder {
 
     private void failResume(String reason) {
         resumePending = false;
+        pausedForCombat = false;
         resumeAttempts = 0;
         resumeGeneration++;
         if (task != null) {
@@ -264,7 +266,49 @@ final class HouseBuilder {
     }
 
     boolean isBuilding() {
-        return task != null || resumePending;
+        return task != null || resumePending || pausedForCombat;
+    }
+
+    boolean isPausedForCombat() {
+        return pausedForCombat;
+    }
+
+    /** Pause construction without discarding the blueprint or its placement cursor. */
+    void pauseForCombat() {
+        if (!isBuilding() || pausedForCombat) return;
+        if (task != null) {
+            task.cancel();
+            task = null;
+        }
+        // Invalidate any in-flight chunk reload. It will be requested again when
+        // the danger has passed, avoiding a late callback restarting construction.
+        resumeGeneration++;
+        resumePending = false;
+        resumeAttempts = 0;
+        pausedForCombat = true;
+        actorUnavailableSinceMillis = 0L;
+        workStandPosition = null;
+        if (navigator != null) navigator.stop();
+    }
+
+    void resumeAfterCombat(Player bot) {
+        if (!pausedForCombat || bot == null || !bot.isOnline() || bot.isDead()) return;
+        if (base == null || base.getWorld() != bot.getWorld()) {
+            failResume("the bot returned in a different world from the saved construction");
+            return;
+        }
+        pausedForCombat = false;
+        actor = bot;
+        navigator = new AgentNavigator(actor, plugin.skills());
+        workStandPosition = null;
+        navigationFailures = 0;
+        actorUnavailableSinceMillis = 0L;
+        beginResumeChunkLoad();
+    }
+
+    /** Called after the replacement fake player has successfully spawned. */
+    void onBotRespawn(Player bot) {
+        if (pausedForCombat) resumeAfterCombat(bot);
     }
 
     boolean hasCompleted() {
@@ -429,11 +473,12 @@ final class HouseBuilder {
     }
 
     void cancel(boolean announce) {
-        boolean wasActive = task != null || resumePending;
+        boolean wasActive = task != null || resumePending || pausedForCombat;
         // Invalidate asynchronous chunk-load callbacks so a cancelled project
         // cannot unexpectedly restart itself after the user or planner stops it.
         resumeGeneration++;
         resumePending = false;
+        pausedForCombat = false;
         resumeAttempts = 0;
         if (task != null) {
             task.cancel();
@@ -735,6 +780,7 @@ final class HouseBuilder {
         task = null;
         resumeGeneration++;
         resumePending = false;
+        pausedForCombat = false;
         resumeAttempts = 0;
         actorUnavailableSinceMillis = 0L;
         if ("shelter".equals(projectType)) completed = true;
