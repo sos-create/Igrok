@@ -21,7 +21,7 @@ chat:
     enabled: true
     # A conversation remains open for this long after either side speaks.
     session-seconds: 180
-  # Bot answers five seconds after the last addressed or nearby message.
+  # A short delay lets the bot collect consecutive chat messages before replying.
   reply-delay-min-seconds: 5
   reply-delay-max-seconds: 5
   # Direct mentions work at any nearby-player count; solo nearby chat can start a conversation.\n  # Follow-up messages continue naturally during the ordinary-chat session.
