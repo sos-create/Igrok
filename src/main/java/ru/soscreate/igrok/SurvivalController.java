@@ -606,11 +606,16 @@ final class SurvivalController {
     }
 
     private boolean craftResult(Player bot, Material output) {
-        return craftMatching(bot, type -> type == output);
+        return craftRecipes(bot, recipeKnowledge.recipesFor(output), type -> type == output);
     }
 
     private boolean craftMatching(Player bot, java.util.function.Predicate<Material> wanted) {
-        for (Recipe recipe : recipeKnowledge.craftingRecipes()) {
+        return craftRecipes(bot, recipeKnowledge.craftingRecipes(), wanted);
+    }
+
+    private boolean craftRecipes(Player bot, Iterable<Recipe> recipes,
+                                 java.util.function.Predicate<Material> wanted) {
+        for (Recipe recipe : recipes) {
             ItemStack result = recipe.getResult();
             if (result == null || result.getType().isAir() || !wanted.test(result.getType())) continue;
             List<RecipeChoice> ingredients = ingredientChoices(recipe);
@@ -841,19 +846,29 @@ final class SurvivalController {
     }
 
     private Material findSmeltable(Player bot) {
-        Material[] priority = {
+        Material[] foodPriority = {
                 Material.BEEF, Material.PORKCHOP, Material.MUTTON,
                 Material.CHICKEN, Material.RABBIT, Material.COD,
-                Material.SALMON, Material.POTATO,
-                Material.IRON_ORE, Material.DEEPSLATE_IRON_ORE,
-                Material.COPPER_ORE, Material.DEEPSLATE_COPPER_ORE,
-                Material.GOLD_ORE, Material.DEEPSLATE_GOLD_ORE
+                Material.SALMON, Material.POTATO
         };
-        for (Material material : priority) if (count(bot, material) > 0) return material;
-        if (count(bot, Material.RAW_IRON) > 0) return Material.RAW_IRON;
+        for (Material material : foodPriority) {
+            if (count(bot, material) > 0) return material;
+        }
 
-        // Charcoal is a valid coal substitute. Feed ordinary logs into the
-        // furnace when ores and food are not waiting to be smelted.
+        // Cover every vanilla ore variant exposed by the running server version,
+        // including raw gold/copper/iron and future deepslate variants.
+        for (Material material : Material.values()) {
+            if (count(bot, material) <= 0) continue;
+            String name = material.name();
+            if (name.equals("RAW_IRON") || name.equals("RAW_GOLD") || name.equals("RAW_COPPER")
+                    || name.equals("ANCIENT_DEBRIS") || name.endsWith("_IRON_ORE")
+                    || name.endsWith("_GOLD_ORE") || name.endsWith("_COPPER_ORE")
+                    || name.equals("NETHER_GOLD_ORE")) {
+                return material;
+            }
+        }
+
+        // Charcoal is a coal substitute. Logs are used only after food and ores.
         for (Material material : Material.values()) {
             String name = material.name();
             if ((name.endsWith("_LOG") || name.endsWith("_WOOD"))
