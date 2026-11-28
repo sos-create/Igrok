@@ -1905,6 +1905,9 @@ final class AgentBrain {
 
     void pauseByPlayer() {
         stop();
+        // The builder has its own repeating task and navigator; pausing only the
+        // brain would leave construction running in the background.
+        if (plugin.houseBuilder().isBuilding()) plugin.houseBuilder().cancel(false);
         pausedByPlayer = true;
         state = "Жду на месте";
     }
