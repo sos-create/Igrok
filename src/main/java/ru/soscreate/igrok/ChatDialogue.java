@@ -38,6 +38,7 @@ final class ChatDialogue implements Listener {
     private final Map<UUID, Long> lastIncomingAt = new HashMap<>();
     private final Map<UUID, PendingMessage> pendingMessages = new HashMap<>();
     private final Map<UUID, Long> lastBotQuestionAt = new HashMap<>();
+    private final Map<UUID, Long> lastConversationAt = new HashMap<>();
     private final Map<UUID, CognitiveNetwork.Analysis> pendingThoughts = new HashMap<>();
     private final DialogueComposer composer;
 
@@ -77,7 +78,10 @@ final class ChatDialogue implements Listener {
         long questionAt = lastBotQuestionAt.getOrDefault(senderId, 0L);
         boolean invitationReply = plugin.socialLife() != null
                 && plugin.socialLife().expectsReply(senderId, lower);
-        boolean continuation = invitationReply || (questionAt > 0L && now - questionAt <= followUpMillis
+        boolean activeConversation = isConversationSessionActive(senderId, now);
+        boolean ordinaryStart = canStartOrdinaryChat(sender);
+        boolean continuation = invitationReply || activeConversation
+                || (questionAt > 0L && now - questionAt <= followUpMillis
                 && isConversationalFollowUp(lower));
         if (questionAt > 0L && now - questionAt > followUpMillis) {
             lastBotQuestionAt.remove(senderId);
@@ -96,7 +100,7 @@ final class ChatDialogue implements Listener {
             lastIncomingAt.keySet().retainAll(lastIncomingFingerprint.keySet());
         }
 
-        if (addressed && sender != null) {
+        if (addressed && sender != null && isWithinListenRadius(sender)) {
             plugin.brain().onPlayerAddressed(sender);
             if (plugin.controller() != null && plugin.controller().isSpawned()) {
                 plugin.skills().gain("social", 1);
@@ -108,16 +112,22 @@ final class ChatDialogue implements Listener {
             }
         }
 
+        if (addressed || continuation || ordinaryStart) lastConversationAt.put(senderId, now);
+        if (lastConversationAt.size() > 512) {
+            lastConversationAt.entrySet().removeIf(entry -> now - entry.getValue() > 600_000L);
+        }
+
         PendingMessage pending = pendingMessages.get(senderId);
         if (pending != null) {
-            // Ignore unrelated public chat. Only addressed messages or valid replies
-            // may update/reschedule the bot's pending response.
-            if (!addressed && !continuation) return;
+            // In ordinary-chat mode only a lone nearby player may open a session.
+            // Once opened, the same player can continue naturally without repeating
+            // the bot's name. Other players' public chat never hijacks that session.
+            if (!addressed && !continuation && !ordinaryStart) return;
             pending.message = rawMessage;
             scheduleReply(senderId, pending);
             return;
         }
-        if (!addressed && !continuation) return;
+        if (!addressed && !continuation && !ordinaryStart) return;
 
         PendingMessage created = new PendingMessage(rawMessage);
         pendingMessages.put(senderId, created);
@@ -156,6 +166,47 @@ final class ChatDialogue implements Listener {
         lastReply.clear();
         lastIncomingFingerprint.clear();
         lastIncomingAt.clear();
+        lastConversationAt.clear();
+    }
+
+    private boolean isConversationSessionActive(UUID playerId, long now) {
+        long seconds = Math.max(15L,
+                plugin.getConfig().getLong("chat.ordinary-chat.session-seconds", 180L));
+        long last = lastConversationAt.getOrDefault(playerId, 0L);
+        if (last <= 0L) return false;
+        if (now - last <= seconds * 1000L) return true;
+        lastConversationAt.remove(playerId);
+        return false;
+    }
+
+    private boolean canStartOrdinaryChat(Player sender) {
+        if (sender == null || !plugin.getConfig().getBoolean("chat.ordinary-chat.enabled", true)) return false;
+        Player bot = plugin.controller() == null ? null : plugin.controller().bukkitPlayer();
+        if (bot == null || !bot.isOnline() || sender.getWorld() != bot.getWorld()
+                || !isWithinListenRadius(sender)) return false;
+
+        double radius = Math.max(4.0, plugin.getConfig().getDouble("chat.listen-radius", 16.0));
+        double radiusSquared = radius * radius;
+        int nearbyPlayers = 0;
+        boolean senderIsNearby = false;
+        for (Player online : Bukkit.getOnlinePlayers()) {
+            if (online.getUniqueId().equals(bot.getUniqueId())
+                    || online.getGameMode() == org.bukkit.GameMode.SPECTATOR
+                    || online.getWorld() != bot.getWorld()
+                    || online.getLocation().distanceSquared(bot.getLocation()) > radiusSquared) continue;
+            nearbyPlayers++;
+            if (online.getUniqueId().equals(sender.getUniqueId())) senderIsNearby = true;
+            if (nearbyPlayers > 1) return false;
+        }
+        return nearbyPlayers == 1 && senderIsNearby;
+    }
+
+    private boolean isWithinListenRadius(Player sender) {
+        if (sender == null || plugin.controller() == null) return false;
+        Player bot = plugin.controller().bukkitPlayer();
+        if (bot == null || sender.getWorld() != bot.getWorld()) return false;
+        double radius = Math.max(4.0, plugin.getConfig().getDouble("chat.listen-radius", 16.0));
+        return sender.getLocation().distanceSquared(bot.getLocation()) <= radius * radius;
     }
 
     private String fingerprint(String message) {
@@ -187,6 +238,7 @@ final class ChatDialogue implements Listener {
         String message = rawMessage.toLowerCase(Locale.ROOT);
         boolean invitationReply = plugin.socialLife() != null
                 && plugin.socialLife().expectsReply(senderId, message);
+        boolean activeConversation = isConversationSessionActive(senderId, System.currentTimeMillis());
         double radius = Math.max(4.0, plugin.getConfig().getDouble("chat.listen-radius", 16.0));
         if (sender.getLocation().distanceSquared(bot.getLocation()) > radius * radius
                 && !invitationReply) return;
@@ -194,11 +246,12 @@ final class ChatDialogue implements Listener {
         long followUpMillis = Math.max(10L,
                 plugin.getConfig().getLong("chat.follow-up-window-seconds", 90)) * 1000L;
         long questionAt = lastBotQuestionAt.getOrDefault(senderId, 0L);
-        boolean continuation = invitationReply || (questionAt > 0L
+        boolean continuation = invitationReply || activeConversation || (questionAt > 0L
                 && System.currentTimeMillis() - questionAt <= followUpMillis
                 && isConversationalFollowUp(message));
         if (!addressed && !continuation) return;
         if (continuation) lastBotQuestionAt.remove(senderId);
+        lastConversationAt.put(senderId, System.currentTimeMillis());
 
         long now = System.currentTimeMillis();
         if (pendingThoughts.size() > 512) pendingThoughts.keySet().removeIf(id -> Bukkit.getPlayer(id) == null);
@@ -305,6 +358,7 @@ final class ChatDialogue implements Listener {
 
     void recordBotReply(UUID playerId, String response) {
         if (playerId == null) return;
+        lastConversationAt.put(playerId, System.currentTimeMillis());
         if (response != null && response.contains("?")) {
             lastBotQuestionAt.put(playerId, System.currentTimeMillis());
         } else {

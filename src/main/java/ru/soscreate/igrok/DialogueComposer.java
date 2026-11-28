@@ -10,11 +10,13 @@ import java.util.concurrent.ThreadLocalRandom;
 /** Builds varied, context-aware replies from intent, memory, personality and world state. */
 final class DialogueComposer {
     private final IgrokPlugin plugin;
+    private final CompanionDialogue companion;
     private final Map<UUID, String> previousReplyBases = new LinkedHashMap<>(16, 0.75F, true);
     private final Map<UUID, Integer> repeatedReplyCounts = new LinkedHashMap<>(16, 0.75F, true);
 
     DialogueComposer(IgrokPlugin plugin) {
         this.plugin = plugin;
+        this.companion = new CompanionDialogue(plugin);
     }
 
     String reply(Player player, String originalMessage, CognitiveNetwork.Analysis thought) {
@@ -47,6 +49,11 @@ final class DialogueComposer {
                 "посмотри вокруг", "осмотрись", "какой блок", "насколько далеко",
                 "что находится рядом")) {
             return avoidImmediateRepeat(id, plugin.brain().worldObservation());
+        }
+
+        String companionResponse = companion.reply(player, originalMessage);
+        if (companionResponse != null) {
+            return avoidImmediateRepeat(id, companionResponse);
         }
 
         String response = switch (thought.intent()) {

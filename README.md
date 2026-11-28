@@ -1,4 +1,4 @@
-# Igrok 0.9.47
+# Igrok 0.9.48
 
 Paper 1.21.4 server-side player agent (Java 21). Igrok is a lightweight autonomous survival agent built around a fake server-side Player, bounded pathfinding, utility-based goals, associative cognition and compact persistent memory.
 
@@ -47,8 +47,9 @@ This is an algorithmic simulation. It does not provide human-level intelligence,
 
 ## Chat and interaction
 
-- Igrok replies when addressed by its configured name or Игрок; recent direct conversation can continue without repeating the name.
-- Unrelated player-to-player chat is ignored.
+- Igrok replies when addressed by its configured name or Игрок.
+- Ordinary chat can start naturally when only one non-spectator player is within the listening radius; the same player can continue the conversation for the configured session window without repeating the bot name.
+- When several players are nearby, Igrok does not intrude on their conversation unless directly addressed or already in a conversation with that player.
 - Player requests are expressed in ordinary chat; the bot may accept or refuse them.
 - Igrok also starts conversations on his own: comments are selected from nearby threats, weather, night, hunger, exploration and the relationship with the player.
 - He can initiate a food request or invite a nearby player to explore. A clear yes/no answer is linked to that invitation; accepting an exploration invite makes him accompany the player while survival and danger rules remain in control.
@@ -91,3 +92,12 @@ Repeated identical dialogue replies are replaced with a distinct non-question re
 - A food invitation no longer increases trust or social skill before the food is actually received; gift pickup records the real interaction.
 - Gift attribution uses the dropped item's thrower UUID and no longer rejects a genuine gift just because the giver walked away before pickup.
 - When rain stops or the rain-shelter routine is disabled, it releases the navigator so the autonomous planner regains full movement control.
+
+## Companion dialogue and ordinary chat (0.9.48)
+
+- The existing parser, associative cognitive network, stable personality, social reputation and compact conversation memory remain the core of the bot's mind; the new dialogue layer is integrated with them rather than replacing them.
+- Players can speak naturally in the normal Minecraft chat. No slash commands, dialogue wheel, special prefix or external model service is required.
+- The conversation layer understands additional personal topics: home and shelter, rest and sleep, hunger, danger and fear, gifts, trust and friendship, remembered conversations, plans, interests and skill development.
+- Replies use the bot's current survival state and nearby world conditions where applicable. For example, answers about hunger use its actual food level and inventory; answers about danger inspect nearby hostile mobs.
+- Conversation wording is newly written for Igrok. The social interaction categories are reimplemented independently; Borya's source code, assets and dialogue lines are not copied.
+- This remains an adaptive algorithmic dialogue system, not a pretrained language model or human consciousness.
