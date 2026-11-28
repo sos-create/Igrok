@@ -291,6 +291,7 @@ final class SocialLife implements Listener {
         Player recipient = Bukkit.getPlayer(playerId);
         if (recipient != null && recipient.isOnline()) {
             recipient.sendMessage("§6" + botName + "§7: §f" + message);
+            if (plugin.dialogue() != null) plugin.dialogue().recordBotReply(playerId, message);
         }
     }
 
