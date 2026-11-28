@@ -312,6 +312,16 @@ final class SurvivalController {
         // Do not keep the SLEEP goal forever when a bed is behind an
         // unreachable wall or the bounded path search cannot reach it.
         if (!navigator.moveTo(knownBed)) {
+            // A* reports completion and path failure through the same boolean.
+            // Reaching a nearby standable block can still leave the bed slightly
+            // farther than the early distance threshold, so make one final
+            // legitimate sleep attempt before discarding this bed as unreachable.
+            double finalDistance = bot.getLocation()
+                    .distanceSquared(knownBed.clone().add(0.5, 0.0, 0.5));
+            if (finalDistance <= 12.25) {
+                navigator.stop();
+                if (bot.sleep(knownBed, false)) return true;
+            }
             knownBed = null;
             nextBedScanTick = tick + 200;
             return false;
@@ -987,26 +997,56 @@ final class SurvivalController {
     }
 
     private Block findNearbyProcessor(Player bot, int radius) {
-        Material preferred = preferredProcessor(bot);
-        Block result = findNearbyBlock(bot, preferred, radius);
-        if (result != null) return result;
+        boolean foodReady = hasRawFood(bot);
+        boolean oreReady = hasRawOre(bot);
+
+        // Finish work already started in a station before choosing another one.
+        // An empty but still-burning smoker must not be selected for iron ore (and
+        // an empty blast furnace must not be selected to cook meat).
         for (Material type : new Material[]{Material.FURNACE, Material.BLAST_FURNACE, Material.SMOKER}) {
-            if (type == preferred) continue;
-            result = findNearbyBlock(bot, type, radius);
+            Block candidate = findNearbyBlock(bot, type, radius);
+            if (candidate == null) continue;
+            BlockState state = candidate.getState();
+            if (!(state instanceof Furnace furnace)) continue;
+            org.bukkit.inventory.FurnaceInventory inventory = furnace.getInventory();
+            if (hasItem(inventory.getResult())) return candidate;
+            ItemStack input = inventory.getSmelting();
+            if (hasItem(input) && canStationSmelt(candidate.getType(), input.getType())) return candidate;
+            if (!hasItem(input) && furnace.getBurnTime() > 0
+                    && processorCanHandle(candidate.getType(), foodReady, oreReady)) {
+                return candidate;
+            }
+        }
+
+        Material[] preference = foodReady
+                ? new Material[]{Material.SMOKER, Material.FURNACE}
+                : oreReady
+                    ? new Material[]{Material.BLAST_FURNACE, Material.FURNACE}
+                    : new Material[]{Material.FURNACE};
+        for (Material type : preference) {
+            Block result = findNearbyBlock(bot, type, radius);
             if (result != null) return result;
         }
         return null;
     }
 
-    /** Choose a station with a bounded inventory scan, without iterating all Materials. */
-    private Material preferredProcessor(Player bot) {
+    private boolean processorCanHandle(Material station, boolean foodReady, boolean oreReady) {
+        if (station == Material.FURNACE) return foodReady || oreReady;
+        if (station == Material.SMOKER) return foodReady;
+        if (station == Material.BLAST_FURNACE) return oreReady;
+        return false;
+    }
+
+    private boolean hasRawFood(Player bot) {
         Material[] foods = {
                 Material.BEEF, Material.PORKCHOP, Material.MUTTON, Material.CHICKEN,
                 Material.RABBIT, Material.COD, Material.SALMON, Material.POTATO
         };
-        for (Material food : foods) {
-            if (count(bot, food) > 0) return Material.SMOKER;
-        }
+        for (Material food : foods) if (count(bot, food) > 0) return true;
+        return false;
+    }
+
+    private boolean hasRawOre(Player bot) {
         for (int slot = 0; slot < 36; slot++) {
             ItemStack item = bot.getInventory().getItem(slot);
             if (item == null || item.getType().isAir()) continue;
@@ -1014,9 +1054,13 @@ final class SurvivalController {
             if (name.equals("RAW_IRON") || name.equals("RAW_GOLD") || name.equals("RAW_COPPER")
                     || name.equals("ANCIENT_DEBRIS") || name.endsWith("_IRON_ORE")
                     || name.endsWith("_GOLD_ORE") || name.endsWith("_COPPER_ORE")
-                    || name.equals("NETHER_GOLD_ORE")) return Material.BLAST_FURNACE;
+                    || name.equals("NETHER_GOLD_ORE")) return true;
         }
-        return Material.FURNACE;
+        return false;
+    }
+
+    private boolean hasItem(ItemStack item) {
+        return item != null && !item.getType().isAir() && item.getAmount() > 0;
     }
 
     private void maintainFurnace(Player bot) {
@@ -1041,7 +1085,7 @@ final class SurvivalController {
         ItemStack input = inventory.getSmelting();
         if (input == null || input.getType().isAir()) {
             Material smeltable = findSmeltable(bot);
-            if (smeltable != null) {
+            if (smeltable != null && canStationSmelt(block.getType(), smeltable)) {
                 ItemStack one = new ItemStack(smeltable, 1);
                 if (removeOne(bot, smeltable)) inventory.setSmelting(one);
             }
@@ -1065,6 +1109,19 @@ final class SurvivalController {
             if (fuelType != null && removeOne(bot, fuelType)) inventory.setFuel(new ItemStack(fuelType, 1));
         }
         furnace.update(true, false);
+    }
+
+    private boolean canStationSmelt(Material station, Material input) {
+        if (station == Material.FURNACE) return true;
+        String name = input.name();
+        boolean food = isRawFood(name) || name.equals("POTATO");
+        boolean ore = name.equals("RAW_IRON") || name.equals("RAW_GOLD") || name.equals("RAW_COPPER")
+                || name.equals("ANCIENT_DEBRIS") || name.endsWith("_IRON_ORE")
+                || name.endsWith("_GOLD_ORE") || name.endsWith("_COPPER_ORE")
+                || name.equals("NETHER_GOLD_ORE");
+        if (station == Material.SMOKER) return food;
+        if (station == Material.BLAST_FURNACE) return ore;
+        return false;
     }
 
     private boolean woodReservedForProject(Player bot) {

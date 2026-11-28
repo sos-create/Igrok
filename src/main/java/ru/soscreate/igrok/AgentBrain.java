@@ -360,22 +360,46 @@ final class AgentBrain {
             return;
         }
 
-        if (plugin.houseBuilder().isBuilding()) {
-            // HouseBuilder controls movement with its own navigator. Stopping the
-            // normal navigator every tick used to cancel every builder movement.
-            if (!builderWasActive) navigator.stop();
-            builderWasActive = true;
-            state = "Строю дом";
-            return;
+        HouseBuilder builder = plugin.houseBuilder();
+        if (builder.isBuilding()) {
+            if (builder.isPausedForCombat()) {
+                boolean nearbyMonsterThreat = threat != null && threat.isValid() && !threat.isDead()
+                        && threat.getWorld() == bot.getWorld()
+                        && threat.getLocation().distanceSquared(bot.getLocation()) <= 14.0 * 14.0;
+                boolean combatStillActive = defensivePlayerId != null || nearbyMonsterThreat;
+                if (combatStillActive) {
+                    // The builder is suspended with its blueprint/cursor intact.
+                    // Let the normal combat controller move and defend the avatar.
+                    builderWasActive = true;
+                } else {
+                    builder.resumeAfterCombat(bot);
+                    if (builder.isBuilding()) {
+                        builderWasActive = true;
+                        state = "Возобновляю строительство";
+                        return;
+                    }
+                }
+            } else {
+                // HouseBuilder controls movement with its own navigator. Do not
+                // let the regular brain overwrite the builder's velocity.
+                if (!builderWasActive) navigator.stop();
+                builderWasActive = true;
+                state = "Строю дом";
+                return;
+            }
         }
-        if (builderWasActive) {
+        if (builderWasActive && !builder.isBuilding()) {
             builderWasActive = false;
             navigator.stop();
         }
 
-        // Rain shelter is a temporary life routine: preserve the current goal and
-        // keep its progress watchdog from treating weather avoidance as a stall.
-        if (weatherShelter.tick(bot, navigator, tickCounter)) {
+        // Rain shelter is a temporary life routine, but it must not steal control
+        // from an active combat response or player-defense retreat.
+        boolean activeMonsterThreat = threat != null && threat.isValid() && !threat.isDead()
+                && threat.getWorld() == bot.getWorld()
+                && threat.getLocation().distanceSquared(bot.getLocation()) <= 14.0 * 14.0;
+        if (!activeMonsterThreat && defensivePlayerId == null
+                && weatherShelter.tick(bot, navigator, tickCounter)) {
             lastTaskPosition = bot.getLocation().clone();
             lastTaskProgressTick = tickCounter;
             lastTaskMinedCount = minedThisTask;
@@ -722,6 +746,9 @@ final class AgentBrain {
         if (bot == null || !bot.isOnline() || attacker.getWorld() != bot.getWorld()) return;
         ensureNavigator(bot);
 
+        // Construction yields to immediate danger, but its blueprint and cursor
+        // remain saved so the bot can continue after the fight.
+        if (plugin.houseBuilder().isBuilding()) plugin.houseBuilder().pauseForCombat();
         threat = attacker;
         defensivePlayerId = null;
         defensiveDestination = null;
@@ -751,7 +778,7 @@ final class AgentBrain {
             return false;
         }
 
-        if (plugin.houseBuilder().isBuilding()) plugin.houseBuilder().cancel(false);
+        if (plugin.houseBuilder().isBuilding()) plugin.houseBuilder().pauseForCombat();
         ensureNavigator(bot);
 
         if (defensiveDestination == null && tickCounter >= nextDefensiveMoveTick) {

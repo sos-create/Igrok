@@ -27,6 +27,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.HashSet;
 import java.util.Set;
+import java.util.concurrent.CompletableFuture;
 
 /**
  * Resource-aware shelter builder.
@@ -56,6 +57,12 @@ final class HouseBuilder {
     private Location workStandPosition;
     private int navigationFailures;
     private long actorUnavailableSinceMillis;
+    private boolean resumePending;
+    private boolean pausedForCombat;
+    private int resumeAttempts;
+    private long resumeGeneration;
+
+    private record ChunkCoordinate(int x, int z) { }
 
     HouseBuilder(IgrokPlugin plugin) {
         this.plugin = plugin;
@@ -88,22 +95,28 @@ final class HouseBuilder {
         completedProjects.clear();
         completedProjects.addAll(data.getStringList("builder.completed-projects"));
         projectType = data.getString("builder.project-type", "shelter");
-        if (!Set.of("shelter", "watchtower", "workshop", "piston_lab").contains(projectType)) projectType = "shelter";
+        if (!Set.of("shelter", "watchtower", "workshop", "piston_lab").contains(projectType)) {
+            projectType = "shelter";
+        }
         if (!data.getBoolean("builder.active", false) || isBuilding()) return;
+
         World world = Bukkit.getWorld(data.getString("builder.world", ""));
-        Player bot = plugin.controller().bukkitPlayer();
-        if (world == null || bot == null) return;
-        base = new Location(world, data.getDouble("builder.x"),
-                data.getDouble("builder.y"), data.getDouble("builder.z"));
-        if (!world.isChunkLoaded(base.getBlockX() >> 4, base.getBlockZ() >> 4)) {
-            plugin.getLogger().warning("Igrok cannot resume building: saved chunk is not loaded.");
+        if (world == null) {
+            plugin.getLogger().warning("Igrok could not resume its saved build: the original world is not loaded.");
             return;
         }
-        actor = bot;
-        navigator = new AgentNavigator(actor, plugin.skills());
-        workStandPosition = null;
-        navigationFailures = 0;
-        actorUnavailableSinceMillis = 0L;
+
+        base = new Location(world, data.getDouble("builder.x"),
+                data.getDouble("builder.y"), data.getDouble("builder.z"));
+        if (base.getBlockY() <= world.getMinHeight()
+                || base.getBlockY() + 6 >= world.getMaxHeight()
+                || !world.getWorldBorder().isInside(base)) {
+            plugin.getLogger().warning("Igrok discarded an invalid saved build location outside the usable world area.");
+            base = null;
+            data.set("builder.active", false);
+            return;
+        }
+
         wallMaterial = materialOr(data.getString("builder.wall-material", ""), Material.OAK_PLANKS);
         glassMaterial = optionalMaterial(data.getString("builder.glass-material", ""));
         doorMaterial = optionalMaterial(data.getString("builder.door-material", ""));
@@ -111,13 +124,197 @@ final class HouseBuilder {
         createProjectPlan(projectType);
         cursor = Math.max(0, Math.min(plan.size(), data.getInt("builder.cursor", 0)));
         placed = Math.max(0, data.getInt("builder.placed", cursor));
-        int interval = Math.max(1, plugin.getConfig().getInt("building.block-interval-ticks", 2));
-        task = Bukkit.getScheduler().runTaskTimer(plugin, this::runPlacementSafely, 20L, interval);
+        workStandPosition = null;
+        navigationFailures = 0;
+        actorUnavailableSinceMillis = 0L;
+
+        if (cursor >= plan.size()) {
+            finish();
+            return;
+        }
+
+        // The bot's spawn chunk is not necessarily the chunk where the unfinished
+        // build stands. Keep the project marked active while only its small footprint
+        // and the surrounding 4-block placement radius are loaded asynchronously.
+        beginResumeChunkLoad();
+    }
+
+    private void beginResumeChunkLoad() {
+        if (resumePending || base == null || task == null && plan.isEmpty()) return;
+        resumePending = true;
+        resumeAttempts = 0;
+        long generation = ++resumeGeneration;
+        requestResumeChunks(generation);
+        // An async provider or disk stall must not leave the planner blocked forever.
+        Bukkit.getScheduler().runTaskLater(plugin, () -> {
+            if (resumePending && generation == resumeGeneration) {
+                failResume("chunk recovery timed out after 60 seconds");
+            }
+        }, 1200L);
+    }
+
+    private void requestResumeChunks(long generation) {
+        if (!resumePending || generation != resumeGeneration || !plugin.isEnabled() || base == null) return;
+
+        World world = base.getWorld();
+        if (world == null) {
+            failResume("the saved build world is no longer available");
+            return;
+        }
+
+        int minX = Integer.MAX_VALUE;
+        int maxX = Integer.MIN_VALUE;
+        int minZ = Integer.MAX_VALUE;
+        int maxZ = Integer.MIN_VALUE;
+        for (int i = cursor; i < plan.size(); i++) {
+            BlockStep step = plan.get(i);
+            minX = Math.min(minX, base.getBlockX() + step.x());
+            maxX = Math.max(maxX, base.getBlockX() + step.x());
+            minZ = Math.min(minZ, base.getBlockZ() + step.z());
+            maxZ = Math.max(maxZ, base.getBlockZ() + step.z());
+        }
+        if (minX == Integer.MAX_VALUE) {
+            completeResume(generation, Set.of(), null);
+            return;
+        }
+
+        int minChunkX = (minX - 4) >> 4;
+        int maxChunkX = (maxX + 4) >> 4;
+        int minChunkZ = (minZ - 4) >> 4;
+        int maxChunkZ = (maxZ + 4) >> 4;
+        Set<ChunkCoordinate> required = new HashSet<>();
+        for (int chunkX = minChunkX; chunkX <= maxChunkX; chunkX++) {
+            for (int chunkZ = minChunkZ; chunkZ <= maxChunkZ; chunkZ++) {
+                required.add(new ChunkCoordinate(chunkX, chunkZ));
+            }
+        }
+
+        // Current blueprints are deliberately compact. Refuse an unexpected
+        // oversized/corrupt footprint instead of flooding the server with loads.
+        if (required.isEmpty() || required.size() > 16) {
+            failResume("the saved build footprint exceeded the safe chunk-load limit");
+            return;
+        }
+
+        // Load chunks one at a time. This is slower than a burst, but recovery
+        // cannot create a sudden disk/CPU spike on an already busy server.
+        CompletableFuture<Void> loadChain = CompletableFuture.completedFuture(null);
+        for (ChunkCoordinate coordinate : required) {
+            loadChain = loadChain.thenCompose(ignored ->
+                    world.getChunkAtAsync(coordinate.x(), coordinate.z(), true)
+                            .thenApply(chunk -> (Void) null));
+        }
+
+        loadChain.whenComplete((ignored, error) -> {
+            if (!plugin.isEnabled()) return;
+            try {
+                Bukkit.getScheduler().runTask(plugin,
+                        () -> completeResume(generation, required, error));
+            } catch (RuntimeException ignoredSchedulingDuringShutdown) {
+                // Server shutdown invalidates pending callbacks; saved state remains on disk.
+            }
+        });
+    }
+
+    private void completeResume(long generation, Set<ChunkCoordinate> required, Throwable loadError) {
+        if (!resumePending || generation != resumeGeneration || !plugin.isEnabled()) return;
+
+        World world = base == null ? null : base.getWorld();
+        Player bot = plugin.controller().bukkitPlayer();
+        boolean chunksReady = world != null && loadError == null
+                && required.stream().allMatch(chunk -> world.isChunkLoaded(chunk.x(), chunk.z()));
+        boolean botReady = bot != null && bot.isOnline() && !bot.isDead()
+                && world != null && bot.getWorld().equals(world);
+
+        if (!chunksReady || !botReady) {
+            resumeAttempts++;
+            if (resumeAttempts <= 10) {
+                Bukkit.getScheduler().runTaskLater(plugin, () -> requestResumeChunks(generation), 40L);
+            } else {
+                failResume(!chunksReady
+                        ? "the saved build chunks could not be loaded after several attempts"
+                        : "the bot did not return to the saved build world");
+            }
+            return;
+        }
+
+        actor = bot;
+        navigator = new AgentNavigator(actor, plugin.skills());
+        workStandPosition = null;
+        navigationFailures = 0;
+        actorUnavailableSinceMillis = 0L;
+        resumePending = false;
+        resumeAttempts = 0;
+        if (task == null) {
+            int interval = Math.max(1, plugin.getConfig().getInt("building.block-interval-ticks", 2));
+            task = Bukkit.getScheduler().runTaskTimer(plugin, this::runPlacementSafely, 20L, interval);
+        }
         say("Я продолжил строительство с того места, где остановился.");
     }
 
+    private void failResume(String reason) {
+        resumePending = false;
+        pausedForCombat = false;
+        resumeAttempts = 0;
+        resumeGeneration++;
+        if (task != null) {
+            task.cancel();
+            task = null;
+        }
+        plan.clear();
+        workStandPosition = null;
+        actorUnavailableSinceMillis = 0L;
+        if (navigator != null) navigator.stop();
+        navigator = null;
+        actor = null;
+        plugin.getLogger().warning("Igrok could not resume its saved build: " + reason
+                + ". The already placed blocks were left untouched.");
+    }
+
     boolean isBuilding() {
-        return task != null;
+        return task != null || resumePending || pausedForCombat;
+    }
+
+    boolean isPausedForCombat() {
+        return pausedForCombat;
+    }
+
+    /** Pause construction without discarding the blueprint or its placement cursor. */
+    void pauseForCombat() {
+        if (!isBuilding() || pausedForCombat) return;
+        if (task != null) {
+            task.cancel();
+            task = null;
+        }
+        // Invalidate any in-flight chunk reload. It will be requested again when
+        // the danger has passed, avoiding a late callback restarting construction.
+        resumeGeneration++;
+        resumePending = false;
+        resumeAttempts = 0;
+        pausedForCombat = true;
+        actorUnavailableSinceMillis = 0L;
+        workStandPosition = null;
+        if (navigator != null) navigator.stop();
+    }
+
+    void resumeAfterCombat(Player bot) {
+        if (!pausedForCombat || bot == null || !bot.isOnline() || bot.isDead()) return;
+        if (base == null || base.getWorld() != bot.getWorld()) {
+            failResume("the bot returned in a different world from the saved construction");
+            return;
+        }
+        pausedForCombat = false;
+        actor = bot;
+        navigator = new AgentNavigator(actor, plugin.skills());
+        workStandPosition = null;
+        navigationFailures = 0;
+        actorUnavailableSinceMillis = 0L;
+        beginResumeChunkLoad();
+    }
+
+    /** Called after the replacement fake player has successfully spawned. */
+    void onBotRespawn(Player bot) {
+        if (pausedForCombat) resumeAfterCombat(bot);
     }
 
     boolean hasCompleted() {
@@ -282,13 +479,19 @@ final class HouseBuilder {
     }
 
     void cancel(boolean announce) {
-        if (task == null) {
-            actorUnavailableSinceMillis = 0L;
-            return;
+        boolean wasActive = task != null || resumePending || pausedForCombat;
+        // Invalidate asynchronous chunk-load callbacks so a cancelled project
+        // cannot unexpectedly restart itself after the user or planner stops it.
+        resumeGeneration++;
+        resumePending = false;
+        pausedForCombat = false;
+        resumeAttempts = 0;
+        if (task != null) {
+            task.cancel();
+            task = null;
         }
-        task.cancel();
-        task = null;
         actorUnavailableSinceMillis = 0L;
+        if (!wasActive) return;
         plan.clear();
         workStandPosition = null;
         if (navigator != null) navigator.stop();
@@ -351,6 +554,9 @@ final class HouseBuilder {
                 task = null;
             }
             actorUnavailableSinceMillis = 0L;
+            resumeGeneration++;
+            resumePending = false;
+            resumeAttempts = 0;
             if (navigator != null) navigator.stop();
             plan.clear();
             workStandPosition = null;
@@ -358,7 +564,7 @@ final class HouseBuilder {
     }
 
     private void placeNextBlock() {
-        if (task == null) return;
+        if (task == null || resumePending) return;
         if (cursor >= plan.size()) {
             finish();
             return;
@@ -381,6 +587,8 @@ final class HouseBuilder {
             navigator = new AgentNavigator(actor, plugin.skills());
             workStandPosition = null;
             navigationFailures = 0;
+            beginResumeChunkLoad();
+            return;
         }
         actorUnavailableSinceMillis = 0L;
 
@@ -399,7 +607,9 @@ final class HouseBuilder {
         int y = base.getBlockY() + step.y();
         int z = base.getBlockZ() + step.z();
         if (!world.isChunkLoaded(x >> 4, z >> 4)) {
-            stopForSafety("Строительство остановлено: следующий участок мира не загружен.");
+            // Chunk tickets can disappear after long travel or a respawn. Reload
+            // only this compact project's footprint asynchronously, then continue.
+            beginResumeChunkLoad();
             return;
         }
         Block target = world.getBlockAt(x, y, z);
@@ -574,6 +784,10 @@ final class HouseBuilder {
     private void finish() {
         if (task != null) task.cancel();
         task = null;
+        resumeGeneration++;
+        resumePending = false;
+        pausedForCombat = false;
+        resumeAttempts = 0;
         actorUnavailableSinceMillis = 0L;
         if ("shelter".equals(projectType)) completed = true;
         else completedProjects.add(projectType);

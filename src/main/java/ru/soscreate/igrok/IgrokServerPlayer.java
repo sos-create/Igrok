@@ -22,8 +22,6 @@ final class IgrokServerPlayer extends ServerPlayer {
         this.connection = fakeListener;
     }
 
-    private double fallStartY = Double.NaN;
-
     @Override
     public void tick() {
         if (isRemoved()) return;
@@ -36,16 +34,14 @@ final class IgrokServerPlayer extends ServerPlayer {
         // doTick() from ServerGamePacketListenerImpl.tickPlayer(). Igrok has no
         // registered client socket, so that call never happens for this fake player.
         // Calling doTick() here once per world tick gives it normal gravity, collisions,
-        // movement, item pickup and hunger without the network listener snap-back.
-        boolean groundedBefore = getBukkitEntity().isOnGround();
-        double yBefore = getY();
-        // A real player can move sideways while continuing to look at a target.
-        // Vanilla's no-client movement step otherwise overwrites yaw/head/body with
-        // the velocity direction every tick, making Igrok turn for only one frame.
+        // movement, fall damage, item pickup and hunger without network snap-back.
+        // Fall damage is already processed by vanilla Entity.checkFallDamage(); do not
+        // call causeFallDamage() again here or hard landings would deal damage twice.
+        // Preserve independent body/head yaw while vanilla physics applies movement.
         float intendedYaw = getYRot();
         float intendedPitch = getXRot();
         float intendedHeadYaw = getYHeadRot();
-        float intendedBodyYaw = intendedYaw;
+        float intendedBodyYaw = yBodyRot;
         doTick();
         if (isRemoved() || !isAlive()) return;
 
@@ -53,30 +49,6 @@ final class IgrokServerPlayer extends ServerPlayer {
         setXRot(intendedPitch);
         setYHeadRot(intendedHeadYaw);
         setYBodyRot(intendedBodyYaw);
-
-        boolean groundedAfter = getBukkitEntity().isOnGround();
-        if (groundedBefore && !groundedAfter) {
-            fallStartY = yBefore;
-        } else if (!groundedBefore && !groundedAfter && Double.isNaN(fallStartY)) {
-            fallStartY = yBefore;
-        } else if (!groundedBefore && groundedAfter) {
-            if (Double.isFinite(fallStartY)) {
-                float distance = (float) Math.max(0.0, fallStartY - getY());
-                if (distance > 3.0F && !isInWater()) {
-                    float multiplier = 1.0F;
-                    net.minecraft.core.BlockPos landingPos = blockPosition().below();
-                    net.minecraft.world.level.block.state.BlockState landing =
-                            level().getBlockState(landingPos);
-                    if (landing.is(net.minecraft.world.level.block.Blocks.HAY_BLOCK)) {
-                        multiplier = 0.2F;
-                    }
-                    if (multiplier > 0.0F) {
-                        causeFallDamage(distance, multiplier, damageSources().fall());
-                    }
-                }
-            }
-            fallStartY = Double.NaN;
-        }
     }
 
 }
