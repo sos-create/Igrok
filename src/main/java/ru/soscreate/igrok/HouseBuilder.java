@@ -300,6 +300,24 @@ final class HouseBuilder {
                 best = material;
             }
         }
+        // Choose the same wood family as the logs when no planks exist yet.
+        // Otherwise an oak fallback could make a spruce-woodcutter unable to
+        // satisfy the blueprint even though it already owns the right raw wood.
+        if (bestCount == 0 && "_PLANKS".equals(suffix) && actor != null) {
+            Map<Material, Integer> available = new EnumMap<>(Material.class);
+            for (int slot = 0; slot < 36; slot++) {
+                ItemStack stack = actor.getInventory().getItem(slot);
+                if (stack == null || stack.getType().isAir()) continue;
+                Material planks = BlockKnowledge.planksForLog(stack.getType());
+                if (planks != null) available.merge(planks, stack.getAmount(), Integer::sum);
+            }
+            for (Map.Entry<Material, Integer> entry : available.entrySet()) {
+                if (entry.getValue() > bestCount) {
+                    bestCount = entry.getValue();
+                    best = entry.getKey();
+                }
+            }
+        }
         return best;
     }
 
