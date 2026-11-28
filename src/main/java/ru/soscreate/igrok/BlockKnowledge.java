@@ -109,7 +109,12 @@ final class BlockKnowledge {
                 || name.equals("REDSTONE_TORCH") || name.equals("REDSTONE_WIRE")) {
             return "элемент редстоун-схемы: использовать только в запланированном механизме";
         }
-        if (name.endsWith("_DOOR") || name.endsWith("_TRAPDOOR") || name.endsWith("_FENCE_GATE")) {
+        if (name.endsWith("_DOOR")) {
+            return name.contains("IRON")
+                    ? "дверь с редстоун-управлением; без питания не пытаться проходить сквозь неё"
+                    : "при подходе попробовать открыть обычным взаимодействием, если это разрешено защитой";
+        }
+        if (name.endsWith("_TRAPDOOR") || name.endsWith("_FENCE_GATE")) {
             return "проход или преграда; проверить открытое состояние перед движением";
         }
         if (name.contains("PISTON") || name.equals("OBSERVER") || name.equals("REPEATER")
