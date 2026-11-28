@@ -563,15 +563,14 @@ final class SurvivalController {
         int axeTier = bestToolTier(bot, "AXE");
         boolean hasTable = hasNearbyCraftingTable(bot);
         boolean hasTableItem = count(bot, Material.CRAFTING_TABLE) > 0;
-        int projectPlankReserve = projectRequirements.entrySet().stream()
-                .filter(entry -> entry.getKey().name().endsWith("_PLANKS"))
-                .mapToInt(Map.Entry::getValue).sum()
-                + (pistonProject && projectNeeds.getOrDefault(Material.PISTON, 0) > 0 ? 3 : 0);
+        int pistonPlankReserve = pistonProject
+                && projectNeeds.getOrDefault(Material.PISTON, 0) > 0 ? 3 : 0;
         int projectCobbleReserve = projectRequirements.getOrDefault(Material.COBBLESTONE, 0)
                 + (pistonProject && projectNeeds.getOrDefault(Material.PISTON, 0) > 0 ? 4 : 0);
         boolean projectStillNeedsPlanks = projectNeeds.keySet().stream()
                 .anyMatch(material -> material.name().endsWith("_PLANKS"));
-        int planksBeyondProject = planksBeyondProjectReserve(bot, projectRequirements);
+        int planksBeyondProject = Math.max(0,
+                planksBeyondProjectReserve(bot, projectRequirements) - pistonPlankReserve);
 
         // Only prepare the minimum wood needed for a workbench and first tools.
         // Blueprint deficits above take precedence; no 32/64-plank stockpiling.
@@ -589,8 +588,7 @@ final class SurvivalController {
         }
         if (!hasTable) return;
 
-        boolean pistonNeedsPlanks = pistonProject
-                && projectNeeds.getOrDefault(Material.PISTON, 0) > 0 && planks < 3;
+        boolean pistonNeedsPlanks = pistonPlankReserve > 0 && planksBeyondProject < 3;
         if (pistonNeedsPlanks && logs > 0 && craftAnyPlanksFromLogs(bot)) return;
 
         boolean needsSticks = pickTier < 1 || axeTier < 1;
