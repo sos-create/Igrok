@@ -76,6 +76,7 @@ final class AgentBrain {
     private String decisionReason = "Пока нет достаточных наблюдений.";
     private double decisionConfidence;
     private final SurvivalController survival;
+    private final WeatherShelterRoutine weatherShelter;
     private boolean manualOrderActive;
     /** Explicit player pause: keep position while the owner transfers items. */
     private boolean pausedByPlayer;
@@ -110,6 +111,7 @@ final class AgentBrain {
         this.plugin = plugin;
         this.memory = memory;
         this.survival = new SurvivalController(plugin);
+        this.weatherShelter = new WeatherShelterRoutine(plugin);
         String name = plugin.getConfig().getString("bot-name", "Igrok");
         UUID id = UUID.nameUUIDFromBytes(("OfflinePlayer:" + name).getBytes(java.nio.charset.StandardCharsets.UTF_8));
         this.personality = new AgentPersonality(id);
@@ -367,7 +369,6 @@ final class AgentBrain {
         if (bot == null || !bot.isOnline() || bot.isDead()) return;
         ensureNavigator(bot);
         survival.tick(bot, tickCounter);
-        monitorTaskProgress(bot);
 
         // A recent player attack temporarily overrides every voluntary activity.
         // This keeps an attack from behind from being overwritten by IDLE/MINE/FOLLOW.
@@ -394,6 +395,17 @@ final class AgentBrain {
             navigator.stop();
         }
 
+        // Rain shelter is a temporary life routine: preserve the current goal and
+        // keep its progress watchdog from treating weather avoidance as a stall.
+        if (weatherShelter.tick(bot, navigator, tickCounter)) {
+            lastTaskPosition = bot.getLocation().clone();
+            lastTaskProgressTick = tickCounter;
+            lastTaskMinedCount = minedThisTask;
+            state = "Пережидаю дождь под укрытием";
+            return;
+        }
+
+        monitorTaskProgress(bot);
         int thinkInterval = Math.max(10, plugin.getConfig().getInt("brain.think-interval-ticks", 20));
         if (tickCounter % thinkInterval == 0) chooseGoal(bot);
 

@@ -140,6 +140,11 @@ final class ChatDialogue implements Listener {
         }
     }
 
+    /** Registers a short reply window for a question asked by the bot itself. */
+    void expectReply(UUID playerId) {
+        if (playerId != null) lastBotQuestionAt.put(playerId, System.currentTimeMillis());
+    }
+
     void shutdown() {
         for (PendingMessage pending : pendingMessages.values()) {
             if (pending.task != null) pending.task.cancel();
@@ -217,9 +222,11 @@ final class ChatDialogue implements Listener {
         }
         pendingThoughts.put(senderId, thought);
         plugin.cognition().learn(thought, 0.0);
-        plugin.brain().onPlayerMessage(sender, rawMessage);
+        // A yes/no answer to an active social invitation belongs to that invitation,
+        // not to the general command parser. Consume it before brain intent handling.
         if (continuation && plugin.socialLife() != null
                 && plugin.socialLife().handleReply(sender, rawMessage)) return;
+        plugin.brain().onPlayerMessage(sender, rawMessage);
 
         String action = thought.action();
         if ("tnt".equals(action)) {
