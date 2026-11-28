@@ -369,7 +369,6 @@ final class AgentBrain {
         if (bot == null || !bot.isOnline() || bot.isDead()) return;
         ensureNavigator(bot);
         survival.tick(bot, tickCounter);
-        monitorTaskProgress(bot);
 
         // A recent player attack temporarily overrides every voluntary activity.
         // This keeps an attack from behind from being overwritten by IDLE/MINE/FOLLOW.
@@ -406,6 +405,7 @@ final class AgentBrain {
             return;
         }
 
+        monitorTaskProgress(bot);
         int thinkInterval = Math.max(10, plugin.getConfig().getInt("brain.think-interval-ticks", 20));
         if (tickCounter % thinkInterval == 0) chooseGoal(bot);
 

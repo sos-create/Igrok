@@ -96,7 +96,8 @@ final class WeatherShelterRoutine {
         if (location == null || location.getWorld() == null) return false;
         World world = location.getWorld();
         int x = location.getBlockX(), y = location.getBlockY(), z = location.getBlockZ();
-        if (!world.isChunkLoaded(x >> 4, z >> 4)
+        if (y <= world.getMinHeight() + 1 || y + 6 >= world.getMaxHeight()
+                || !world.isChunkLoaded(x >> 4, z >> 4)
                 || !world.getWorldBorder().isInside(location)) return false;
 
         Material floor = world.getBlockAt(x, y - 1, z).getType();
