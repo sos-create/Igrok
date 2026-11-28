@@ -189,12 +189,16 @@ final class HouseBuilder {
             return;
         }
 
-        List<CompletableFuture<org.bukkit.Chunk>> loads = new ArrayList<>();
+        // Load chunks one at a time. This is slower than a burst, but recovery
+        // cannot create a sudden disk/CPU spike on an already busy server.
+        CompletableFuture<Void> loadChain = CompletableFuture.completedFuture(null);
         for (ChunkCoordinate coordinate : required) {
-            loads.add(world.getChunkAtAsync(coordinate.x(), coordinate.z(), true));
+            loadChain = loadChain.thenCompose(ignored ->
+                    world.getChunkAtAsync(coordinate.x(), coordinate.z(), true)
+                            .thenApply(chunk -> (Void) null));
         }
 
-        CompletableFuture.allOf(loads.toArray(CompletableFuture[]::new)).whenComplete((ignored, error) -> {
+        loadChain.whenComplete((ignored, error) -> {
             if (!plugin.isEnabled()) return;
             try {
                 Bukkit.getScheduler().runTask(plugin,
