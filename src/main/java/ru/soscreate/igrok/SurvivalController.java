@@ -481,6 +481,7 @@ final class SurvivalController {
         if (underAttack) return;
 
         HouseBuilder builder = plugin.houseBuilder();
+        if (builder.isBuilding()) return;
         String nextProject = builder.hasCompleted() ? builder.nextProjectType() : "shelter";
         if (!builder.isBuilding()) {
             if (!builder.hasCompleted()) {
@@ -490,8 +491,8 @@ final class SurvivalController {
             }
         }
         boolean pistonProject = "piston_lab".equals(nextProject);
-        Map<Material, Integer> projectNeeds = builder.isBuilding()
-                ? Map.of() : builder.missingMaterials(bot);
+        Map<Material, Integer> projectRequirements = builder.requiredMaterials();
+        Map<Material, Integer> projectNeeds = builder.missingMaterials(bot);
 
         // The blueprint is the first customer of the crafting queue. Do not craft
         // generic variants: a spruce-plank deficit must never be "solved" with oak.
@@ -505,10 +506,10 @@ final class SurvivalController {
         int axeTier = bestToolTier(bot, "AXE");
         boolean hasTable = hasNearbyCraftingTable(bot);
         boolean hasTableItem = count(bot, Material.CRAFTING_TABLE) > 0;
-        int projectPlankReserve = projectNeeds.entrySet().stream()
+        int projectPlankReserve = projectRequirements.entrySet().stream()
                 .filter(entry -> entry.getKey().name().endsWith("_PLANKS"))
                 .mapToInt(Map.Entry::getValue).sum();
-        int projectCobbleReserve = projectNeeds.getOrDefault(Material.COBBLESTONE, 0)
+        int projectCobbleReserve = projectRequirements.getOrDefault(Material.COBBLESTONE, 0)
                 + (pistonProject && projectNeeds.getOrDefault(Material.PISTON, 0) > 0 ? 4 : 0);
         boolean projectStillNeedsPlanks = projectPlankReserve > 0;
 
