@@ -218,7 +218,7 @@ final class AutonomousPlanner {
             if (s.projectMissingPiston() > 0 && s.cobblestone() < 20
                     && s.stoneSearchReady() && s.pickaxeTier() >= 1) {
                 best = better(best, collect(true, "stone", 0.89,
-                        "PISTON_RECIPE_STONE", "Собираю ещё камень для рецепта поршня."));
+                        "PISTON_RECIPE_STONE", "Собираю ещё камень для рецепта поршня.", false));
             }
             if (s.projectMissingPiston() > 0 && s.planks() < 3) {
                 if (s.logs() > 0) {
@@ -226,7 +226,7 @@ final class AutonomousPlanner {
                             "Древесина уже есть: перерабатываю её в доски для поршня."));
                 } else {
                     best = better(best, collect(s.woodSearchReady(), "wood", 0.86,
-                            "PISTON_WOOD", "Для поршня не хватает трёх досок; ищу дерево."));
+                            "PISTON_WOOD", "Для поршня не хватает трёх досок; ищу дерево.", false));
                 }
             }
             if (s.redstoneDust() < 9 && s.pickaxeTier() >= 4) {
