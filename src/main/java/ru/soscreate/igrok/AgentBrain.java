@@ -353,7 +353,7 @@ final class AgentBrain {
         // This keeps an attack from behind from being overwritten by IDLE/MINE/FOLLOW.
         if (handlePlayerDefense(bot)) return;
         // An explicit stop is a persistent hold, not a one-tick navigator stop.
-        // It also outranks the short approach-to-speaker behavior triggered by chat.
+        // Chat is handled separately and never redirects autonomous movement.
         if (pausedByPlayer) {
             if (navigator != null) navigator.stop();
             state = "Жду на месте";
