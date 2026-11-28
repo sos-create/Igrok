@@ -46,6 +46,8 @@ final class AgentNavigator {
     private int sprintUntilTick;
     private boolean sprinting;
     private int doorCheckCooldown;
+    private int lastTurnUpdateTick = Integer.MIN_VALUE;
+    private int lastMovementUpdateTick = Integer.MIN_VALUE;
 
     AgentNavigator(Player bot) {
         this(bot, null);
@@ -215,6 +217,8 @@ final class AgentNavigator {
         lastRequestedDestination = null;
         cachedGoal = null;
         goalLookupCooldown = 0;
+        lastTurnUpdateTick = Integer.MIN_VALUE;
+        lastMovementUpdateTick = Integer.MIN_VALUE;
     }
 
     /**
@@ -358,8 +362,14 @@ final class AgentNavigator {
         float currentBodyYaw = handle.getYBodyRot();
         float headDelta = wrapDegrees(targetYaw - currentHeadYaw);
         float bodyDelta = wrapDegrees(targetYaw - currentBodyYaw);
-        float nextHeadYaw = currentHeadYaw + Math.max(-18.0F, Math.min(18.0F, headDelta));
-        float nextBodyYaw = currentBodyYaw + Math.max(-11.0F, Math.min(11.0F, bodyDelta));
+        int currentTick = bot.getTicksLived();
+        int elapsedTicks = lastTurnUpdateTick == Integer.MIN_VALUE ? 2
+                : Math.max(1, Math.min(6, currentTick - lastTurnUpdateTick));
+        lastTurnUpdateTick = currentTick;
+        float headStep = 9.0F * elapsedTicks;
+        float bodyStep = 5.5F * elapsedTicks;
+        float nextHeadYaw = currentHeadYaw + Math.max(-headStep, Math.min(headStep, headDelta));
+        float nextBodyYaw = currentBodyYaw + Math.max(-bodyStep, Math.min(bodyStep, bodyDelta));
         float pitch = handle.getXRot();
 
         // The network-facing player yaw stays aligned with the torso, while the
@@ -381,9 +391,15 @@ final class AgentNavigator {
         double deltaZ = targetZ - current.getZ();
         double deltaLength = Math.sqrt(deltaX * deltaX + deltaZ * deltaZ);
 
-        // Two-tick AI cadence: a bounded impulse makes movement start gradually,
-        // change direction with inertia and settle at a stable walking speed.
-        double maxAcceleration = bot.isOnGround() ? 0.075 : 0.035;
+        // Scale acceleration by the time since the previous navigation update.
+        // The brain normally calls every 2 ticks, while construction uses a slower
+        // configurable interval. This keeps the same real-time acceleration in both.
+        int currentTick = bot.getTicksLived();
+        int elapsedTicks = lastMovementUpdateTick == Integer.MIN_VALUE ? 2
+                : Math.max(1, Math.min(6, currentTick - lastMovementUpdateTick));
+        lastMovementUpdateTick = currentTick;
+        double accelerationPerTick = bot.isOnGround() ? 0.035 : 0.018;
+        double maxAcceleration = accelerationPerTick * elapsedTicks;
         if (deltaLength > maxAcceleration && deltaLength > 0.0001) {
             double scale = maxAcceleration / deltaLength;
             deltaX *= scale;
