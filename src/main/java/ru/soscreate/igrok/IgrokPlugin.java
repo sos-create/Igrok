@@ -379,7 +379,9 @@ public final class IgrokPlugin extends JavaPlugin implements Listener {
             Material type = event.getBlock().getType();
             if (isCropMaterial(type)) { skills.gain("farming", 2); skills.gain("harvesting", 1); }
             String blockName = type.name();
-            if (blockName.endsWith("_LOG") || blockName.endsWith("_WOOD") || blockName.endsWith("_STEM") || blockName.equals("BAMBOO_BLOCK")) skills.gain("woodcutting", 2);
+            if (blockName.endsWith("_LOG") || blockName.endsWith("_WOOD")
+                    || blockName.endsWith("_STEM") || blockName.endsWith("_HYPHAE")
+                    || blockName.equals("BAMBOO_BLOCK")) skills.gain("woodcutting", 2);
             if (type == Material.DIRT || type == Material.GRAVEL || type == Material.SAND || type == Material.CLAY) skills.gain("excavation", 1);
             if (blockName.endsWith("_ORE") || blockName.equals("ANCIENT_DEBRIS")) skills.gain("ore_lore", 2);
             if (isEngineeringMaterial(type)) { skills.gain("engineering", 1); skills.gain("redstone", 1); }
