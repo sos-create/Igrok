@@ -17,7 +17,6 @@ repositories {
 
 dependencies {
     paperweight.paperDevBundle("1.21.4-R0.1-SNAPSHOT")
-    testImplementation("org.junit.jupiter:junit-jupiter:5.10.2")
 }
 
 tasks {
@@ -25,9 +24,6 @@ tasks {
     compileJava {
         options.release = 21
         options.encoding = "UTF-8"
-    }
-    test {
-        useJUnitPlatform()
     }
 }
 
