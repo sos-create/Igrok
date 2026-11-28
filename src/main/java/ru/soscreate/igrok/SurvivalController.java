@@ -565,23 +565,26 @@ final class SurvivalController {
         boolean hasTableItem = count(bot, Material.CRAFTING_TABLE) > 0;
         int projectPlankReserve = projectRequirements.entrySet().stream()
                 .filter(entry -> entry.getKey().name().endsWith("_PLANKS"))
-                .mapToInt(Map.Entry::getValue).sum();
+                .mapToInt(Map.Entry::getValue).sum()
+                + (pistonProject && projectNeeds.getOrDefault(Material.PISTON, 0) > 0 ? 3 : 0);
         int projectCobbleReserve = projectRequirements.getOrDefault(Material.COBBLESTONE, 0)
                 + (pistonProject && projectNeeds.getOrDefault(Material.PISTON, 0) > 0 ? 4 : 0);
-        boolean projectStillNeedsPlanks = projectPlankReserve > 0;
+        boolean projectStillNeedsPlanks = projectNeeds.keySet().stream()
+                .anyMatch(material -> material.name().endsWith("_PLANKS"));
+        int planksBeyondProject = planksBeyondProjectReserve(bot, projectRequirements);
 
         // Only prepare the minimum wood needed for a workbench and first tools.
         // Blueprint deficits above take precedence; no 32/64-plank stockpiling.
         int basicPlankNeed = Math.max(!hasTable && !hasTableItem ? 4 : 0,
                 Math.max(pickTier < 1 ? 3 : 0, axeTier < 1 ? 3 : 0));
-        if (!projectStillNeedsPlanks && planks < basicPlankNeed && logs > 0
+        if (!projectStillNeedsPlanks && planksBeyondProject < basicPlankNeed && logs > 0
                 && craftAnyPlanksFromLogs(bot)) return;
 
         if (!hasTable && hasTableItem) {
             placeCraftingTable(bot);
             return;
         }
-        if (!hasTable && !hasTableItem && planks >= 4 + projectPlankReserve) {
+        if (!hasTable && !hasTableItem && planksBeyondProject >= 4) {
             if (craftResult(bot, Material.CRAFTING_TABLE)) return;
         }
         if (!hasTable) return;
@@ -592,13 +595,13 @@ final class SurvivalController {
 
         boolean needsSticks = pickTier < 1 || axeTier < 1;
         if (needsSticks && count(bot, Material.STICK) < 2
-                && planks >= 2 + projectPlankReserve) {
+                && planksBeyondProject >= 2) {
             if (craftResult(bot, Material.STICK)) return;
         }
 
         // Upgrade only a missing or genuinely lower-tier tool; do not manufacture
         // duplicates that occupy inventory slots or consume project ingredients.
-        if (pickTier < 1 && planks >= 3 + projectPlankReserve
+        if (pickTier < 1 && planksBeyondProject >= 3
                 && count(bot, Material.STICK) >= 2) {
             if (craftResult(bot, Material.WOODEN_PICKAXE)) return;
         }
@@ -612,7 +615,7 @@ final class SurvivalController {
             if (craftResult(bot, Material.IRON_PICKAXE)) return;
         }
 
-        if (axeTier < 1 && planks >= 3 + projectPlankReserve
+        if (axeTier < 1 && planksBeyondProject >= 3
                 && count(bot, Material.STICK) >= 2) {
             if (craftResult(bot, Material.WOODEN_AXE)) return;
         }
@@ -648,7 +651,7 @@ final class SurvivalController {
 
         if (isNight(bot) && !hasNearbyBed(bot, tick) && !hasBedItem(bot)
                 && countBySuffix(bot, "_WOOL") >= 3
-                && planks >= 3 + projectPlankReserve) {
+                && planksBeyondProject >= 3) {
             if (craftMatching(bot, type -> type.name().endsWith("_BED"))) return;
         }
 
@@ -656,7 +659,7 @@ final class SurvivalController {
         // no accessible chest/barrel nearby. A chest is not an automatic craft goal.
         if (emptyStorageSlots(bot) <= 2 && findNearbyStorage(bot, 4) == null
                 && count(bot, Material.CHEST) == 0
-                && planks >= 8 + projectPlankReserve) {
+                && planksBeyondProject >= 8) {
             if (craftResult(bot, Material.CHEST)) return;
         }
 
@@ -672,6 +675,16 @@ final class SurvivalController {
                 if (craftResult(bot, Material.REDSTONE_BLOCK)) return;
             }
         }
+    }
+
+    private int planksBeyondProjectReserve(Player bot, Map<Material, Integer> requirements) {
+        int totalPlanks = countBySuffix(bot, "_PLANKS");
+        int reservedInInventory = 0;
+        for (Map.Entry<Material, Integer> entry : requirements.entrySet()) {
+            if (!entry.getKey().name().endsWith("_PLANKS")) continue;
+            reservedInInventory += Math.min(entry.getValue(), count(bot, entry.getKey()));
+        }
+        return Math.max(0, totalPlanks - reservedInInventory);
     }
 
     private boolean craftProjectMaterials(Player bot, Map<Material, Integer> missing,
