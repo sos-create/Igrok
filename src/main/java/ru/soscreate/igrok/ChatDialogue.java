@@ -236,8 +236,7 @@ final class ChatDialogue implements Listener {
         String message = rawMessage.toLowerCase(Locale.ROOT);
         boolean activeConversation = isConversationSessionActive(senderId, System.currentTimeMillis());
         double radius = Math.max(4.0, plugin.getConfig().getDouble("chat.listen-radius", 16.0));
-        if (sender.getLocation().distanceSquared(bot.getLocation()) > radius * radius
-                && !invitationReply) return;
+        if (sender.getLocation().distanceSquared(bot.getLocation()) > radius * radius) return;
         boolean addressed = mentionsBot(message, plugin.getConfig().getString("bot-name", "Igrok"));
         long followUpMillis = Math.max(10L,
                 plugin.getConfig().getLong("chat.follow-up-window-seconds", 90)) * 1000L;
