@@ -230,6 +230,7 @@ final class HouseBuilder {
         navigator = new AgentNavigator(actor, plugin.skills());
         workStandPosition = null;
         navigationFailures = 0;
+        actorUnavailableSinceMillis = 0L;
         Location site = findSite(anchor);
         if (site == null) {
             plan.clear();
@@ -281,7 +282,10 @@ final class HouseBuilder {
     }
 
     void cancel(boolean announce) {
-        if (task == null) return;
+        if (task == null) {
+            actorUnavailableSinceMillis = 0L;
+            return;
+        }
         task.cancel();
         task = null;
         actorUnavailableSinceMillis = 0L;
@@ -346,6 +350,7 @@ final class HouseBuilder {
                 task.cancel();
                 task = null;
             }
+            actorUnavailableSinceMillis = 0L;
             if (navigator != null) navigator.stop();
             plan.clear();
             workStandPosition = null;
@@ -569,6 +574,7 @@ final class HouseBuilder {
     private void finish() {
         if (task != null) task.cancel();
         task = null;
+        actorUnavailableSinceMillis = 0L;
         if ("shelter".equals(projectType)) completed = true;
         else completedProjects.add(projectType);
         plan.clear();
