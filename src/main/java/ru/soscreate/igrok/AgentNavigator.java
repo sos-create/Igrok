@@ -47,7 +47,6 @@ final class AgentNavigator {
     private boolean sprinting;
     private int doorCheckCooldown;
     private int lastTurnUpdateTick = Integer.MIN_VALUE;
-    private int lastMovementUpdateTick = Integer.MIN_VALUE;
 
     AgentNavigator(Player bot) {
         this(bot, null);
@@ -198,11 +197,10 @@ final class AgentNavigator {
     }
 
     void stop() {
-        Vector velocity = bot.getVelocity();
-        // Keep a small amount of horizontal momentum. Vanilla friction removes it
-        // over the next few ticks instead of making the avatar snap to a halt.
-        bot.setVelocity(new Vector(velocity.getX() * 0.22,
-                bot.isOnGround() ? 0.0 : velocity.getY(), velocity.getZ() * 0.22));
+        // Let the fake-player movement controller brake over several game ticks.
+        // Repeated stop() calls from the idle brain must not multiply velocity down
+        // to zero in a single frame.
+        clearMovementIntent();
         bot.setSprinting(false);
         sprinting = false;
         gaitTick = 0;
@@ -218,7 +216,17 @@ final class AgentNavigator {
         cachedGoal = null;
         goalLookupCooldown = 0;
         lastTurnUpdateTick = Integer.MIN_VALUE;
-        lastMovementUpdateTick = Integer.MIN_VALUE;
+    }
+
+    private void clearMovementIntent() {
+        if (bot instanceof org.bukkit.craftbukkit.entity.CraftPlayer craftPlayer
+                && craftPlayer.getHandle() instanceof IgrokServerPlayer fakePlayer) {
+            fakePlayer.clearMovementIntent();
+            return;
+        }
+        Vector velocity = bot.getVelocity();
+        bot.setVelocity(new Vector(velocity.getX() * 0.65,
+                bot.isOnGround() ? 0.0 : velocity.getY(), velocity.getZ() * 0.65));
     }
 
     /**
@@ -382,31 +390,26 @@ final class AgentNavigator {
                 Math.abs(wrapDegrees(targetYaw - nextBodyYaw)));
     }
 
-    /** Accelerate and brake instead of replacing velocity with a fixed vector. */
+    /** Publish a movement target; the fake player smooths it every server tick. */
     private void applyHorizontalVelocity(double directionX, double directionZ, double targetSpeed) {
-        Vector current = bot.getVelocity();
-        double targetX = directionX * targetSpeed;
-        double targetZ = directionZ * targetSpeed;
-        double deltaX = targetX - current.getX();
-        double deltaZ = targetZ - current.getZ();
-        double deltaLength = Math.sqrt(deltaX * deltaX + deltaZ * deltaZ);
-
-        // Scale acceleration by the time since the previous navigation update.
-        // The brain normally calls every 2 ticks, while construction uses a slower
-        // configurable interval. This keeps the same real-time acceleration in both.
-        int currentTick = bot.getTicksLived();
-        int elapsedTicks = lastMovementUpdateTick == Integer.MIN_VALUE ? 2
-                : Math.max(1, Math.min(6, currentTick - lastMovementUpdateTick));
-        lastMovementUpdateTick = currentTick;
-        double accelerationPerTick = bot.isOnGround() ? 0.035 : 0.018;
-        double maxAcceleration = accelerationPerTick * elapsedTicks;
-        if (deltaLength > maxAcceleration && deltaLength > 0.0001) {
-            double scale = maxAcceleration / deltaLength;
-            deltaX *= scale;
-            deltaZ *= scale;
+        if (!Double.isFinite(directionX) || !Double.isFinite(directionZ)
+                || !Double.isFinite(targetSpeed) || targetSpeed <= 0.0) {
+            clearMovementIntent();
+            return;
         }
-        bot.setVelocity(new Vector(current.getX() + deltaX,
-                current.getY(), current.getZ() + deltaZ));
+        if (bot instanceof org.bukkit.craftbukkit.entity.CraftPlayer craftPlayer
+                && craftPlayer.getHandle() instanceof IgrokServerPlayer fakePlayer) {
+            fakePlayer.setMovementIntent(directionX, directionZ, targetSpeed);
+            return;
+        }
+
+        // Fallback for non-Igrok Player implementations used by isolated tests.
+        double length = Math.sqrt(directionX * directionX + directionZ * directionZ);
+        if (length < 0.0001) return;
+        Vector current = bot.getVelocity();
+        double targetX = directionX / length * targetSpeed;
+        double targetZ = directionZ / length * targetSpeed;
+        bot.setVelocity(new Vector(targetX, current.getY(), targetZ));
     }
 
     private float wrapDegrees(float degrees) {
