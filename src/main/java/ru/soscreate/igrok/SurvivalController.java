@@ -113,7 +113,7 @@ final class SurvivalController {
         if (tick % 200 == 0) manageStorage(bot, tick);
         if (tick % 200 == 0) {
             if (!hasNearbyCraftingTable(bot)) placeCraftingTable(bot);
-            if (findNearbyBlock(bot, Material.FURNACE, 4) == null && count(bot, Material.FURNACE) > 0) {
+            if (!hasProcessingBlock(bot, 4) && count(bot, Material.FURNACE) > 0) {
                 placeFurnace(bot);
             }
             if (isNight(bot) && !hasNearbyBed(bot, tick) && hasBedItem(bot)) placeBed(bot);
@@ -884,6 +884,30 @@ final class SurvivalController {
         target.setType(Material.FURNACE);
         consumeOne(bot, Material.FURNACE);
         return true;
+    }
+
+    private boolean hasProcessingBlock(Player bot, int radius) {
+        return findNearbyProcessor(bot, radius) != null;
+    }
+
+    private Block findNearbyProcessor(Player bot, int radius) {
+        Material input = findSmeltable(bot);
+        String name = input == null ? "" : input.name();
+        Material preferred = name.startsWith("COOKED_") || name.equals("BEEF")
+                || name.equals("PORKCHOP") || name.equals("MUTTON") || name.equals("CHICKEN")
+                || name.equals("RABBIT") || name.equals("COD") || name.equals("SALMON")
+                || name.equals("POTATO") ? Material.SMOKER
+                : (name.equals("RAW_IRON") || name.equals("RAW_GOLD") || name.equals("RAW_COPPER")
+                    || name.endsWith("_ORE") || name.equals("ANCIENT_DEBRIS"))
+                    ? Material.BLAST_FURNACE : Material.FURNACE;
+        Block result = findNearbyBlock(bot, preferred, radius);
+        if (result != null) return result;
+        for (Material fallback : new Material[]{Material.FURNACE, Material.BLAST_FURNACE, Material.SMOKER}) {
+            if (fallback == preferred) continue;
+            result = findNearbyBlock(bot, fallback, radius);
+            if (result != null) return result;
+        }
+        return null;
     }
 
     private void maintainFurnace(Player bot) {
