@@ -186,7 +186,10 @@ final class SurvivalController {
 
     AutonomyDecision chooseAutonomousGoal(Player bot, AgentPersonality personality,
                                            GoalPlanner.Goal current, int tick) {
-        int logs = countBySuffix(bot, "_LOG") + countBySuffix(bot, "_WOOD");
+        // Count every vanilla wood family, including Nether stems and bamboo blocks.
+        int logs = countBySuffix(bot, "_LOG") + countBySuffix(bot, "_WOOD")
+                + countBySuffix(bot, "_STEM") + countBySuffix(bot, "_HYPHAE")
+                + count(bot, Material.BAMBOO_BLOCK);
         int planks = countBySuffix(bot, "_PLANKS");
         int coal = count(bot, Material.COAL);
         int charcoal = count(bot, Material.CHARCOAL);
@@ -306,7 +309,13 @@ final class SurvivalController {
             nextBedScanTick = tick + 200;
             return false;
         }
-        navigator.moveTo(knownBed);
+        // Do not keep the SLEEP goal forever when a bed is behind an
+        // unreachable wall or the bounded path search cannot reach it.
+        if (!navigator.moveTo(knownBed)) {
+            knownBed = null;
+            nextBedScanTick = tick + 200;
+            return false;
+        }
         return true;
     }
 

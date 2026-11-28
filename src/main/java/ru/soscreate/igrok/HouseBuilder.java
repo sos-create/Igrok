@@ -55,6 +55,7 @@ final class HouseBuilder {
     private AgentNavigator navigator;
     private Location workStandPosition;
     private int navigationFailures;
+    private int actorUnavailableTicks;
 
     HouseBuilder(IgrokPlugin plugin) {
         this.plugin = plugin;
@@ -354,13 +355,26 @@ final class HouseBuilder {
             finish();
             return;
         }
-        if (actor == null || !actor.isOnline()) {
-            actor = plugin.controller().bukkitPlayer();
-            if (actor == null) {
-                stopForSafety("Строительство остановлено: бот больше не находится в мире.");
-                return;
+        Player currentBot = plugin.controller().bukkitPlayer();
+        if (currentBot == null || !currentBot.isOnline() || currentBot.isDead()) {
+            // Keep the saved construction plan during the short vanilla-style
+            // respawn window instead of cancelling it on the first dead tick.
+            actorUnavailableTicks++;
+            if (actorUnavailableTicks > 50) {
+                stopForSafety("Строительство остановлено: бот не вернулся после возрождения.");
             }
+            return;
         }
+        if (actor == null || !actor.isOnline() || actor.isDead()
+                || actor.getEntityId() != currentBot.getEntityId()) {
+            // Death/respawn replaces the fake ServerPlayer. The old navigator
+            // still holds the removed entity, so rebind it before placing more blocks.
+            actor = currentBot;
+            navigator = new AgentNavigator(actor, plugin.skills());
+            workStandPosition = null;
+            navigationFailures = 0;
+        }
+        actorUnavailableTicks = 0;
 
         BlockStep step = plan.get(cursor);
         if (isForbiddenMaterial(step.material())) {
