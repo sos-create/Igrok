@@ -188,14 +188,17 @@ final class ChatDialogue implements Listener {
         double radius = Math.max(4.0, plugin.getConfig().getDouble("chat.listen-radius", 16.0));
         double radiusSquared = radius * radius;
         int nearbyPlayers = 0;
+        boolean senderIsNearby = false;
         for (Player online : Bukkit.getOnlinePlayers()) {
-            if (online.getGameMode() == org.bukkit.GameMode.SPECTATOR
+            if (online.getUniqueId().equals(bot.getUniqueId())
+                    || online.getGameMode() == org.bukkit.GameMode.SPECTATOR
                     || online.getWorld() != bot.getWorld()
                     || online.getLocation().distanceSquared(bot.getLocation()) > radiusSquared) continue;
             nearbyPlayers++;
+            if (online.getUniqueId().equals(sender.getUniqueId())) senderIsNearby = true;
             if (nearbyPlayers > 1) return false;
         }
-        return nearbyPlayers == 1 && sender.getUniqueId().equals(bot.getUniqueId()) == false;
+        return nearbyPlayers == 1 && senderIsNearby;
     }
 
     private boolean isWithinListenRadius(Player sender) {
