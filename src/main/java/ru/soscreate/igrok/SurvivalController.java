@@ -949,6 +949,7 @@ final class SurvivalController {
             case CARROTS -> Material.CARROT;
             case POTATOES -> Material.POTATO;
             case BEETROOTS -> Material.BEETROOT_SEEDS;
+            case NETHER_WART -> Material.NETHER_WART;
             default -> null;
         };
     }
