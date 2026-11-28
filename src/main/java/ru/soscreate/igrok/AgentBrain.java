@@ -119,6 +119,13 @@ final class AgentBrain {
     AgentMemory memory() { return memory; }
     String state() { return state; }
 
+    /** Social speech may accompany independent idle or self-chosen exploration, never urgent work. */
+    boolean isSociallyAvailable() {
+        return !pausedByPlayer && !manualOrderActive
+                && (goal == GoalPlanner.Goal.IDLE || goal == GoalPlanner.Goal.EXPLORE)
+                && !plugin.houseBuilder().isBuilding();
+    }
+
     String worldObservation() {
         Player bot = plugin.controller().bukkitPlayer();
         if (bot == null || !bot.isOnline()) return "Сейчас я не нахожусь в мире и не могу осмотреться.";
