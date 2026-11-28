@@ -168,6 +168,15 @@ final class HouseBuilder {
         return missing;
     }
 
+    /** Full material bill for the prepared blueprint, grouped by exact Material. */
+    Map<Material, Integer> requiredMaterials() {
+        Map<Material, Integer> required = new EnumMap<>(Material.class);
+        for (BlockStep step : plan) {
+            if (step.consumeItem()) required.merge(step.material(), 1, Integer::sum);
+        }
+        return Map.copyOf(required);
+    }
+
     /**
      * Exact outstanding bill of materials for the currently prepared blueprint.
      * The returned map contains only deficits, never estimates or generic reserves.
@@ -175,12 +184,8 @@ final class HouseBuilder {
     Map<Material, Integer> missingMaterials(Player player) {
         if (player == null || !player.isOnline()) return Map.of();
         actor = player;
-        Map<Material, Integer> required = new EnumMap<>(Material.class);
-        for (BlockStep step : plan) {
-            if (step.consumeItem()) required.merge(step.material(), 1, Integer::sum);
-        }
         Map<Material, Integer> missing = new EnumMap<>(Material.class);
-        for (Map.Entry<Material, Integer> entry : required.entrySet()) {
+        for (Map.Entry<Material, Integer> entry : requiredMaterials().entrySet()) {
             int deficit = Math.max(0, entry.getValue() - count(player, entry.getKey()));
             if (deficit > 0) missing.put(entry.getKey(), deficit);
         }
