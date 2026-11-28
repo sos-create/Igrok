@@ -354,7 +354,6 @@ final class AgentNavigator {
         org.bukkit.craftbukkit.entity.CraftPlayer craftPlayer =
                 (org.bukkit.craftbukkit.entity.CraftPlayer) bot;
         net.minecraft.server.level.ServerPlayer handle = craftPlayer.getHandle();
-        float currentYaw = handle.getYRot();
         float currentHeadYaw = handle.getYHeadRot();
         float currentBodyYaw = handle.getYBodyRot();
         float headDelta = wrapDegrees(targetYaw - currentHeadYaw);
@@ -369,7 +368,8 @@ final class AgentNavigator {
         handle.setXRot(pitch);
         handle.setYHeadRot(nextHeadYaw);
         handle.setYBodyRot(nextBodyYaw);
-        return Math.abs(wrapDegrees(targetYaw - nextHeadYaw));
+        return Math.max(Math.abs(wrapDegrees(targetYaw - nextHeadYaw)),
+                Math.abs(wrapDegrees(targetYaw - nextBodyYaw)));
     }
 
     /** Accelerate and brake instead of replacing velocity with a fixed vector. */
