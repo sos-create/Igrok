@@ -46,6 +46,9 @@ final class SocialLife implements Listener {
 
     /** Called only at the existing low-frequency social scan, never every tick. */
     void tick(Player bot) {
+        long now = System.currentTimeMillis();
+        expirePending(now);
+        trimCaches();
         if (bot == null || !bot.isOnline()
                 || !plugin.getConfig().getBoolean("chat.social.enabled", true)
                 || !plugin.getConfig().getBoolean("chat.social.ambient-enabled", true)
@@ -53,9 +56,7 @@ final class SocialLife implements Listener {
             return;
         }
 
-        long now = System.currentTimeMillis();
         Player nearby = nearestPlayer(bot);
-        expirePending(now);
         if (nearby == null) return;
 
         UUID playerId = nearby.getUniqueId();
@@ -120,6 +121,19 @@ final class SocialLife implements Listener {
         speak(player.getUniqueId(), text);
     }
 
+    /** True only for a clear response to this player's unexpired invitation. */
+    boolean expectsReply(UUID playerId, String rawMessage) {
+        if (playerId == null || rawMessage == null) return false;
+        PendingInvitation invitation = pending.get(playerId);
+        if (invitation == null) return false;
+        if (System.currentTimeMillis() > invitation.expiresAt()) {
+            pending.remove(playerId);
+            return false;
+        }
+        String normalized = normalize(rawMessage);
+        return isAffirmative(normalized) || isNegative(normalized);
+    }
+
     /**
      * Consumes only a clear yes/no answer to an invitation started by Igrok.
      * Normal conversation and unrelated chat continue through ChatDialogue.
@@ -134,12 +148,9 @@ final class SocialLife implements Listener {
             return false;
         }
 
-        String normalized = rawMessage.toLowerCase(java.util.Locale.ROOT)
-                .replace('ё', 'е').trim();
-        boolean yes = hasAny(normalized, "да", "ага", "угу", "конечно", "пойдем",
-                "пойдём", "давай", "согласен", "согласна", "хорошо", "без проблем");
-        boolean no = hasAny(normalized, "нет", "не хочу", "не могу", "потом",
-                "не сейчас", "отстань");
+        String normalized = normalize(rawMessage);
+        boolean no = isNegative(normalized);
+        boolean yes = !no && isAffirmative(normalized);
         if (!yes && !no) return false;
 
         pending.remove(id);
@@ -153,10 +164,10 @@ final class SocialLife implements Listener {
                     ? "Ладно, ничего страшного. Я сам попробую найти еду."
                     : "Хорошо, тогда пойду один или займусь чем-нибудь здесь. Увидимся позже.";
         } else {
-            memory.adjustReputation(id, 1);
-            plugin.skills().gain("social", 1);
-            plugin.skills().gain("cooperation", 2);
             if (invitation.type() == Invitation.EXPLORE) {
+                memory.adjustReputation(id, 1);
+                plugin.skills().gain("social", 1);
+                plugin.skills().gain("cooperation", 2);
                 plugin.brain().resumeForCommand();
                 plugin.brain().follow(player);
                 response = "Отлично. Я пойду рядом, но если замечу опасность, сначала позабочусь о безопасности.";
@@ -251,8 +262,9 @@ final class SocialLife implements Listener {
         UUID giverId = itemEntity.getThrower();
         if (giverId == null || giverId.equals(bot.getUniqueId())) return;
         Player giver = Bukkit.getPlayer(giverId);
-        if (giver == null || !giver.isOnline() || giver.getWorld() != bot.getWorld()
-                || giver.getLocation().distanceSquared(bot.getLocation()) > 20.25) return;
+        // The item's thrower UUID is the authoritative gift attribution. The
+        // giver may have moved away while the dropped item travelled to Igrok.
+        if (giver == null || !giver.isOnline() || giver.getWorld() != bot.getWorld()) return;
 
         long now = System.currentTimeMillis();
         if (now - giftTrustCooldown.getOrDefault(giverId, 0L) < 600_000L) return;
@@ -317,6 +329,22 @@ final class SocialLife implements Listener {
 
     private String choose(String... options) {
         return options[ThreadLocalRandom.current().nextInt(options.length)];
+    }
+
+    private String normalize(String text) {
+        return text.toLowerCase(java.util.Locale.ROOT).replace('ё', 'е').trim();
+    }
+
+    private boolean isAffirmative(String text) {
+        return hasAny(text, "да", "ага", "угу", "конечно", "пойдем", "давай",
+                "согласен", "согласна", "хорошо", "без проблем", "пошли", "идем", "с удовольствием");
+    }
+
+    private boolean isNegative(String text) {
+        return hasAny(text, "нет", "не хочу", "не могу", "потом", "не сейчас", "отстань",
+                "не надо", "не сегодня")
+                || text.contains(" не хочу") || text.contains(" не могу")
+                || text.contains(" не сейчас") || text.contains(" не получится");
     }
 
     private boolean hasAny(String text, String... patterns) {

@@ -1,4 +1,4 @@
-# Igrok 0.9.46
+# Igrok 0.9.47
 
 Paper 1.21.4 server-side player agent (Java 21). Igrok is a lightweight autonomous survival agent built around a fake server-side Player, bounded pathfinding, utility-based goals, associative cognition and compact persistent memory.
 
@@ -82,3 +82,12 @@ Repeated identical dialogue replies are replaced with a distinct non-question re
 - A social invitation opens a short reply window. A clear yes/no answer is consumed by the invitation handler before the general command parser, so "да" cannot accidentally trigger an unrelated player order.
 - Ambient remarks and invitations are sent only to the nearby player they concern instead of being broadcast to the whole server.
 - Gifts and accepted joint activities add experience to the social/cooperation development branch. The existing independent skill branches remain optional and continue to grow from actual in-world actions.
+
+
+## Social and weather bug fixes (0.9.47)
+
+- Public chat from nearby players is no longer automatically treated as addressed to Igrok. Players can talk to the bot by name; short follow-ups and explicit answers to a pending invitation remain supported.
+- Invitation answers are matched against the active invitation even when the player is outside the normal chat range. Negative wording takes precedence over a preceding casual "да".
+- A food invitation no longer increases trust or social skill before the food is actually received; gift pickup records the real interaction.
+- Gift attribution uses the dropped item's thrower UUID and no longer rejects a genuine gift just because the giver walked away before pickup.
+- When rain stops or the rain-shelter routine is disabled, it releases the navigator so the autonomous planner regains full movement control.
