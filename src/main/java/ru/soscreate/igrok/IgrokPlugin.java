@@ -266,6 +266,9 @@ public final class IgrokPlugin extends JavaPlugin implements Listener {
                     return;
                 }
                 getLogger().info("Igrok spawned successfully in loaded chunk " + chunkX + ", " + chunkZ + ".");
+                // A construction paused for combat must be rebound to the new
+                // fake-player entity before the general saved-state restore runs.
+                houseBuilder.onBotRespawn(controller.bukkitPlayer());
                 houseBuilder.resumeSavedState(stateData);
                 if (chunkAreaManager != null && getConfig().getBoolean("chunks.enabled", true)) {
                     chunkAreaManager.start();
