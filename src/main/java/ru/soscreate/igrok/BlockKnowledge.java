@@ -93,7 +93,7 @@ final class BlockKnowledge {
         String name = material.name();
 
         if (isOre(name)) return oreAction(name);
-        if (isLog(name)) return "срубить топором; брёвна переработать в доски и палки";
+        if (isLog(name) || name.equals("BAMBOO_BLOCK")) return "срубить топором; сырьё переработать в доски и палки";
         if (name.endsWith("_LEAVES")) return "можно разобрать после рубки дерева; искать саженцы и еду";
         if (isCrop(name)) return "проверить зрелость; собрать урожай и пересадить имеющимися семенами";
         if (name.equals("FARMLAND")) return "почва для посадки культур; не выкапывать без необходимости";
@@ -164,7 +164,7 @@ final class BlockKnowledge {
     static String purpose(Material material) {
         if (material == null) return "назначение неизвестно";
         String name = material.name();
-        if (isOre(name) || isLog(name) || name.endsWith("_LEAVES")
+        if (isOre(name) || isLog(name) || name.equals("BAMBOO_BLOCK") || name.endsWith("_LEAVES")
                 || name.equals("STONE") || name.equals("DEEPSLATE")
                 || name.equals("COBBLESTONE")) return "сырьё";
         if (name.endsWith("_PICKAXE") || name.endsWith("_AXE") || name.endsWith("_SWORD")
@@ -219,9 +219,8 @@ final class BlockKnowledge {
     }
 
     private static boolean isLog(String name) {
-        return (name.endsWith("_LOG") || name.endsWith("_WOOD")
-                || name.endsWith("_STEM") || name.endsWith("_HYPHAE"))
-                && !name.startsWith("STRIPPED_");
+        return name.endsWith("_LOG") || name.endsWith("_WOOD")
+                || name.endsWith("_STEM") || name.endsWith("_HYPHAE");
     }
 
     private static boolean isOre(String name) {
