@@ -93,7 +93,16 @@ final class BlockKnowledge {
             java.util.Map.entry("брёвна", Material.OAK_LOG),
             java.util.Map.entry("угольной руды", Material.COAL_ORE),
             java.util.Map.entry("железной руды", Material.IRON_ORE),
-            java.util.Map.entry("рудой железа", Material.IRON_ORE)
+            java.util.Map.entry("железную руду", Material.IRON_ORE),
+            java.util.Map.entry("угольную руду", Material.COAL_ORE),
+            java.util.Map.entry("угольной руды", Material.COAL_ORE),
+            java.util.Map.entry("золотую руду", Material.GOLD_ORE),
+            java.util.Map.entry("медную руду", Material.COPPER_ORE),
+            java.util.Map.entry("алмазную руду", Material.DIAMOND_ORE),
+            java.util.Map.entry("редстоуновую руду", Material.REDSTONE_ORE),
+            java.util.Map.entry("рудой железа", Material.IRON_ORE),
+            java.util.Map.entry("досок", Material.OAK_PLANKS),
+            java.util.Map.entry("железа", Material.IRON_INGOT)
     );
 
     static Material findMaterialMention(String text) {
