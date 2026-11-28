@@ -196,7 +196,7 @@ final class BlockKnowledge {
         if (block == null) return "Блок не определён.";
         Material material = block.getType();
         String result = BlockPerception.russianName(material) + ": " + quickAction(material) + ".";
-        if (isCrop(material) && block.getBlockData() instanceof Ageable ageable) {
+        if (isCrop(material.name()) && block.getBlockData() instanceof Ageable ageable) {
             if (ageable.getAge() >= ageable.getMaximumAge()) {
                 result += " Урожай созрел — можно собрать и пересадить.";
             } else {
