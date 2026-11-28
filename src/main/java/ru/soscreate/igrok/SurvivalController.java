@@ -588,7 +588,8 @@ final class SurvivalController {
         }
         if (!hasTable) return;
 
-        boolean pistonNeedsPlanks = pistonPlankReserve > 0 && planksBeyondProject < 3;
+        boolean pistonNeedsPlanks = pistonPlankReserve > 0
+                && planksBeyondProjectReserve(bot, projectRequirements) < pistonPlankReserve;
         if (pistonNeedsPlanks && logs > 0 && craftAnyPlanksFromLogs(bot)) return;
 
         boolean needsSticks = pickTier < 1 || axeTier < 1;
