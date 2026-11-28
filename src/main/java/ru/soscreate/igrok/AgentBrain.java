@@ -144,8 +144,9 @@ final class AgentBrain {
             for (int i = 0; i < visible.size(); i++) {
                 BlockPerception.Observation item = visible.get(i);
                 if (i > 0) report.append("; ");
-                report.append(BlockPerception.russianName(item.material()))
-                        .append(" примерно в ")
+                report.append(BlockKnowledge.describe(
+                                bot.getWorld().getBlockAt(item.location())))
+                        .append(" Примерно в ")
                         .append(String.format(Locale.ROOT, "%.1f", item.distance()))
                         .append(" блока от меня (")
                         .append(item.location().getBlockX()).append(", ")
@@ -1791,8 +1792,9 @@ final class AgentBrain {
     private boolean isWantedResource(Material type) {
         String name = type.name();
         return switch (miningMode) {
-            case "wood" -> (name.endsWith("_LOG") || name.endsWith("_WOOD"))
-                    && !name.startsWith("STRIPPED_");
+            case "wood" -> (name.endsWith("_LOG") || name.endsWith("_WOOD")
+                    || name.endsWith("_STEM") || name.endsWith("_HYPHAE")
+                    || name.equals("BAMBOO_BLOCK")) && !name.startsWith("STRIPPED_");
             case "coal" -> name.endsWith("_COAL_ORE");
             case "iron" -> name.endsWith("_IRON_ORE");
             case "redstone" -> name.endsWith("_REDSTONE_ORE");
@@ -1819,6 +1821,8 @@ final class AgentBrain {
     }
 
     private boolean hasNearbyLeaves(Block log) {
+        String type = log.getType().name();
+        if (type.endsWith("_STEM") || type.endsWith("_HYPHAE") || type.equals("BAMBOO_BLOCK")) return true;
         for (int dx = -2; dx <= 2; dx++) {
             for (int dy = -1; dy <= 3; dy++) {
                 for (int dz = -2; dz <= 2; dz++) {
