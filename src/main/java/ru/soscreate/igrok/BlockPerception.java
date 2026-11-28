@@ -120,6 +120,8 @@ final class BlockPerception {
             if (base.endsWith("_BUTTON")) return "деревянная кнопка (" + wood + ")";
             if (base.endsWith("_PRESSURE_PLATE")) return "деревянная нажимная плита (" + wood + ")";
         }
+        String toolName = russianToolName(name);
+        if (toolName != null) return toolName;
         if (name.endsWith("_ORE")) {
             if (name.contains("COAL")) return "угольная руда";
             if (name.contains("IRON")) return "железная руда";
@@ -178,6 +180,22 @@ final class BlockPerception {
             case "GOLD_ORE", "DEEPSLATE_GOLD_ORE" -> "золотая руда";
             case "DIAMOND_ORE", "DEEPSLATE_DIAMOND_ORE" -> "алмазная руда";
             case "BAMBOO_BLOCK" -> "блок бамбука";
+            case "STICK" -> "палка";
+            case "IRON_INGOT" -> "железный слиток";
+            case "GOLD_INGOT" -> "золотой слиток";
+            case "COPPER_INGOT" -> "медный слиток";
+            case "RAW_IRON" -> "необработанное железо";
+            case "RAW_GOLD" -> "необработанное золото";
+            case "RAW_COPPER" -> "необработанная медь";
+            case "REDSTONE" -> "редстоуновая пыль";
+            case "COAL" -> "уголь";
+            case "CHARCOAL" -> "древесный уголь";
+            case "DIAMOND" -> "алмаз";
+            case "EMERALD" -> "изумруд";
+            case "WHITE_BED", "RED_BED", "BLUE_BED", "BLACK_BED", "BROWN_BED",
+                    "CYAN_BED", "GRAY_BED", "GREEN_BED", "LIGHT_BLUE_BED", "LIGHT_GRAY_BED",
+                    "LIME_BED", "MAGENTA_BED", "ORANGE_BED", "PINK_BED", "PURPLE_BED",
+                    "YELLOW_BED" -> "кровать";
             case "OAK_LOG" -> "дубовое бревно";
             case "SPRUCE_LOG" -> "еловое бревно";
             case "BIRCH_LOG" -> "берёзовое бревно";
@@ -188,6 +206,28 @@ final class BlockPerception {
             case "CHERRY_LOG" -> "вишнёвое бревно";
             default -> name.toLowerCase(Locale.ROOT).replace('_', ' ');
         };
+    }
+
+    private static String russianToolName(String name) {
+        String[] suffixes = {"PICKAXE", "AXE", "SWORD", "SHOVEL", "HOE"};
+        String[] russianSuffixes = {"кирка", "топор", "меч", "лопата", "мотыга"};
+        for (int i = 0; i < suffixes.length; i++) {
+            String suffix = "_" + suffixes[i];
+            if (!name.endsWith(suffix)) continue;
+            String tier = name.substring(0, name.length() - suffix.length());
+            String russianTier = switch (tier) {
+                case "WOODEN" -> "деревянная";
+                case "STONE" -> "каменная";
+                case "IRON" -> "железная";
+                case "GOLDEN" -> "золотая";
+                case "DIAMOND" -> "алмазная";
+                case "NETHERITE" -> "незеритовая";
+                default -> null;
+            };
+            if (russianTier == null) return null;
+            return russianTier + " " + russianSuffixes[i];
+        }
+        return null;
     }
 
     private static String woodType(String name) {
