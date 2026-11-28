@@ -41,7 +41,7 @@ final class IgrokServerPlayer extends ServerPlayer {
         float intendedYaw = getYRot();
         float intendedPitch = getXRot();
         float intendedHeadYaw = getYHeadRot();
-        float intendedBodyYaw = getYBodyRot();
+        float intendedBodyYaw = yBodyRot;
         doTick();
         if (isRemoved() || !isAlive()) return;
 
