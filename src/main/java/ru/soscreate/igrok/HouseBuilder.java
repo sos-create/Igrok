@@ -138,13 +138,18 @@ final class HouseBuilder {
     }
 
     /** Exact number of a material still needed by the currently prepared project. */
-    int missingRequired(Material material) {
-        if (actor == null || material == null) return 0;
+    int requiredCount(Material material) {
+        if (material == null) return 0;
         int required = 0;
         for (BlockStep step : plan) {
             if (step.consumeItem() && step.material() == material) required++;
         }
-        return Math.max(0, required - count(actor, material));
+        return required;
+    }
+
+    int missingRequired(Material material) {
+        if (actor == null || material == null) return 0;
+        return Math.max(0, requiredCount(material) - count(actor, material));
     }
 
     /** Sum of missing ingredients by material suffix, e.g. all wood plank variants. */
