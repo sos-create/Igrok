@@ -386,7 +386,11 @@ final class HouseBuilder {
         }
 
         BlockData data = step.data() == null ? step.material().createBlockData() : step.data().clone();
-        target.setBlockData(data, false);
+        // Keep ordinary building physics throttled, but let the power block
+        // notify its adjacent piston when the redstone test rig is completed.
+        boolean activateMechanism = "piston_lab".equals(projectType)
+                && step.material() == Material.REDSTONE_BLOCK;
+        target.setBlockData(data, activateMechanism);
         if (step.consumeItem()) consumeOne(actor, step.material());
         cursor++;
         placed++;
