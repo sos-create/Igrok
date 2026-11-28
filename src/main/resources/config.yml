@@ -24,7 +24,8 @@ chat:
   # A short delay lets the bot collect consecutive chat messages before replying.
   reply-delay-min-seconds: 5
   reply-delay-max-seconds: 5
-  # Direct mentions work at any nearby-player count; solo nearby chat can start a conversation.\n  # Follow-up messages continue naturally during the ordinary-chat session.
+  # Direct mentions work at any nearby-player count; solo nearby chat can start a conversation.
+  # Follow-up messages continue naturally during the ordinary-chat session.
   follow-up-window-seconds: 120
   social:
     enabled: true
