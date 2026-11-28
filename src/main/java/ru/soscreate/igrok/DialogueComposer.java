@@ -24,6 +24,17 @@ final class DialogueComposer {
         String name = player.getName();
 
         String normalizedMessage = parsed.cleaned().replace('ё', 'е');
+        if (contains(normalizedMessage, "рецепт", "скрафт", "крафт", "из чего сделать",
+                "как сделать", "как изготовить", "для чего нужен", "зачем нужен", "чем добывать")) {
+            org.bukkit.Material mentioned = BlockKnowledge.findMaterialMention(normalizedMessage);
+            if (mentioned != null) {
+                String answer = BlockPerception.russianName(mentioned) + " — "
+                        + BlockKnowledge.purpose(mentioned) + ". "
+                        + BlockKnowledge.quickAction(mentioned) + ". "
+                        + plugin.brain().recipeExplanation(mentioned);
+                return avoidImmediateRepeat(id, answer);
+            }
+        }
         if (contains(normalizedMessage, "что видишь", "что ты видишь", "видишь ли",
                 "посмотри вокруг", "осмотрись", "какой блок", "насколько далеко",
                 "что находится рядом")) {
