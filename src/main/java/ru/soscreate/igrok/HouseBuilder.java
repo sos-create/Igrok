@@ -55,7 +55,7 @@ final class HouseBuilder {
     private AgentNavigator navigator;
     private Location workStandPosition;
     private int navigationFailures;
-    private int actorUnavailableTicks;
+    private long actorUnavailableSinceMillis;
 
     HouseBuilder(IgrokPlugin plugin) {
         this.plugin = plugin;
@@ -103,6 +103,7 @@ final class HouseBuilder {
         navigator = new AgentNavigator(actor, plugin.skills());
         workStandPosition = null;
         navigationFailures = 0;
+        actorUnavailableSinceMillis = 0L;
         wallMaterial = materialOr(data.getString("builder.wall-material", ""), Material.OAK_PLANKS);
         glassMaterial = optionalMaterial(data.getString("builder.glass-material", ""));
         doorMaterial = optionalMaterial(data.getString("builder.door-material", ""));
@@ -229,6 +230,7 @@ final class HouseBuilder {
         navigator = new AgentNavigator(actor, plugin.skills());
         workStandPosition = null;
         navigationFailures = 0;
+        actorUnavailableSinceMillis = 0L;
         Location site = findSite(anchor);
         if (site == null) {
             plan.clear();
@@ -255,6 +257,7 @@ final class HouseBuilder {
         navigator = new AgentNavigator(actor, plugin.skills());
         workStandPosition = null;
         navigationFailures = 0;
+        actorUnavailableSinceMillis = 0L;
         projectType = "shelter";
         choosePalette();
         plan.clear();
@@ -279,9 +282,13 @@ final class HouseBuilder {
     }
 
     void cancel(boolean announce) {
-        if (task == null) return;
+        if (task == null) {
+            actorUnavailableSinceMillis = 0L;
+            return;
+        }
         task.cancel();
         task = null;
+        actorUnavailableSinceMillis = 0L;
         plan.clear();
         workStandPosition = null;
         if (navigator != null) navigator.stop();
@@ -343,6 +350,7 @@ final class HouseBuilder {
                 task.cancel();
                 task = null;
             }
+            actorUnavailableSinceMillis = 0L;
             if (navigator != null) navigator.stop();
             plan.clear();
             workStandPosition = null;
@@ -357,11 +365,11 @@ final class HouseBuilder {
         }
         Player currentBot = plugin.controller().bukkitPlayer();
         if (currentBot == null || !currentBot.isOnline() || currentBot.isDead()) {
-            // Keep the saved construction plan during the short vanilla-style
-            // respawn window instead of cancelling it on the first dead tick.
-            actorUnavailableTicks++;
-            if (actorUnavailableTicks > 50) {
-                stopForSafety("Строительство остановлено: бот не вернулся после возрождения.");
+            // Preserve a project through delayed chunk loading and server lag.
+            // A wall-clock timeout avoids depending on the configurable build speed.
+            if (actorUnavailableSinceMillis == 0L) actorUnavailableSinceMillis = System.currentTimeMillis();
+            if (System.currentTimeMillis() - actorUnavailableSinceMillis >= 60_000L) {
+                stopForSafety("Строительство остановлено: бот не вернулся после возрождения в течение минуты.");
             }
             return;
         }
@@ -374,7 +382,7 @@ final class HouseBuilder {
             workStandPosition = null;
             navigationFailures = 0;
         }
-        actorUnavailableTicks = 0;
+        actorUnavailableSinceMillis = 0L;
 
         BlockStep step = plan.get(cursor);
         if (isForbiddenMaterial(step.material())) {
@@ -566,6 +574,7 @@ final class HouseBuilder {
     private void finish() {
         if (task != null) task.cancel();
         task = null;
+        actorUnavailableSinceMillis = 0L;
         if ("shelter".equals(projectType)) completed = true;
         else completedProjects.add(projectType);
         plan.clear();
