@@ -100,14 +100,6 @@ final class ChatDialogue implements Listener {
 
         if (addressed && sender != null && isWithinListenRadius(sender)) {
             plugin.brain().onPlayerAddressed(sender);
-            if (plugin.controller() != null && plugin.controller().isSpawned()) {
-                plugin.skills().gain("social", 1);
-                plugin.skills().gain("communication", 1);
-                if (lower.contains("спасибо") || lower.contains("привет") || lower.contains("помоги")
-                        || lower.contains("друг") || lower.contains("please") || lower.contains("thanks")) {
-                    plugin.skills().gain("trust", 1);
-                }
-            }
         }
 
         if (addressed || continuation || ordinaryStart) lastConversationAt.put(senderId, now);
@@ -254,6 +246,17 @@ final class ChatDialogue implements Listener {
         long cooldown = Math.max(1L, plugin.getConfig().getLong("chat.cooldown-seconds", 5)) * 1000L;
         if (!continuation && now - lastReply.getOrDefault(senderId, 0L) < cooldown) return;
         lastReply.put(senderId, now);
+
+        // Award communication experience only after duplicate/cooldown checks.
+        // Rapidly changing chat text cannot farm social skills.
+        if (addressed || continuation) {
+            plugin.skills().gain("social", 1);
+            plugin.skills().gain("communication", 1);
+            if (message.contains("спасибо") || message.contains("привет") || message.contains("помоги")
+                    || message.contains("друг") || message.contains("please") || message.contains("thanks")) {
+                plugin.skills().gain("trust", 1);
+            }
+        }
 
         CognitiveNetwork.Analysis thought = plugin.cognition().think(
                 rawMessage, plugin.brain().memory().lastTopic(senderId),
