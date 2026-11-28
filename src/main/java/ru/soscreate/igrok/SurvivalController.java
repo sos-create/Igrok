@@ -533,8 +533,7 @@ final class SurvivalController {
                 && projectNeeds.getOrDefault(Material.PISTON, 0) > 0 && planks < 3;
         if (pistonNeedsPlanks && logs > 0 && craftAnyPlanksFromLogs(bot)) return;
 
-        boolean needsSticks = pickTier < 1 || axeTier < 1
-                || (pistonProject && projectNeeds.getOrDefault(Material.PISTON, 0) > 0);
+        boolean needsSticks = pickTier < 1 || axeTier < 1;
         if (needsSticks && count(bot, Material.STICK) < 2
                 && planks >= 2 + projectPlankReserve) {
             if (craftResult(bot, Material.STICK)) return;
@@ -611,8 +610,6 @@ final class SurvivalController {
             int missingPiston = projectNeeds.getOrDefault(Material.PISTON, 0);
             int missingPower = projectNeeds.getOrDefault(Material.REDSTONE_BLOCK, 0);
             if (missingPiston > 0) {
-                if (count(bot, Material.STICK) < 2 && planks >= 2
-                        && craftResult(bot, Material.STICK)) return;
                 if (craftResult(bot, Material.PISTON)) return;
             } else if (missingPower > 0) {
                 if (craftResult(bot, Material.REDSTONE_BLOCK)) return;
