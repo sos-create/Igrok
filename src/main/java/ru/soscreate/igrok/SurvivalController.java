@@ -79,6 +79,10 @@ final class SurvivalController {
         return recipeKnowledge.knowledgeSummary();
     }
 
+    String recipeExplanation(Material output) {
+        return recipeKnowledge.recipeExplanation(output);
+    }
+
     void tick(Player bot, int tick) {
         if (!recipeKnowledge.isLoaded() || tick >= nextRecipeRefreshTick) {
             recipeKnowledge.refresh();
