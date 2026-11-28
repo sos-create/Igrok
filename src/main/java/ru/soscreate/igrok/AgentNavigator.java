@@ -378,11 +378,12 @@ final class AgentNavigator {
                             current.node().y() + dy, current.node().z() + dir[1]);
                     if (Math.abs(candidate.x() - start.x()) > pathRadius()
                             || Math.abs(candidate.z() - start.z()) > pathRadius()
-                            || !standable(world, candidate)) continue;
+                            || (!costs.containsKey(candidate) && !standable(world, candidate))) continue;
                     if (dir[0] != 0 && dir[1] != 0) {
                         Node sideA = new Node(current.node().x() + dir[0], current.node().y(), current.node().z());
                         Node sideB = new Node(current.node().x(), current.node().y(), current.node().z() + dir[1]);
-                        if (!standable(world, sideA) || !standable(world, sideB)) continue;
+                        if (!isStandableOrKnown(world, sideA, costs)
+                                || !isStandableOrKnown(world, sideB, costs)) continue;
                     }
 
                     double verticalCost = dy > 0 ? 0.85 : Math.max(0, -dy) * 0.38;
@@ -412,6 +413,13 @@ final class AgentNavigator {
         plannedDestination = requestedGoal;
         stuckTicks = 0;
         return true;
+    }
+
+    private boolean isStandableOrKnown(World world, Node node, Map<Node, Double> knownCosts) {
+        // A node enters the cost map only after a successful standability check.
+        // Reusing that fact avoids repeated Bukkit block/world-border reads from
+        // several neighboring A* nodes.
+        return knownCosts.containsKey(node) || standable(world, node);
     }
 
     private Node findGoal(Location destination) {
