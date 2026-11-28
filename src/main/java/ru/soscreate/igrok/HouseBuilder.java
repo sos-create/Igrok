@@ -145,6 +145,12 @@ final class HouseBuilder {
         resumeAttempts = 0;
         long generation = ++resumeGeneration;
         requestResumeChunks(generation);
+        // An async provider or disk stall must not leave the planner blocked forever.
+        Bukkit.getScheduler().runTaskLater(plugin, () -> {
+            if (resumePending && generation == resumeGeneration) {
+                failResume("chunk recovery timed out after 60 seconds");
+            }
+        }, 1200L);
     }
 
     private void requestResumeChunks(long generation) {
