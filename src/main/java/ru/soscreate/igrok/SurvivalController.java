@@ -79,6 +79,63 @@ final class SurvivalController {
         return recipeKnowledge.knowledgeSummary();
     }
 
+    /**
+     * Explains the exact outstanding materials for the active or next blueprint.
+     * This is also used in chat so the player's question is answered from the same
+     * resource bill that the autonomous crafting and gathering planner uses.
+     */
+    String craftingPlanSummary(Player bot) {
+        if (bot == null || !bot.isOnline()) return "Сейчас я не могу проверить свой инвентарь.";
+        HouseBuilder builder = plugin.houseBuilder();
+        if (builder.isBuilding()) return "Сейчас я уже строю проект и не буду отвлекать материалы на случайный крафт.";
+
+        String project;
+        if (!builder.hasCompleted()) {
+            builder.canBuild(bot);
+            project = "убежища";
+        } else {
+            String next = builder.nextProjectType();
+            if (next.isBlank()) {
+                return "Сейчас у меня нет незавершённого чертежа. Я крафчу только то, что нужно для выживания: подходящие инструменты, еду при голоде, свет в темноте или рабочую станцию под конкретное сырьё.";
+            }
+            builder.canBuildProject(bot);
+            project = switch (next) {
+                case "watchtower" -> "смотровой башни";
+                case "workshop" -> "мастерской";
+                case "piston_lab" -> "поршневой лаборатории";
+                default -> "следующего проекта";
+            };
+        }
+
+        Map<Material, Integer> required = builder.requiredMaterials();
+        Map<Material, Integer> missing = builder.missingMaterials(bot);
+        if (required.isEmpty()) {
+            return "Сейчас у меня не подготовлен чертёж " + project
+                    + ". Сначала проверю условия строительства и подходящее место.";
+        }
+        if (missing.isEmpty()) {
+            return "Для " + project + " все материалы уже собраны. Я могу перейти к строительству, если найду безопасное место.";
+        }
+
+        StringBuilder result = new StringBuilder("Для ").append(project).append(" не хватает: ");
+        boolean first = true;
+        for (Map.Entry<Material, Integer> entry : missing.entrySet()) {
+            if (!first) result.append(", ");
+            first = false;
+            result.append(entry.getValue()).append(" × ")
+                    .append(BlockPerception.russianName(entry.getKey()));
+        }
+        result.append(". Я буду добывать и перерабатывать именно эти материалы, не заменяя их случайными вариантами.");
+
+        if (missing.getOrDefault(Material.PISTON, 0) > 0) {
+            result.append(" Для поршня по рецепту нужны 3 доски, 4 булыжника, 1 железный слиток и 1 редстоун.");
+        }
+        if (missing.getOrDefault(Material.REDSTONE_BLOCK, 0) > 0) {
+            result.append(" Для блока питания нужны ещё 9 единиц редстоуна.");
+        }
+        return result.toString();
+    }
+
     String recipeExplanation(Material output) {
         return recipeKnowledge.recipeExplanation(output);
     }
