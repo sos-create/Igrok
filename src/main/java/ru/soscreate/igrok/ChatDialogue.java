@@ -71,13 +71,14 @@ final class ChatDialogue implements Listener {
         String fingerprint = fingerprint(rawMessage);
         String lower = rawMessage.toLowerCase(Locale.ROOT);
         Player sender = Bukkit.getPlayer(senderId);
-        boolean addressed = mentionsBot(lower, plugin.getConfig().getString("bot-name", "Igrok"))
-                || isNearBot(sender);
+        boolean addressed = mentionsBot(lower, plugin.getConfig().getString("bot-name", "Igrok"));
         long followUpMillis = Math.max(10L,
                 plugin.getConfig().getLong("chat.follow-up-window-seconds", 90)) * 1000L;
         long questionAt = lastBotQuestionAt.getOrDefault(senderId, 0L);
-        boolean continuation = questionAt > 0L && now - questionAt <= followUpMillis
-                && isConversationalFollowUp(lower);
+        boolean invitationReply = plugin.socialLife() != null
+                && plugin.socialLife().expectsReply(senderId, lower);
+        boolean continuation = invitationReply || (questionAt > 0L && now - questionAt <= followUpMillis
+                && isConversationalFollowUp(lower));
         if (questionAt > 0L && now - questionAt > followUpMillis) {
             lastBotQuestionAt.remove(senderId);
         }
@@ -183,17 +184,19 @@ final class ChatDialogue implements Listener {
         Player bot = plugin.controller().bukkitPlayer();
         if (sender == null || bot == null || sender.getWorld() != bot.getWorld()) return;
 
-        double radius = Math.max(4.0, plugin.getConfig().getDouble("chat.listen-radius", 16.0));
-        if (sender.getLocation().distanceSquared(bot.getLocation()) > radius * radius) return;
-
         String message = rawMessage.toLowerCase(Locale.ROOT);
-        boolean addressed = mentionsBot(message, plugin.getConfig().getString("bot-name", "Igrok"))
-                || isNearBot(sender);
+        boolean invitationReply = plugin.socialLife() != null
+                && plugin.socialLife().expectsReply(senderId, message);
+        double radius = Math.max(4.0, plugin.getConfig().getDouble("chat.listen-radius", 16.0));
+        if (sender.getLocation().distanceSquared(bot.getLocation()) > radius * radius
+                && !invitationReply) return;
+        boolean addressed = mentionsBot(message, plugin.getConfig().getString("bot-name", "Igrok"));
         long followUpMillis = Math.max(10L,
                 plugin.getConfig().getLong("chat.follow-up-window-seconds", 90)) * 1000L;
         long questionAt = lastBotQuestionAt.getOrDefault(senderId, 0L);
-        boolean continuation = questionAt > 0L && System.currentTimeMillis() - questionAt <= followUpMillis
-                && isConversationalFollowUp(message);
+        boolean continuation = invitationReply || (questionAt > 0L
+                && System.currentTimeMillis() - questionAt <= followUpMillis
+                && isConversationalFollowUp(message));
         if (!addressed && !continuation) return;
         if (continuation) lastBotQuestionAt.remove(senderId);
 
@@ -272,14 +275,6 @@ final class ChatDialogue implements Listener {
         }
         sendReply(id, composer.actionReply(action, true, started, sender));
     }
-    private boolean isNearBot(Player sender) {
-        if (sender == null || !sender.isOnline()) return false;
-        Player bot = plugin.controller().bukkitPlayer();
-        if (bot == null || !bot.isOnline() || sender.getWorld() != bot.getWorld()) return false;
-        double radius = Math.max(4.0, plugin.getConfig().getDouble("chat.listen-radius", 16.0));
-        return sender.getLocation().distanceSquared(bot.getLocation()) <= radius * radius;
-    }
-
     private boolean mentionsBot(String message, String name) {
         String normalized = name == null ? "igrok" : name.toLowerCase(Locale.ROOT).trim();
         if (hasWord(message, normalized)) return true;

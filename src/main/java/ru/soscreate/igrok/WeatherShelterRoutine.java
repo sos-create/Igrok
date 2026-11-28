@@ -23,6 +23,9 @@ final class WeatherShelterRoutine {
         if (!plugin.getConfig().getBoolean("life.rain-shelter.enabled", true)
                 || bot.getWorld().getEnvironment() != World.Environment.NORMAL
                 || !bot.getWorld().hasStorm()) {
+            // The navigator may still be following the shelter route. Release it
+            // before returning control to the independent goal planner.
+            if (target != null) navigator.stop();
             target = null;
             return false;
         }
