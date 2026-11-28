@@ -67,14 +67,8 @@ public final class IgrokPlugin extends JavaPlugin implements Listener {
         getConfig().addDefault("chunks.scout-cache", 24);
         getConfig().addDefault("chunks.max-async-loads", 2);
         getConfig().options().copyDefaults(true);
-        // Disable the experimental scout chunk generator. It can trigger expensive
-        // terrain reads/generation and Paper chunk-data failures on some worlds.
-        getConfig().set("chunks.enabled", false);
-        // Keep replies quick even when the server already has an older config.yml.
-        getConfig().set("chat.reply-delay-min-seconds", 5);
-        getConfig().set("chat.reply-delay-max-seconds", 5);
-        getConfig().set("chat.cooldown-seconds", 5);
-        getConfig().set("chat.listen-radius", 16);
+        // Defaults are copied only for missing settings. Existing server-owner
+        // values are preserved instead of being overwritten on every restart.
         saveConfig();
         stateFile = new File(getDataFolder(), "agent-state.yml");
         stateData = YamlConfiguration.loadConfiguration(stateFile);
