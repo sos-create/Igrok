@@ -229,7 +229,8 @@ final class AutonomousPlanner {
                             "PISTON_WOOD", "Для поршня не хватает трёх досок; ищу дерево.", false));
                 }
             }
-            if (s.redstoneDust() < 9 && s.pickaxeTier() >= 4) {
+            int redstoneNeeded = s.projectMissingPiston() > 0 ? 10 : 9;
+            if (s.redstoneDust() < redstoneNeeded && s.pickaxeTier() >= 4) {
                 best = better(best, collect(s.redstoneSearchReady(), "redstone", 0.88,
                         "REDSTONE", "Готовлю редстоун для поршня и блока питания.", false));
             }
