@@ -644,22 +644,17 @@ final class AgentNavigator {
         double length = ray.length();
         if (length < 0.08) return true;
         ray.normalize();
-        // Three lanes catch a shoulder clipping a wall or a fence corner.
+        // Three lanes at leg, torso and head height catch wall edges and fences.
+        double[] heights = {0.32, 0.92, 1.52};
         for (int side = -1; side <= 1; side++) {
-            Location start = new Location(world,
-                    current.getX() + sideX * side, current.getY() + 0.32,
-                    current.getZ() + sideZ * side);
-            org.bukkit.util.RayTraceResult hit = world.rayTraceBlocks(
-                    start, ray, length, FluidCollisionMode.NEVER, true);
-            if (hit != null && hit.getHitBlock() != null) return false;
-        }
-        for (int side = -1; side <= 1; side++) {
-            Location start = new Location(world,
-                    current.getX() + sideX * side, current.getY() + 1.52,
-                    current.getZ() + sideZ * side);
-            org.bukkit.util.RayTraceResult hit = world.rayTraceBlocks(
-                    start, ray, length, FluidCollisionMode.NEVER, true);
-            if (hit != null && hit.getHitBlock() != null) return false;
+            for (double height : heights) {
+                Location start = new Location(world,
+                        current.getX() + sideX * side, current.getY() + height,
+                        current.getZ() + sideZ * side);
+                org.bukkit.util.RayTraceResult hit = world.rayTraceBlocks(
+                        start, ray, length, FluidCollisionMode.NEVER, true);
+                if (hit != null && hit.getHitBlock() != null) return false;
+            }
         }
         return true;
     }
@@ -686,7 +681,7 @@ final class AgentNavigator {
         double rise = Math.max(0.0, next.y() - startY);
         // The normal jump impulse peaks a little above one block. Keep the
         // estimate conservative; vanilla physics still decides the real motion.
-        double jumpHeight = 1.08;
+        double jumpHeight = 0.82;
         double[] samples = {0.22, 0.42, 0.62, 0.82, 0.96};
         double[] bodyHeights = {0.10, 0.90, 1.70};
         for (double t : samples) {
