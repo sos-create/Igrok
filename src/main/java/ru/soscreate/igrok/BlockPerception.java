@@ -198,10 +198,17 @@ final class BlockPerception {
         return name.endsWith("_LOG") || name.endsWith("_WOOD")
                 || name.endsWith("_ORE")
                 || name.equals("WATER") || name.equals("LAVA")
-                || name.equals("CHEST") || name.equals("BARREL")
+                || name.equals("CHEST") || name.equals("TRAPPED_CHEST") || name.equals("BARREL")
                 || name.equals("CRAFTING_TABLE") || name.equals("FURNACE")
                 || name.equals("BLAST_FURNACE") || name.equals("SMOKER")
-                || name.equals("TORCH") || name.endsWith("_BED")
-                || name.equals("WHEAT") || name.equals("CARROTS") || name.equals("POTATOES");
+                || name.equals("ANVIL") || name.equals("CHIPPED_ANVIL") || name.equals("DAMAGED_ANVIL")
+                || name.equals("SMITHING_TABLE") || name.equals("ENCHANTING_TABLE")
+                || name.equals("BREWING_STAND") || name.equals("STONECUTTER")
+                || name.equals("GRINDSTONE") || name.equals("COMPOSTER")
+                || name.equals("BEE_NEST") || name.equals("BEEHIVE")
+                || name.equals("FARMLAND") || name.equals("TORCH") || name.endsWith("_BED")
+                || name.equals("WHEAT") || name.equals("CARROTS") || name.equals("POTATOES")
+                || name.equals("BEETROOTS") || name.equals("NETHER_WART")
+                || name.equals("COCOA") || name.equals("PUMPKIN_STEM") || name.equals("MELON_STEM");
     }
 }
