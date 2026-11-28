@@ -356,10 +356,15 @@ final class HouseBuilder {
         }
         if (actor == null || !actor.isOnline()) {
             actor = plugin.controller().bukkitPlayer();
-            if (actor == null) {
+            if (actor == null || !actor.isOnline()) {
                 stopForSafety("Строительство остановлено: бот больше не находится в мире.");
                 return;
             }
+            // Death/respawn replaces the fake ServerPlayer. The old navigator
+            // still holds the removed entity, so rebind it before placing more blocks.
+            navigator = new AgentNavigator(actor, plugin.skills());
+            workStandPosition = null;
+            navigationFailures = 0;
         }
 
         BlockStep step = plan.get(cursor);
