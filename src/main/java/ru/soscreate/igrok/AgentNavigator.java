@@ -209,11 +209,6 @@ final class AgentNavigator {
     }
 
     /**
-     * Safe local steering fallback used when bounded A* cannot find a route.
-     * It advances one walkable block at a time, respects loaded chunks, world
-     * borders, hazards and headroom, and lets vanilla entity physics do the walking.
-     */
-    /**
      * Opens a closed wooden/copper door or fence gate when it blocks the requested
      * route. The normal PlayerInteractEvent is fired first so protection plugins
      * can deny it; iron doors are never forced open.
