@@ -118,6 +118,20 @@ final class BlockKnowledge {
         return "вспомогательный ресурс";
     }
 
+    static Material planksForLog(Material log) {
+        if (log == null) return null;
+        String name = log.name();
+        if (name.equals("BAMBOO_BLOCK") || name.equals("STRIPPED_BAMBOO_BLOCK")) {
+            return Material.BAMBOO_PLANKS;
+        }
+        if (!(name.endsWith("_LOG") || name.endsWith("_WOOD")
+                || name.endsWith("_STEM") || name.endsWith("_HYPHAE"))) return null;
+        if (name.startsWith("STRIPPED_")) name = name.substring("STRIPPED_".length());
+        int separator = name.lastIndexOf('_');
+        if (separator <= 0) return null;
+        return Material.matchMaterial(name.substring(0, separator) + "_PLANKS");
+    }
+
     private static boolean isCrop(String name) {
         return name.equals("WHEAT") || name.equals("CARROTS") || name.equals("POTATOES")
                 || name.equals("BEETROOTS") || name.equals("NETHER_WART")
