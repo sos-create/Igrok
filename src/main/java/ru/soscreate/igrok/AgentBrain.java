@@ -1107,6 +1107,8 @@ final class AgentBrain {
                     miningRequested = false;
                     miningTarget = null;
                     miningTicks = 0;
+                    miningTargetProspecting = false;
+                    resetProspecting();
                     nextSearchTick = 0;
                 }
             }
