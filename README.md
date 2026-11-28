@@ -1,4 +1,4 @@
-# Igrok 0.9.52
+# Igrok 0.9.53
 
 Paper 1.21.4 server-side player agent (Java 21). Igrok is a lightweight autonomous survival agent built around a fake server-side Player, bounded pathfinding, utility-based goals, associative cognition and compact persistent memory.
 
@@ -41,6 +41,7 @@ This is an algorithmic simulation. It does not provide human-level intelligence,
 ## Player appearance and safe movement
 
 - The fake player receives a two-chunk client view distance in the ServerPlayer constructor, before PlayerList registers it and creates chunk tickets.
+- Navigation supplies a movement intent while the fake player applies acceleration and braking once per server tick; vanilla knockback is preserved and head/body turning remains independently smoothed.
 - The same restricted ClientInformation is used by the fake packet listener and the PlayerList login cookie. Post-registration Bukkit limits are a second guard, not the primary restriction.
 - An optional signed Mojang skin can be selected with skin-owner in config.yml. Lookup is asynchronous and has a five-second startup fallback; a slow skin service never blocks server startup.
 - Pathfinding only examines already-loaded chunks, revalidates waypoints before movement, rejects common damaging blocks and checks combat sidesteps against safe ground.
