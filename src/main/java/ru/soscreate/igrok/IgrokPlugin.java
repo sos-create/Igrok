@@ -509,6 +509,12 @@ public final class IgrokPlugin extends JavaPlugin implements Listener {
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void onBotHit(EntityDamageByEntityEvent event) {
         if (!(event.getEntity() instanceof Player target) || !controller.isBot(target)) return;
+        // Vanilla knockback must remain visible to the fake player. Release the
+        // previous movement intent before the server applies the hit impulse.
+        if (target instanceof org.bukkit.craftbukkit.entity.CraftPlayer craftPlayer
+                && craftPlayer.getHandle() instanceof IgrokServerPlayer fakePlayer) {
+            fakePlayer.releaseMovementForExternalImpulse();
+        }
         try {
             LivingEntity attacker = null;
             if (event.getDamager() instanceof LivingEntity living) {
