@@ -409,7 +409,11 @@ final class AgentBrain {
         }
 
         int socialInterval = Math.max(10, plugin.getConfig().getInt("chat.social.scan-interval-ticks", 20));
-        if (tickCounter % socialInterval == 0) socialize(bot);
+        if (tickCounter % socialInterval == 0) {
+            socialize(bot);
+            SocialLife socialLife = plugin.socialLife();
+            if (socialLife != null) socialLife.tick(bot);
+        }
     }
     private void monitorTaskProgress(Player bot) {
         if (goal != monitoredGoal) {
