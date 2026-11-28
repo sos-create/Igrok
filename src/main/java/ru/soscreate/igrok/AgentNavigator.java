@@ -324,7 +324,9 @@ final class AgentNavigator {
             if (!world.isChunkLoaded(x >> 4, z >> 4)) continue;
             Node candidate = findStandable(world, x, current.getBlockY(), z);
             if (candidate == null || candidate.y() - current.getBlockY() > 1
-                    || current.getBlockY() - candidate.y() > 3) continue;
+                    || current.getBlockY() - candidate.y() > 3
+                    || isTemporarilyBlocked(candidate)
+                    || !hasClearPlayerWidth(world, current, candidate)) continue;
             if (dir[0] != 0 && dir[1] != 0) {
                 Node sideA = findStandable(world, current.getBlockX() + dir[0],
                         current.getBlockY(), current.getBlockZ());
