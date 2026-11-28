@@ -51,7 +51,27 @@ final class BlockKnowledge {
             java.util.Map.entry("уголь", Material.COAL),
             java.util.Map.entry("железный слиток", Material.IRON_INGOT),
             java.util.Map.entry("железо", Material.IRON_INGOT),
-            java.util.Map.entry("красная пыль", Material.REDSTONE)
+            java.util.Map.entry("красная пыль", Material.REDSTONE),
+            java.util.Map.entry("алмазная руда", Material.DIAMOND_ORE),
+            java.util.Map.entry("железная руда", Material.IRON_ORE),
+            java.util.Map.entry("золотая руда", Material.GOLD_ORE),
+            java.util.Map.entry("медная руда", Material.COPPER_ORE),
+            java.util.Map.entry("угольная руда", Material.COAL_ORE),
+            java.util.Map.entry("редстоуновая руда", Material.REDSTONE_ORE),
+            java.util.Map.entry("лазуритовая руда", Material.LAPIS_ORE),
+            java.util.Map.entry("изумрудная руда", Material.EMERALD_ORE),
+            java.util.Map.entry("алмаз", Material.DIAMOND),
+            java.util.Map.entry("камень", Material.STONE),
+            java.util.Map.entry("глубинный сланец", Material.DEEPSLATE),
+            java.util.Map.entry("песок", Material.SAND),
+            java.util.Map.entry("гравий", Material.GRAVEL),
+            java.util.Map.entry("железная дверь", Material.IRON_DOOR),
+            java.util.Map.entry("дверь", Material.OAK_DOOR),
+            java.util.Map.entry("калитка", Material.OAK_FENCE_GATE),
+            java.util.Map.entry("железная лопата", Material.IRON_SHOVEL),
+            java.util.Map.entry("лопата", Material.IRON_SHOVEL),
+            java.util.Map.entry("мотыга", Material.IRON_HOE),
+            java.util.Map.entry("ножницы", Material.SHEARS)
     );
 
     static Material findMaterialMention(String text) {
@@ -95,16 +115,16 @@ final class BlockKnowledge {
         }
         if (name.equals("GRAVEL") || name.equals("SAND")) return "сыпучий блок: учитывать падение и возможное удушье";
         if (name.equals("CRAFTING_TABLE") || name.equals("FURNACE")) return "рабочая станция";
-        if (name.equals("COMPOSTER")) return "перерабатывать растительные излишки в костную муку";
-        if (name.equals("BEE_NEST") || name.equals("BEEHIVE")) return "дом пчёл: не ломать без инструмента с Шёлковым касанием";
+        if (name.equals("COMPOSTER")) return "компостер превращает растительные предметы в костную муку; автоматическая загрузка и извлечение ботом пока не реализованы";
+        if (name.equals("BEE_NEST") || name.equals("BEEHIVE")) return "дом пчёл; не ломать без Шёлкового касания; автоматический сбор мёда пока не реализован";
         if (name.equals("ANVIL") || name.equals("CHIPPED_ANVIL") || name.equals("DAMAGED_ANVIL")) {
-            return "ремонтировать и объединять снаряжение за опыт";
+            return "наковальня ремонтирует и объединяет снаряжение за опыт; автоматическая работа с её интерфейсом пока не реализована";
         }
-        if (name.equals("SMITHING_TABLE")) return "улучшать снаряжение по кузнечным шаблонам и материалам";
-        if (name.equals("ENCHANTING_TABLE")) return "зачаровывать предметы при наличии опыта и лазурита";
-        if (name.equals("BREWING_STAND")) return "варить зелья при наличии ингредиентов и топлива";
-        if (name.equals("STONECUTTER")) return "изготавливать варианты каменных строительных блоков";
-        if (name.equals("GRINDSTONE")) return "снимать зачарования и ремонтировать одинаковые предметы";
+        if (name.equals("SMITHING_TABLE")) return "кузнечный стол улучшает снаряжение по шаблонам и материалам; автоматическое улучшение пока не реализовано";
+        if (name.equals("ENCHANTING_TABLE")) return "стол зачарований требует опыт и лазурит; автоматическое зачарование пока не реализовано";
+        if (name.equals("BREWING_STAND")) return "варочная стойка используется для зелий; автоматическая варка пока не реализована";
+        if (name.equals("STONECUTTER")) return "камнерез изготавливает варианты каменных строительных блоков; автоматическая работа пока не реализована";
+        if (name.equals("GRINDSTONE")) return "точило снимает зачарования и ремонтирует одинаковые предметы; автоматическая работа пока не реализована";
         if (name.equals("LEVER") || name.endsWith("_BUTTON") || name.endsWith("_PRESSURE_PLATE")
                 || name.equals("REDSTONE_TORCH") || name.equals("REDSTONE_WIRE")) {
             return "элемент редстоун-схемы: использовать только в запланированном механизме";
