@@ -536,12 +536,19 @@ public final class IgrokPlugin extends JavaPlugin implements Listener {
                 ? byEntity.getDamager().getType().name() : "";
         brain.learnFromDeath(event.getEntity().getLocation(), cause, killerType);
         brain.stop();
-        houseBuilder.cancel(false);
+
+        // Persist the death location, learned lesson and current builder cursor
+        // before replacing the fake player. Do not cancel the builder's own task:
+        // it temporarily waits for the replacement player and rebinds its navigator.
+        savePersistentState();
         if (!getConfig().getBoolean("auto-respawn", true)) return;
         if (respawnTask != null) respawnTask.cancel();
         respawnTask = Bukkit.getScheduler().runTaskLater(this, () -> {
             controller.remove();
-            spawnAtDefaultWorldSpawn();
+            // Respawn near the last safe saved position first. If that chunk or
+            // the location is unusable, loadSpawnChunk falls back to world spawn.
+            if (!spawnAtSavedLocation()) spawnAtDefaultWorldSpawn();
+            respawnTask = null;
         }, 40L);
     }
 
