@@ -186,7 +186,10 @@ final class SurvivalController {
 
     AutonomyDecision chooseAutonomousGoal(Player bot, AgentPersonality personality,
                                            GoalPlanner.Goal current, int tick) {
-        int logs = countBySuffix(bot, "_LOG") + countBySuffix(bot, "_WOOD");
+        // Count every vanilla wood family, including Nether stems and bamboo blocks.
+        int logs = countBySuffix(bot, "_LOG") + countBySuffix(bot, "_WOOD")
+                + countBySuffix(bot, "_STEM") + countBySuffix(bot, "_HYPHAE")
+                + count(bot, Material.BAMBOO_BLOCK);
         int planks = countBySuffix(bot, "_PLANKS");
         int coal = count(bot, Material.COAL);
         int charcoal = count(bot, Material.CHARCOAL);
