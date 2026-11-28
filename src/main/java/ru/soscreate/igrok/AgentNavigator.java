@@ -37,6 +37,7 @@ final class AgentNavigator {
     // A collision can reveal a narrow obstacle that a simple passability test misses.
     // Temporarily blacklist that next cell so A* chooses another side instead of retrying it.
     private final Map<Node, Integer> blockedNodesUntil = new HashMap<>();
+    private final Map<Node, Integer> blockedNodeFailures = new HashMap<>();
     private Node plannedDestination;
     private int pathIndex;
     private int stuckTicks;
@@ -126,7 +127,12 @@ final class AgentNavigator {
             }
         }
 
-        while (pathIndex < path.size() && reached(path.get(pathIndex))) pathIndex++;
+        while (pathIndex < path.size() && reached(path.get(pathIndex))) {
+            Node reachedNode = path.get(pathIndex++);
+            blockedNodesUntil.remove(reachedNode);
+            blockedNodeFailures.remove(reachedNode);
+            stuckTicks = 0;
+        }
         if (pathIndex >= path.size()) {
             stop();
             plannedDestination = goal;
@@ -147,7 +153,7 @@ final class AgentNavigator {
         Location current = bot.getLocation();
         if (!hasClearPlayerWidth(currentWorld, current, next)) {
             // Do not keep pushing into a wall when the node looked passable on paper.
-            blockedNodesUntil.put(next, bot.getTicksLived() + 40);
+            markBlocked(next);
             path.clear();
             pathIndex = 0;
             plannedDestination = null;
@@ -191,6 +197,7 @@ final class AgentNavigator {
         }
         previousPosition = now.clone();
         if (stuckTicks > 8) {
+            if (pathIndex < path.size()) markBlocked(path.get(pathIndex));
             path.clear();
             plannedDestination = null;
             retryCooldown = 5;
@@ -225,6 +232,7 @@ final class AgentNavigator {
         pathIndex = 0;
         plannedDestination = null;
         blockedNodesUntil.clear();
+        blockedNodeFailures.clear();
         stuckTicks = 0;
         retryCooldown = 0;
         previousPosition = null;
@@ -589,34 +597,90 @@ final class AgentNavigator {
      * are queried.
      */
     private boolean hasClearPlayerWidth(World world, Location current, Node next) {
+        if (next.y() > current.getBlockY()) {
+            return hasJumpClearance(world, current, next);
+        }
         if (current == null || current.getWorld() != world
                 || !world.isChunkLoaded(next.x() >> 4, next.z() >> 4)) return false;
-        double targetX = next.x() + 0.5;
-        double targetZ = next.z() + 0.5;
-        double dx = targetX - current.getX();
-        double dz = targetZ - current.getZ();
+        double dx = next.x() + 0.5 - current.getX();
+        double dz = next.z() + 0.5 - current.getZ();
+        double horizontal = Math.sqrt(dx * dx + dz * dz);
+        if (horizontal < 0.08) return true;
+        double sideX = -dz / horizontal * 0.19;
+        double sideZ = dx / horizontal * 0.19;
+        Vector ray = new Vector(dx, next.y() - current.getY(), dz);
+        double length = ray.length();
+        if (length < 0.08) return true;
+        ray.normalize();
+        // Three lanes catch a shoulder clipping a wall or a fence corner.
+        for (int side = -1; side <= 1; side++) {
+            Location start = new Location(world,
+                    current.getX() + sideX * side, current.getY() + 0.32,
+                    current.getZ() + sideZ * side);
+            org.bukkit.util.RayTraceResult hit = world.rayTraceBlocks(
+                    start, ray, length, FluidCollisionMode.NEVER, true);
+            if (hit != null && hit.getHitBlock() != null) return false;
+        }
+        for (int side = -1; side <= 1; side++) {
+            Location start = new Location(world,
+                    current.getX() + sideX * side, current.getY() + 1.52,
+                    current.getZ() + sideZ * side);
+            org.bukkit.util.RayTraceResult hit = world.rayTraceBlocks(
+                    start, ray, length, FluidCollisionMode.NEVER, true);
+            if (hit != null && hit.getHitBlock() != null) return false;
+        }
+        return true;
+    }
+
+    /**
+     * A one-block rise is a jump, not a wall. Sample the predicted jump arc at
+     * four points and across the bot's width. This permits a normal step-up while
+     * still rejecting low ceilings, overhangs, fences and solid collision shapes.
+     */
+    private boolean hasJumpClearance(World world, Location current, Node next) {
+        if (current == null || current.getWorld() != world
+                || !bot.isOnGround()
+                || !world.isChunkLoaded(next.x() >> 4, next.z() >> 4)) return false;
+        double dx = next.x() + 0.5 - current.getX();
+        double dz = next.z() + 0.5 - current.getZ();
         double horizontal = Math.sqrt(dx * dx + dz * dz);
         if (horizontal < 0.08) return true;
         double sideX = -dz / horizontal * 0.19;
         double sideZ = dx / horizontal * 0.19;
         double startY = current.getY();
-        double endY = next.y();
-        double[] heights = {0.32, 0.92, 1.52};
-        for (double height : heights) {
+        double rise = Math.max(0.0, next.y() - startY);
+        // The normal jump impulse peaks a little above one block. Keep the
+        // estimate conservative; vanilla physics still decides the real motion.
+        double jumpHeight = 1.08;
+        double[] samples = {0.22, 0.42, 0.62, 0.82, 0.96};
+        double[] bodyHeights = {0.10, 0.90, 1.70};
+        for (double t : samples) {
+            double x = current.getX() + dx * t;
+            double z = current.getZ() + dz * t;
+            double feetY = startY + rise * t + jumpHeight * 4.0 * t * (1.0 - t);
             for (int side = -1; side <= 1; side++) {
-                Location start = new Location(world,
-                        current.getX() + sideX * side, startY + height,
-                        current.getZ() + sideZ * side);
-                Vector ray = new Vector(dx, endY - startY, dz);
-                double length = ray.length();
-                if (length < 0.08) continue;
-                ray.normalize();
-                org.bukkit.util.RayTraceResult hit = world.rayTraceBlocks(
-                        start, ray, length, FluidCollisionMode.NEVER, true);
-                if (hit != null && hit.getHitBlock() != null) return false;
+                double sampleX = x + sideX * side;
+                double sampleZ = z + sideZ * side;
+                int blockX = (int) Math.floor(sampleX);
+                int blockZ = (int) Math.floor(sampleZ);
+                if (!world.isChunkLoaded(blockX >> 4, blockZ >> 4)) return false;
+                for (double bodyHeight : bodyHeights) {
+                    Block occupied = world.getBlockAt(blockX,
+                            (int) Math.floor(feetY + bodyHeight), blockZ);
+                    if (!occupied.isPassable() || occupied.isLiquid()
+                            || isHazard(occupied.getType())) return false;
+                }
             }
         }
         return true;
+    }
+
+    private void markBlocked(Node node) {
+        if (node == null) return;
+        int failures = Math.min(5, blockedNodeFailures.getOrDefault(node, 0) + 1);
+        blockedNodeFailures.put(node, failures);
+        // Repeated failures keep the bot from trying the same bad maneuver again.
+        blockedNodesUntil.put(node, bot.getTicksLived() + 40 * failures);
     }
 
     private boolean isTemporarilyBlocked(Node node) {
@@ -667,7 +731,8 @@ final class AgentNavigator {
     }
 
     private Node findStandable(World world, int x, int y, int z) {
-        for (int dy = 1; dy >= -1; dy--) {
+        // Prefer level ground; only climb or descend when the current height is blocked.
+        for (int dy : new int[]{0, 1, -1}) {
             Node node = new Node(x, y + dy, z);
             if (standable(world, node)) return node;
         }
