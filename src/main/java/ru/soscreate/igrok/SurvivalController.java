@@ -746,8 +746,10 @@ final class SurvivalController {
     }
 
     int breakTicks(Player bot, Material block, int baseTicks) {
-        String tool = block.name().endsWith("_LOG") || block.name().endsWith("_WOOD")
-                ? "AXE" : "PICKAXE";
+        String blockName = block.name();
+        String tool = blockName.endsWith("_LOG") || blockName.endsWith("_WOOD")
+                || blockName.endsWith("_STEM") || blockName.endsWith("_HYPHAE")
+                || blockName.equals("BAMBOO_BLOCK") ? "AXE" : "PICKAXE";
         int level = bestToolTier(bot, tool);
         int learnedMining = plugin.skills().level("mining");
         double speed = 1.0 + Math.max(0, level) * 0.32 + learnedMining * 0.035;
