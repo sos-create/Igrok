@@ -1,4 +1,4 @@
-# Igrok 0.9.49
+# Igrok 0.9.50
 
 Paper 1.21.4 server-side player agent (Java 21). Igrok is a lightweight autonomous survival agent built around a fake server-side Player, bounded pathfinding, utility-based goals, associative cognition and compact persistent memory.
 
@@ -107,3 +107,11 @@ Repeated identical dialogue replies are replaced with a distinct non-question re
 - Players can still start ordinary chat or make a request in chat. Igrok evaluates requests against current danger, construction, its active goal, personality and its relationship with the player; it may accept or refuse.
 - Even requests to gather wood or stone are no longer automatically accepted. Immediate danger and an active construction cannot be interrupted by a normal request.
 - Social memory and gift recognition remain. A brief thank-you is sent only after Igrok actually receives a player-thrown item.
+
+
+## Autonomy and stability improvements (0.9.50)
+
+- Addressing Igrok in chat no longer makes him walk away from his work or cancel a construction. He answers through chat and keeps the current goal.
+- A restart discards temporary player orders and stale navigation targets. Skills, memory, personality and learned danger lessons remain; the planner selects a fresh goal after startup.
+- Communication experience is awarded only after the message passes cooldown and duplicate checks, preventing rapid chat spam from farming social skills.
+- The resource planner counts Nether stems, hyphae and bamboo blocks as wood, so agents in those biomes can progress with the materials they actually have.
