@@ -683,15 +683,20 @@ final class SurvivalController {
 
     private int keepInPersonalInventory(Material material) {
         String name = material.name();
-        if (name.endsWith("_LOG") || name.endsWith("_WOOD")) return 16;
-        if (name.endsWith("_PLANKS")) return 32;
-        if (material == Material.COBBLESTONE || material == Material.STONE) return 32;
-        if (name.endsWith("_ORE") || name.equals("RAW_IRON") || name.equals("RAW_GOLD")
-                || name.equals("RAW_COPPER")) return 16;
-        if (material == Material.WHEAT || material == Material.WHEAT_SEEDS
+        int keep = -1;
+        if (name.endsWith("_LOG") || name.endsWith("_WOOD")) keep = 16;
+        else if (name.endsWith("_PLANKS")) keep = 32;
+        else if (material == Material.COBBLESTONE || material == Material.STONE) keep = 32;
+        else if (name.endsWith("_ORE") || name.equals("RAW_IRON") || name.equals("RAW_GOLD")
+                || name.equals("RAW_COPPER")) keep = 16;
+        else if (material == Material.WHEAT || material == Material.WHEAT_SEEDS
                 || material == Material.CARROT || material == Material.POTATO
-                || material == Material.BEETROOT_SEEDS) return 16;
-        return -1;
+                || material == Material.BEETROOT_SEEDS) keep = 16;
+
+        // Never store ingredients that the active blueprint still needs.
+        // A cabin can require more than the generic 32-plank reserve.
+        int projectReserve = plugin.houseBuilder().requiredCount(material);
+        return projectReserve > 0 ? Math.max(keep, projectReserve) : keep;
     }
 
     private boolean withinContainerReach(Player bot, Location container) {
