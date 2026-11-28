@@ -359,7 +359,7 @@ final class AgentNavigator {
                 (org.bukkit.craftbukkit.entity.CraftPlayer) bot;
         net.minecraft.server.level.ServerPlayer handle = craftPlayer.getHandle();
         float currentHeadYaw = handle.getYHeadRot();
-        float currentBodyYaw = handle.getYBodyRot();
+        float currentBodyYaw = handle.yBodyRot;
         float headDelta = wrapDegrees(targetYaw - currentHeadYaw);
         float bodyDelta = wrapDegrees(targetYaw - currentBodyYaw);
         int currentTick = bot.getTicksLived();
