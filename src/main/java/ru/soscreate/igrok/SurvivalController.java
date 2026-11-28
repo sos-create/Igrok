@@ -974,14 +974,36 @@ final class SurvivalController {
     }
 
     private Block findNearbyProcessor(Player bot, int radius) {
-        // Keep this a small bounded lookup. The actual input is selected only
-        // after a station has been found; scanning every Material on every
-        // workstation check needlessly repeated full-inventory passes.
+        Material preferred = preferredProcessor(bot);
+        Block result = findNearbyBlock(bot, preferred, radius);
+        if (result != null) return result;
         for (Material type : new Material[]{Material.FURNACE, Material.BLAST_FURNACE, Material.SMOKER}) {
-            Block result = findNearbyBlock(bot, type, radius);
+            if (type == preferred) continue;
+            result = findNearbyBlock(bot, type, radius);
             if (result != null) return result;
         }
         return null;
+    }
+
+    /** Choose a station with a bounded inventory scan, without iterating all Materials. */
+    private Material preferredProcessor(Player bot) {
+        Material[] foods = {
+                Material.BEEF, Material.PORKCHOP, Material.MUTTON, Material.CHICKEN,
+                Material.RABBIT, Material.COD, Material.SALMON, Material.POTATO
+        };
+        for (Material food : foods) {
+            if (count(bot, food) > 0) return Material.SMOKER;
+        }
+        for (int slot = 0; slot < 36; slot++) {
+            ItemStack item = bot.getInventory().getItem(slot);
+            if (item == null || item.getType().isAir()) continue;
+            String name = item.getType().name();
+            if (name.equals("RAW_IRON") || name.equals("RAW_GOLD") || name.equals("RAW_COPPER")
+                    || name.equals("ANCIENT_DEBRIS") || name.endsWith("_IRON_ORE")
+                    || name.endsWith("_GOLD_ORE") || name.endsWith("_COPPER_ORE")
+                    || name.equals("NETHER_GOLD_ORE")) return Material.BLAST_FURNACE;
+        }
+        return Material.FURNACE;
     }
 
     private void maintainFurnace(Player bot) {
@@ -1016,11 +1038,28 @@ final class SurvivalController {
         if ((fuel == null || fuel.getType().isAir()) && inventory.getSmelting() != null
                 && !inventory.getSmelting().getType().isAir()) {
             Material fuelType = count(bot, Material.COAL) > 0 ? Material.COAL
-                    : count(bot, Material.CHARCOAL) > 0 ? Material.CHARCOAL
-                    : countBySuffix(bot, "_PLANKS") > 16 ? firstMaterialBySuffix(bot, "_PLANKS") : null;
+                    : count(bot, Material.CHARCOAL) > 0 ? Material.CHARCOAL : null;
+            if (fuelType == null && !woodReservedForProject(bot)) {
+                fuelType = firstMaterialBySuffix(bot, "_LOG");
+                if (fuelType == null) fuelType = firstMaterialBySuffix(bot, "_WOOD");
+                if (fuelType == null) fuelType = firstMaterialBySuffix(bot, "_STEM");
+                if (fuelType == null) fuelType = firstMaterialBySuffix(bot, "_HYPHAE");
+                if (fuelType == null && planksBeyondProjectReserve(
+                        bot, plugin.houseBuilder().requiredMaterials()) >= 8) {
+                    fuelType = firstMaterialBySuffix(bot, "_PLANKS");
+                }
+            }
             if (fuelType != null && removeOne(bot, fuelType)) inventory.setFuel(new ItemStack(fuelType, 1));
         }
         furnace.update(true, false);
+    }
+
+    private boolean woodReservedForProject(Player bot) {
+        HouseBuilder builder = plugin.houseBuilder();
+        if (builder.isBuilding()) return true;
+        if (builder.missingRequiredSuffix("_PLANKS") > 0) return true;
+        return "piston_lab".equals(builder.nextProjectType())
+                && builder.missingRequired(Material.PISTON) > 0;
     }
 
     private Material findSmeltable(Player bot) {
@@ -1046,12 +1085,17 @@ final class SurvivalController {
             }
         }
 
-        // Charcoal is a coal substitute. Logs are used only after food and ores.
-        for (Material material : Material.values()) {
-            String name = material.name();
-            if ((name.endsWith("_LOG") || name.endsWith("_WOOD"))
-                    && !name.startsWith("STRIPPED_") && count(bot, material) > 0) {
-                return material;
+        // Logs can become charcoal, but project wood has priority over fuel.
+        if (!woodReservedForProject(bot)) {
+            for (int slot = 0; slot < 36; slot++) {
+                ItemStack item = bot.getInventory().getItem(slot);
+                if (item == null || item.getType().isAir()) continue;
+                String name = item.getType().name();
+                if ((name.endsWith("_LOG") || name.endsWith("_WOOD")
+                        || name.endsWith("_STEM") || name.endsWith("_HYPHAE")
+                        || name.equals("BAMBOO_BLOCK")) && item.getAmount() > 0) {
+                    return item.getType();
+                }
             }
         }
         return null;
