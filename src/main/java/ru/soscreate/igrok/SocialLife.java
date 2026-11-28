@@ -261,9 +261,8 @@ final class SocialLife implements Listener {
         memory.adjustReputation(giverId, type.isEdible() ? 2 : 1);
         memory.recordConversation(giverId, "[поделился со мной: "
                 + BlockPerception.russianName(type) + "]", false);
-        plugin.brain().rememberBotMessage(giverId,
-                "Спасибо, " + giver.getName() + ". Я запомню, что ты поделился со мной " 
-                        + BlockPerception.russianName(type) + ".");
+        speak(giverId, "Спасибо, " + giver.getName() + ". Я запомню, что ты поделился со мной "
+                + BlockPerception.russianName(type) + ".");
         trimCaches();
     }
 
