@@ -116,6 +116,7 @@ final class SocialLife implements Listener {
     private void ask(Player player, Invitation invitation, String text) {
         long expiresAt = System.currentTimeMillis() + 120_000L;
         pending.put(player.getUniqueId(), new PendingInvitation(invitation, expiresAt));
+        plugin.dialogue().expectReply(player.getUniqueId());
         speak(player.getUniqueId(), text);
     }
 
@@ -153,6 +154,8 @@ final class SocialLife implements Listener {
                     : "Хорошо, тогда пойду один или займусь чем-нибудь здесь. Увидимся позже.";
         } else {
             memory.adjustReputation(id, 1);
+            plugin.skills().gain("social", 1);
+            plugin.skills().gain("cooperation", 2);
             if (invitation.type() == Invitation.EXPLORE) {
                 plugin.brain().resumeForCommand();
                 plugin.brain().follow(player);
@@ -259,6 +262,8 @@ final class SocialLife implements Listener {
         AgentMemory memory = plugin.brain().memory();
         memory.rememberPlayerName(giverId, giver.getName());
         memory.adjustReputation(giverId, type.isEdible() ? 2 : 1);
+        plugin.skills().gain("social", 1);
+        plugin.skills().gain("cooperation", 1);
         memory.recordConversation(giverId, "[поделился со мной: "
                 + BlockPerception.russianName(type) + "]", false);
         speak(giverId, "Спасибо, " + giver.getName() + ". Я запомню, что ты поделился со мной "
@@ -271,7 +276,10 @@ final class SocialLife implements Listener {
         plugin.brain().rememberBotMessage(playerId, message);
         String botName = plugin.getConfig().getString("bot-name", "Igrok");
         if (botName == null || botName.isBlank()) botName = "Igrok";
-        Bukkit.broadcastMessage("§6" + botName + "§7: §f" + message);
+        Player recipient = Bukkit.getPlayer(playerId);
+        if (recipient != null && recipient.isOnline()) {
+            recipient.sendMessage("§6" + botName + "§7: §f" + message);
+        }
     }
 
     private void expirePending(long now) {

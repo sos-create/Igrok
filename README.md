@@ -1,4 +1,4 @@
-# Igrok 0.9.45
+# Igrok 0.9.46
 
 Paper 1.21.4 server-side player agent (Java 21). Igrok is a lightweight autonomous survival agent built around a fake server-side Player, bounded pathfinding, utility-based goals, associative cognition and compact persistent memory.
 
@@ -75,3 +75,10 @@ The Russian question detector uses Unicode-safe word boundaries. Standalone nega
 Wood and nature recognition also covers common Russian forms such as дерево, деревья, деревянный, древесина and доски.
 
 Repeated identical dialogue replies are replaced with a distinct non-question response, rather than repeating the same question with an added sentence. Chat events cancelled by other plugins are ignored.
+
+## Independent life routines (0.9.46)
+
+- During overworld storms Igrok searches only already-loaded chunks for a safe position under a roof, then temporarily pauses its current voluntary route and resumes it when the storm ends. The scan radius and interval are bounded in config.
+- A social invitation opens a short reply window. A clear yes/no answer is consumed by the invitation handler before the general command parser, so "да" cannot accidentally trigger an unrelated player order.
+- Ambient remarks and invitations are sent only to the nearby player they concern instead of being broadcast to the whole server.
+- Gifts and accepted joint activities add experience to the social/cooperation development branch. The existing independent skill branches remain optional and continue to grow from actual in-world actions.
