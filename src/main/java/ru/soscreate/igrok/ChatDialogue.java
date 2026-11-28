@@ -76,11 +76,9 @@ final class ChatDialogue implements Listener {
         long followUpMillis = Math.max(10L,
                 plugin.getConfig().getLong("chat.follow-up-window-seconds", 90)) * 1000L;
         long questionAt = lastBotQuestionAt.getOrDefault(senderId, 0L);
-        boolean invitationReply = plugin.socialLife() != null
-                && plugin.socialLife().expectsReply(senderId, lower);
         boolean activeConversation = isConversationSessionActive(senderId, now);
         boolean ordinaryStart = canStartOrdinaryChat(sender);
-        boolean continuation = invitationReply || activeConversation
+        boolean continuation = activeConversation
                 || (questionAt > 0L && now - questionAt <= followUpMillis
                 && isConversationalFollowUp(lower));
         if (questionAt > 0L && now - questionAt > followUpMillis) {
@@ -236,8 +234,6 @@ final class ChatDialogue implements Listener {
         if (sender == null || bot == null || sender.getWorld() != bot.getWorld()) return;
 
         String message = rawMessage.toLowerCase(Locale.ROOT);
-        boolean invitationReply = plugin.socialLife() != null
-                && plugin.socialLife().expectsReply(senderId, message);
         boolean activeConversation = isConversationSessionActive(senderId, System.currentTimeMillis());
         double radius = Math.max(4.0, plugin.getConfig().getDouble("chat.listen-radius", 16.0));
         if (sender.getLocation().distanceSquared(bot.getLocation()) > radius * radius
@@ -246,7 +242,7 @@ final class ChatDialogue implements Listener {
         long followUpMillis = Math.max(10L,
                 plugin.getConfig().getLong("chat.follow-up-window-seconds", 90)) * 1000L;
         long questionAt = lastBotQuestionAt.getOrDefault(senderId, 0L);
-        boolean continuation = invitationReply || activeConversation || (questionAt > 0L
+        boolean continuation = activeConversation || (questionAt > 0L
                 && System.currentTimeMillis() - questionAt <= followUpMillis
                 && isConversationalFollowUp(message));
         if (!addressed && !continuation) return;
@@ -278,10 +274,6 @@ final class ChatDialogue implements Listener {
         }
         pendingThoughts.put(senderId, thought);
         plugin.cognition().learn(thought, 0.0);
-        // A yes/no answer to an active social invitation belongs to that invitation,
-        // not to the general command parser. Consume it before brain intent handling.
-        if (continuation && plugin.socialLife() != null
-                && plugin.socialLife().handleReply(sender, rawMessage)) return;
         plugin.brain().onPlayerMessage(sender, rawMessage);
 
         String action = thought.action();
