@@ -174,7 +174,7 @@ final class AgentBrain {
     }
 
     String skillSummary() {
-        return plugin.skills().summary();
+        return plugin.skills().summary() + " " + survival.recipeKnowledgeSummary();
     }
 
     String selfModelSummary() {
