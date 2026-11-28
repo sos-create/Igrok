@@ -25,7 +25,9 @@ final class DialogueComposer {
 
         String normalizedMessage = parsed.cleaned().replace('ё', 'е');
         if (contains(normalizedMessage, "рецепт", "скрафт", "крафт", "из чего сделать",
-                "как сделать", "как изготовить", "для чего нужен", "зачем нужен", "чем добывать")) {
+                "как сделать", "как изготовить", "как использовать", "как открыть",
+                "как взаимодействовать", "для чего нужен", "для чего используется",
+                "зачем нужен", "чем добывать")) {
             org.bukkit.Material mentioned = BlockKnowledge.findMaterialMention(normalizedMessage);
             if (mentioned != null) {
                 String answer = BlockPerception.russianName(mentioned) + " — "
