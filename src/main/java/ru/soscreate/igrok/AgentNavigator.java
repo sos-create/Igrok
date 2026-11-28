@@ -45,6 +45,7 @@ final class AgentNavigator {
     private int nextSprintDecisionTick;
     private int sprintUntilTick;
     private boolean sprinting;
+    private int doorCheckCooldown;
 
     AgentNavigator(Player bot) {
         this(bot, null);
@@ -214,6 +215,11 @@ final class AgentNavigator {
      * can deny it; iron doors are never forced open.
      */
     private void tryOpenDoorAhead(Location destination) {
+        if (doorCheckCooldown > 0) {
+            doorCheckCooldown--;
+            return;
+        }
+        doorCheckCooldown = 4; // AgentBrain calls the navigator every two ticks.
         Location position = bot.getLocation();
         Vector desired = destination.toVector().subtract(position.toVector());
         desired.setY(0.0);
@@ -229,14 +235,15 @@ final class AgentNavigator {
         Openable bestData = null;
         double bestDistance = Double.POSITIVE_INFINITY;
 
-        for (int x = ox - 2; x <= ox + 2; x++) {
-            for (int z = oz - 2; z <= oz + 2; z++) {
+        for (int x = ox - 1; x <= ox + 1; x++) {
+            for (int z = oz - 1; z <= oz + 1; z++) {
                 if (!world.isChunkLoaded(x >> 4, z >> 4)) continue;
                 for (int y = oy - 1; y <= oy + 2; y++) {
                     if (y <= world.getMinHeight() || y >= world.getMaxHeight()) continue;
                     Block block = world.getBlockAt(x, y, z);
                     String name = block.getType().name();
-                    if (name.contains("IRON") || !(name.endsWith("_DOOR") || name.endsWith("_FENCE_GATE"))) continue;
+                    if (name.contains("IRON") || !(name.endsWith("_DOOR")
+                            || name.endsWith("_FENCE_GATE") || name.endsWith("_TRAPDOOR"))) continue;
                     if (!(block.getBlockData() instanceof Openable openable) || openable.isOpen()) continue;
 
                     Vector toward = block.getLocation().add(0.5, 0.5, 0.5).toVector()
@@ -261,7 +268,7 @@ final class AgentNavigator {
         PlayerInteractEvent event = new PlayerInteractEvent(bot, Action.RIGHT_CLICK_BLOCK,
                 bot.getInventory().getItemInMainHand(), best, BlockFace.UP, EquipmentSlot.HAND);
         Bukkit.getPluginManager().callEvent(event);
-        if (event.useInteractedBlock() == Event.Result.DENY) return;
+        if (event.isCancelled() || event.useInteractedBlock() == Event.Result.DENY) return;
 
         bestData.setOpen(true);
         best.setBlockData((org.bukkit.block.data.BlockData) bestData, true);
