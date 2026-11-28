@@ -1,4 +1,4 @@
-# Igrok 0.9.51
+# Igrok 0.9.52
 
 Paper 1.21.4 server-side player agent (Java 21). Igrok is a lightweight autonomous survival agent built around a fake server-side Player, bounded pathfinding, utility-based goals, associative cognition and compact persistent memory.
 
@@ -35,6 +35,7 @@ This is an algorithmic simulation. It does not provide human-level intelligence,
 - Player profiles are capped at 50; up to 24 recent phrase references are kept per profile.
 - Compact memory and cognitive weights load once and save every five minutes only when changed.
 - Inventory, equipment, food, health, XP and player position/task state are persisted separately. Inventory is saved every five minutes and on normal shutdown.
+- An unfinished construction is restored after restart or death. Its compact footprint and placement radius are reloaded asynchronously, with bounded retries; it never synchronously forces a large area of terrain to load.
 - Scans for furnaces, chests, crops, beds and crafting are throttled; pathfinding is bounded and only reads already-loaded chunks.
 
 ## Player appearance and safe movement
