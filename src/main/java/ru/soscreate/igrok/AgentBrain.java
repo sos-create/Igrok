@@ -224,7 +224,7 @@ final class AgentBrain {
         }
         miningRequested = data.getBoolean("brain.mining-requested", false);
         miningMode = data.getString("brain.mining-mode", "wood");
-        if (!java.util.Set.of("wood", "stone", "coal", "iron").contains(miningMode)) miningMode = "wood";
+        if (!java.util.Set.of("wood", "stone", "coal", "iron", "redstone").contains(miningMode)) miningMode = "wood";
         minedThisTask = Math.max(0, data.getInt("brain.mined-this-task", 0));
         // Combat targets disappear when the server stops. Do not restore a
         // stale attack order that would suppress autonomous survival forever.
@@ -1383,9 +1383,19 @@ final class AgentBrain {
                 state = "Ищу ресурсы";
                 return;
             }
-            miningTarget = findMiningTarget(bot);
-            miningTargetProspecting = false;
-            if (miningTarget == null) miningTarget = findProspectingTarget(bot);
+            if (prospectingActive) {
+                // Once a tunnel has started, continue that bounded tunnel directly.
+                // Re-running the full ore scan every two ticks was needlessly expensive.
+                miningTarget = findProspectingTarget(bot);
+                miningTargetProspecting = miningTarget != null;
+            } else {
+                miningTarget = findMiningTarget(bot);
+                miningTargetProspecting = false;
+                if (miningTarget == null) {
+                    miningTarget = findProspectingTarget(bot);
+                    miningTargetProspecting = miningTarget != null;
+                }
+            }
             nextSearchTick = tickCounter + (miningTarget == null
                     ? (prospectingActive ? 2 : 100) : 0);
             miningTicks = 0;
@@ -1473,7 +1483,9 @@ final class AgentBrain {
                 miningTarget = null;
                 miningTargetProspecting = false;
                 miningTicks = 0;
-                nextSearchTick = tickCounter + (prospectingActive ? 2 : 8);
+                int scanInterval = Math.max(4, Math.min(100,
+                        plugin.getConfig().getInt("brain.mining.scan-interval-ticks", 20)));
+                nextSearchTick = tickCounter + (prospectingActive ? 2 : scanInterval);
                 int limit = Math.max(1, plugin.getConfig().getInt("brain.mining.blocks-per-order", 4));
                 if (minedThisTask >= limit) {
                     miningRequested = false;
@@ -1716,20 +1728,22 @@ final class AgentBrain {
         int minimumToolTier = miningMode.equals("redstone") ? 4
                 : miningMode.equals("iron") ? 3 : 1;
         if (!woodMode && survivalToolTier(bot, "PICKAXE") < minimumToolTier) return null;
-        int depth = switch (miningMode) {
-            case "stone" -> 14;
-            case "coal" -> 32;
-            case "iron" -> 48;
-            case "redstone" -> 56;
-            default -> 4;
-        };
-        int height = woodMode ? 8
-                : (miningMode.equals("iron") || miningMode.equals("redstone")) ? 8 : 12;
-        int minY = Math.max(world.getMinHeight() + 1, origin.getBlockY() - depth);
-        int maxY = Math.min(world.getMaxHeight() - 2, origin.getBlockY() + height);
+        // Only scan the vertical band that can still fall inside the actual
+        // visibility/range limit below. Searching 32-56 blocks down could never
+        // produce a valid target and multiplied synchronous block reads.
+        int verticalRange = woodMode ? 8 : radius + 2;
+        int minY = Math.max(world.getMinHeight() + 1, origin.getBlockY() - verticalRange);
+        int maxY = Math.min(world.getMaxHeight() - 2, origin.getBlockY() + verticalRange);
         Location eye = bot.getEyeLocation();
-        for (int x = origin.getBlockX() - radius; x <= origin.getBlockX() + radius; x++) {
-            for (int z = origin.getBlockZ() - radius; z <= origin.getBlockZ() + radius; z++) {
+        int originX = origin.getBlockX();
+        int originZ = origin.getBlockZ();
+        double maxDistance = radius + 2.0;
+        double maxDistanceSquared = maxDistance * maxDistance;
+        for (int x = originX - radius; x <= originX + radius; x++) {
+            int dx = x - originX;
+            for (int z = originZ - radius; z <= originZ + radius; z++) {
+                int dz = z - originZ;
+                if ((double) dx * dx + (double) dz * dz > maxDistanceSquared) continue;
                 if (!world.isChunkLoaded(x >> 4, z >> 4)) continue;
                 for (int y = minY; y <= maxY; y++) {
                     Block block = world.getBlockAt(x, y, z);
@@ -1748,7 +1762,7 @@ final class AgentBrain {
                     if (!undergroundOre && block.getY() < origin.getBlockY() - 1) continue;
                     Location center = block.getLocation().add(0.5, 0.5, 0.5);
                     double distance = center.distanceSquared(eye);
-                    if (distance >= bestDistance || distance > (radius + 2.0) * (radius + 2.0)) continue;
+                    if (distance >= bestDistance || distance > maxDistanceSquared) continue;
                     // Prefer resources the bot can actually see and reach. Selecting
                     // a log hidden behind another trunk made it repeatedly walk to a
                     // blocked side, discard the target, and select the same log again.
