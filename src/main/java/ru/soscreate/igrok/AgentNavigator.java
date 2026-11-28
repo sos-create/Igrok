@@ -53,6 +53,7 @@ final class AgentNavigator {
     private int doorCheckCooldown;
     private Node jumpPrimedNode;
     private int jumpStartedTick = Integer.MIN_VALUE;
+    private int routeVariant;
     private int lastTurnUpdateTick = Integer.MIN_VALUE;
 
     AgentNavigator(Player bot) {
@@ -576,6 +577,7 @@ final class AgentNavigator {
             }
             expanded++;
 
+            int directionIndex = 0;
             for (int[] dir : DIRECTIONS) {
                 for (int dy = 1; dy >= -3; dy--) {
                     Node candidate = new Node(current.node().x() + dir[0],
@@ -591,16 +593,22 @@ final class AgentNavigator {
                                 || !isStandableOrKnown(world, sideB, costs)) continue;
                     }
 
-                    double verticalCost = dy > 0 ? 0.85 : Math.max(0, -dy) * 0.38;
+                    int drop = Math.max(0, -dy);
+                    double verticalCost = dy > 0 ? 0.85 : drop * 0.38 + drop * drop * 0.20;
                     double step = (dir[0] == 0 || dir[1] == 0 ? 1.0 : 1.414)
                             + verticalCost;
-                    double nextCost = current.g() + step + terrainPenalty(world, candidate);
+                    // On equal-cost routes, rotate the preferred direction after
+                    // a failed attempt so the bot does not repeat the same approach.
+                    double directionBias = Math.floorMod(directionIndex + routeVariant, DIRECTIONS.length) * 0.0015;
+                    double nextCost = current.g() + step + terrainPenalty(world, candidate)
+                            + directionBias;
                     if (nextCost >= costs.getOrDefault(candidate, Double.POSITIVE_INFINITY)) continue;
                     costs.put(candidate, nextCost);
                     parents.put(candidate, current.node());
                     open.add(new OpenNode(candidate, nextCost,
                             nextCost + heuristic(candidate, requestedGoal)));
                 }
+                directionIndex++;
             }
         }
 
@@ -707,6 +715,7 @@ final class AgentNavigator {
 
     private void markBlocked(Node node) {
         if (node == null) return;
+        routeVariant = (routeVariant + 1) & 7;
         int failures = Math.min(5, blockedNodeFailures.getOrDefault(node, 0) + 1);
         blockedNodeFailures.put(node, failures);
         // Repeated failures keep the bot from trying the same bad maneuver again.
