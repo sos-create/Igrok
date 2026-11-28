@@ -1,4 +1,4 @@
-# Igrok 0.9.48 configuration
+# Igrok 0.9.49 configuration
 # Optional Mojang account name whose signed player skin Igrok should use.
 # Leave empty to use the standard Steve/Alex fallback skin.
 skin-owner: ""
@@ -31,10 +31,8 @@ chat:
     enabled: true
     radius: 7
     scan-interval-ticks: 20
-    greeting-cooldown-seconds: 300
-    ambient-enabled: true
-    ambient-cooldown-seconds: 150
-    initiative-cooldown-seconds: 360
+    # Igrok never initiates invitations or unsolicited ambient speech.
+    ambient-enabled: false
 
 building:
   enabled: true
