@@ -86,8 +86,10 @@ public final class IgrokPlugin extends JavaPlugin implements Listener {
         cognition = new CognitiveNetwork(new File(new File(getDataFolder(), "memory"), "cognition.yml"));
         brain.loadState(stateData);
         dialogue = new ChatDialogue(this);
+        socialLife = new SocialLife(this);
         Bukkit.getPluginManager().registerEvents(this, this);
         Bukkit.getPluginManager().registerEvents(dialogue, this);
+        Bukkit.getPluginManager().registerEvents(socialLife, this);
         brainTask = Bukkit.getScheduler().runTaskTimer(this, () -> runSafely("brain", brain::tick), 2L, 2L);
         memorySaveTask = Bukkit.getScheduler().runTaskTimer(this, () -> runSafely("memory-save", memory::save), 6000L, 6000L);
         stateSaveTask = Bukkit.getScheduler().runTaskTimer(this, () -> runSafely("state-save", this::savePersistentState), 600L, 600L);
