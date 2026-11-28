@@ -51,6 +51,8 @@ final class AgentNavigator {
     private int sprintUntilTick;
     private boolean sprinting;
     private int doorCheckCooldown;
+    private Node jumpPrimedNode;
+    private int jumpStartedTick = Integer.MIN_VALUE;
     private int lastTurnUpdateTick = Integer.MIN_VALUE;
 
     AgentNavigator(Player bot) {
@@ -131,6 +133,7 @@ final class AgentNavigator {
             Node reachedNode = path.get(pathIndex++);
             blockedNodesUntil.remove(reachedNode);
             blockedNodeFailures.remove(reachedNode);
+            if (reachedNode.equals(jumpPrimedNode)) jumpPrimedNode = null;
             stuckTicks = 0;
         }
         if (pathIndex >= path.size()) {
@@ -176,13 +179,38 @@ final class AgentNavigator {
         double turnError = turnToward(yaw);
 
         double vertical = bot.isOnGround() ? 0.0 : bot.getVelocity().getY();
-        if (bot.isOnGround() && next.y() > current.getBlockY()) {
-            Block feet = currentWorld.getBlockAt(current.getBlockX(), current.getBlockY(), current.getBlockZ());
-            if (feet.getRelative(0, 1, 0).isPassable()
-                    && feet.getRelative(0, 2, 0).isPassable()) vertical = 0.42;
-        }
         double alignment = turnError > 110.0 ? 0.48 : turnError > 65.0 ? 0.68 : 1.0;
         double speed = movementSpeed() * alignment;
+        if (next.y() > current.getBlockY()) {
+            if (bot.isOnGround() && !next.equals(jumpPrimedNode)) {
+                Block feet = current.getBlock();
+                if (feet.getRelative(0, 1, 0).isPassable()
+                        && feet.getRelative(0, 2, 0).isPassable()) {
+                    jumpPrimedNode = next;
+                    jumpStartedTick = bot.getTicksLived();
+                    vertical = 0.42;
+                } else {
+                    markBlocked(next);
+                    path.clear();
+                    plannedDestination = null;
+                    clearMovementIntent();
+                    return true;
+                }
+            }
+            // Give the jump a few ticks to gain height before driving into the step.
+            if (next.equals(jumpPrimedNode)
+                    && bot.getTicksLived() - jumpStartedTick < 4) {
+                speed = Math.min(speed, 0.035);
+            } else if (next.equals(jumpPrimedNode)
+                    && bot.isOnGround() && bot.getTicksLived() - jumpStartedTick > 5) {
+                markBlocked(next);
+                jumpPrimedNode = null;
+                path.clear();
+                plannedDestination = null;
+                clearMovementIntent();
+                return true;
+            }
+        }
         applyHorizontalVelocity(dx, dz, speed);
         if (vertical > bot.getVelocity().getY()) {
             Vector velocity = bot.getVelocity();
@@ -231,6 +259,8 @@ final class AgentNavigator {
         path.clear();
         pathIndex = 0;
         plannedDestination = null;
+        jumpPrimedNode = null;
+        jumpStartedTick = Integer.MIN_VALUE;
         blockedNodesUntil.clear();
         blockedNodeFailures.clear();
         stuckTicks = 0;
@@ -598,6 +628,8 @@ final class AgentNavigator {
      */
     private boolean hasClearPlayerWidth(World world, Location current, Node next) {
         if (next.y() > current.getBlockY()) {
+            // Once this exact step has been launched, let vanilla physics finish it.
+            if (next.equals(jumpPrimedNode) && !bot.isOnGround()) return true;
             return hasJumpClearance(world, current, next);
         }
         if (current == null || current.getWorld() != world
@@ -638,9 +670,12 @@ final class AgentNavigator {
      * still rejecting low ceilings, overhangs, fences and solid collision shapes.
      */
     private boolean hasJumpClearance(World world, Location current, Node next) {
-        if (current == null || current.getWorld() != world
-                || !bot.isOnGround()
+        if (current == null || current.getWorld() != world || !bot.isOnGround()
                 || !world.isChunkLoaded(next.x() >> 4, next.z() >> 4)) return false;
+        Block currentFeet = current.getBlock();
+        if (!currentFeet.isPassable()
+                || !currentFeet.getRelative(0, 1, 0).isPassable()
+                || !currentFeet.getRelative(0, 2, 0).isPassable()) return false;
         double dx = next.x() + 0.5 - current.getX();
         double dz = next.z() + 0.5 - current.getZ();
         double horizontal = Math.sqrt(dx * dx + dz * dz);
