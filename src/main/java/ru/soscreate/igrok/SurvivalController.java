@@ -903,20 +903,11 @@ final class SurvivalController {
     }
 
     private Block findNearbyProcessor(Player bot, int radius) {
-        Material input = findSmeltable(bot);
-        String name = input == null ? "" : input.name();
-        Material preferred = name.startsWith("COOKED_") || name.equals("BEEF")
-                || name.equals("PORKCHOP") || name.equals("MUTTON") || name.equals("CHICKEN")
-                || name.equals("RABBIT") || name.equals("COD") || name.equals("SALMON")
-                || name.equals("POTATO") ? Material.SMOKER
-                : (name.equals("RAW_IRON") || name.equals("RAW_GOLD") || name.equals("RAW_COPPER")
-                    || name.endsWith("_ORE") || name.equals("ANCIENT_DEBRIS"))
-                    ? Material.BLAST_FURNACE : Material.FURNACE;
-        Block result = findNearbyBlock(bot, preferred, radius);
-        if (result != null) return result;
-        for (Material fallback : new Material[]{Material.FURNACE, Material.BLAST_FURNACE, Material.SMOKER}) {
-            if (fallback == preferred) continue;
-            result = findNearbyBlock(bot, fallback, radius);
+        // Keep this a small bounded lookup. The actual input is selected only
+        // after a station has been found; scanning every Material on every
+        // workstation check needlessly repeated full-inventory passes.
+        for (Material type : new Material[]{Material.FURNACE, Material.BLAST_FURNACE, Material.SMOKER}) {
+            Block result = findNearbyBlock(bot, type, radius);
             if (result != null) return result;
         }
         return null;
