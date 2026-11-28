@@ -61,6 +61,7 @@ final class SurvivalController {
     private int nextFurnaceTick;
     private int nextChestScanTick;
     private int nextFarmTick;
+    private int nextTorchTick;
     private Location knownBed;
     private Location knownChest;
     private boolean learnedFoodCaution;
@@ -103,6 +104,10 @@ final class SurvivalController {
         if (tick >= nextFarmTick) {
             harvestNearbyCrops(bot);
             nextFarmTick = tick + 200;
+        }
+        if (tick >= nextTorchTick) {
+            placeTorchInDarkArea(bot);
+            nextTorchTick = tick + 60;
         }
         if (tick % 200 == 0) manageStorage(bot, tick);
         if (tick % 200 == 0) {
@@ -1006,6 +1011,90 @@ final class SurvivalController {
 
     private boolean hasBedItem(Player bot) {
         return countBySuffix(bot, "_BED") > 0;
+    }
+
+    /**
+     * Use torches like a survival player: only in dark, locally reachable,
+     * supported spots, and never by bypassing block-place protection.
+     */
+    private boolean placeTorchInDarkArea(Player bot) {
+        if (count(bot, Material.TORCH) <= 0) return false;
+        if (bot.getWorld().getEnvironment() == World.Environment.NORMAL
+                && bot.getWorld().getTime() < 12000L
+                && bot.getLocation().getBlock().getLightFromSky() >= 10) return false;
+
+        Location origin = bot.getLocation();
+        World world = bot.getWorld();
+        int ox = origin.getBlockX();
+        int oy = origin.getBlockY();
+        int oz = origin.getBlockZ();
+
+        // Avoid spending several torches in the same small area.
+        for (int x = ox - 5; x <= ox + 5; x++) {
+            for (int z = oz - 5; z <= oz + 5; z++) {
+                for (int y = oy - 1; y <= oy + 2; y++) {
+                    if (!world.isChunkLoaded(x >> 4, z >> 4)) continue;
+                    Material type = world.getBlockAt(x, y, z).getType();
+                    if (type == Material.TORCH || type == Material.WALL_TORCH
+                            || type == Material.SOUL_TORCH || type == Material.SOUL_WALL_TORCH) {
+                        if (x != ox || z != oz || Math.abs(y - oy) > 1) {
+                            if (origin.distanceSquared(new Location(world, x + 0.5, y + 0.5, z + 0.5)) < 25.0) {
+                                return false;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        Block best = null;
+        double bestDistance = Double.POSITIVE_INFINITY;
+        for (int radius = 1; radius <= 2; radius++) {
+            for (int dx = -radius; dx <= radius; dx++) {
+                for (int dz = -radius; dz <= radius; dz++) {
+                    if (Math.max(Math.abs(dx), Math.abs(dz)) != radius) continue;
+                    for (int dy = -1; dy <= 1; dy++) {
+                        int x = ox + dx;
+                        int y = oy + dy;
+                        int z = oz + dz;
+                        if (y <= world.getMinHeight() || y + 1 >= world.getMaxHeight()
+                                || !world.isChunkLoaded(x >> 4, z >> 4)) continue;
+                        Block target = world.getBlockAt(x, y, z);
+                        Block floor = target.getRelative(BlockFace.DOWN);
+                        Block above = target.getRelative(BlockFace.UP);
+                        if (!target.isEmpty() || !above.isPassable()
+                                || !floor.getType().isSolid() || floor.isLiquid()
+                                || target.isLiquid() || isForbiddenPlacement(floor.getType())) continue;
+                        Location center = target.getLocation().add(0.5, 0.5, 0.5);
+                        double distance = center.distanceSquared(origin);
+                        if (distance < 1.0 || distance > 4.5 * 4.5
+                                || !BlockPerception.canSee(bot.getEyeLocation(), target, 4.5)
+                                || target.getLightLevel() > 7) continue;
+                        if (distance < bestDistance) {
+                            bestDistance = distance;
+                            best = target;
+                        }
+                    }
+                }
+            }
+            if (best != null) break;
+        }
+        if (best == null) return false;
+        ItemStack torch = firstItem(bot, Material.TORCH);
+        if (torch == null) return false;
+        BlockPlaceEvent event = new BlockPlaceEvent(best, best.getState(),
+                best.getRelative(BlockFace.DOWN), torch.clone(), bot, true, EquipmentSlot.HAND);
+        Bukkit.getPluginManager().callEvent(event);
+        if (event.isCancelled() || !event.canBuild()) return false;
+        best.setType(Material.TORCH, true);
+        consumeOne(bot, Material.TORCH);
+        return true;
+    }
+
+    private boolean isForbiddenPlacement(Material material) {
+        return material == Material.BEDROCK || material == Material.BARRIER
+                || material == Material.FIRE || material == Material.SOUL_FIRE
+                || material == Material.LAVA || material == Material.WATER;
     }
 
     private boolean placeCraftingTable(Player bot) {
