@@ -135,6 +135,11 @@ final class HouseBuilder {
         // The bot's spawn chunk is not necessarily the chunk where the unfinished
         // build stands. Keep the project marked active while only its small footprint
         // and the surrounding 4-block placement radius are loaded asynchronously.
+        beginResumeChunkLoad();
+    }
+
+    private void beginResumeChunkLoad() {
+        if (resumePending || base == null || task == null && plan.isEmpty()) return;
         resumePending = true;
         resumeAttempts = 0;
         long generation = ++resumeGeneration;
@@ -229,8 +234,10 @@ final class HouseBuilder {
         actorUnavailableSinceMillis = 0L;
         resumePending = false;
         resumeAttempts = 0;
-        int interval = Math.max(1, plugin.getConfig().getInt("building.block-interval-ticks", 2));
-        task = Bukkit.getScheduler().runTaskTimer(plugin, this::runPlacementSafely, 20L, interval);
+        if (task == null) {
+            int interval = Math.max(1, plugin.getConfig().getInt("building.block-interval-ticks", 2));
+            task = Bukkit.getScheduler().runTaskTimer(plugin, this::runPlacementSafely, 20L, interval);
+        }
         say("Я продолжил строительство с того места, где остановился.");
     }
 
@@ -238,6 +245,10 @@ final class HouseBuilder {
         resumePending = false;
         resumeAttempts = 0;
         resumeGeneration++;
+        if (task != null) {
+            task.cancel();
+            task = null;
+        }
         plan.clear();
         workStandPosition = null;
         actorUnavailableSinceMillis = 0L;
@@ -493,7 +504,7 @@ final class HouseBuilder {
     }
 
     private void placeNextBlock() {
-        if (task == null) return;
+        if (task == null || resumePending) return;
         if (cursor >= plan.size()) {
             finish();
             return;
@@ -516,6 +527,8 @@ final class HouseBuilder {
             navigator = new AgentNavigator(actor, plugin.skills());
             workStandPosition = null;
             navigationFailures = 0;
+            beginResumeChunkLoad();
+            return;
         }
         actorUnavailableSinceMillis = 0L;
 
@@ -534,7 +547,9 @@ final class HouseBuilder {
         int y = base.getBlockY() + step.y();
         int z = base.getBlockZ() + step.z();
         if (!world.isChunkLoaded(x >> 4, z >> 4)) {
-            stopForSafety("Строительство остановлено: следующий участок мира не загружен.");
+            // Chunk tickets can disappear after long travel or a respawn. Reload
+            // only this compact project's footprint asynchronously, then continue.
+            beginResumeChunkLoad();
             return;
         }
         Block target = world.getBlockAt(x, y, z);
