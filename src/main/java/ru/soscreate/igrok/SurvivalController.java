@@ -583,7 +583,10 @@ final class SurvivalController {
             placeCraftingTable(bot);
             return;
         }
-        if (!hasTable && !hasTableItem && planksBeyondProject >= 4) {
+        if (!hasTable && !hasTableItem && planks >= 4) {
+            // A workbench is a prerequisite for tools and project mechanisms.
+            // Borrowing four reserved planks is allowed here: the blueprint's
+            // material deficit is recalculated on the next planner pass.
             if (craftResult(bot, Material.CRAFTING_TABLE)) return;
         }
         if (!hasTable) return;
