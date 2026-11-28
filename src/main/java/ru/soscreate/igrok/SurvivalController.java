@@ -505,8 +505,12 @@ final class SurvivalController {
         int axeTier = bestToolTier(bot, "AXE");
         boolean hasTable = hasNearbyCraftingTable(bot);
         boolean hasTableItem = count(bot, Material.CRAFTING_TABLE) > 0;
-        boolean projectStillNeedsPlanks = projectNeeds.keySet().stream()
-                .anyMatch(material -> material.name().endsWith("_PLANKS"));
+        int projectPlankReserve = projectNeeds.entrySet().stream()
+                .filter(entry -> entry.getKey().name().endsWith("_PLANKS"))
+                .mapToInt(Map.Entry::getValue).sum();
+        int projectCobbleReserve = projectNeeds.getOrDefault(Material.COBBLESTONE, 0)
+                + (pistonProject && projectNeeds.getOrDefault(Material.PISTON, 0) > 0 ? 4 : 0);
+        boolean projectStillNeedsPlanks = projectPlankReserve > 0;
 
         // Only prepare the minimum wood needed for a workbench and first tools.
         // Blueprint deficits above take precedence; no 32/64-plank stockpiling.
@@ -519,7 +523,7 @@ final class SurvivalController {
             placeCraftingTable(bot);
             return;
         }
-        if (!hasTable && !hasTableItem && planks >= 4) {
+        if (!hasTable && !hasTableItem && planks >= 4 + projectPlankReserve) {
             if (craftResult(bot, Material.CRAFTING_TABLE)) return;
         }
         if (!hasTable) return;
@@ -530,16 +534,18 @@ final class SurvivalController {
 
         boolean needsSticks = pickTier < 1 || axeTier < 1
                 || (pistonProject && projectNeeds.getOrDefault(Material.PISTON, 0) > 0);
-        if (needsSticks && count(bot, Material.STICK) < 2 && planks >= 2) {
+        if (needsSticks && count(bot, Material.STICK) < 2
+                && planks >= 2 + projectPlankReserve) {
             if (craftResult(bot, Material.STICK)) return;
         }
 
         // Upgrade only a missing or genuinely lower-tier tool; do not manufacture
         // duplicates that occupy inventory slots or consume project ingredients.
-        if (pickTier < 1 && planks >= 3 && count(bot, Material.STICK) >= 2) {
+        if (pickTier < 1 && planks >= 3 + projectPlankReserve
+                && count(bot, Material.STICK) >= 2) {
             if (craftResult(bot, Material.WOODEN_PICKAXE)) return;
         }
-        if (pickTier < 3 && count(bot, Material.COBBLESTONE) >= 3
+        if (pickTier < 3 && count(bot, Material.COBBLESTONE) >= 3 + projectCobbleReserve
                 && count(bot, Material.STICK) >= 2) {
             if (craftResult(bot, Material.STONE_PICKAXE)) return;
         }
@@ -549,10 +555,11 @@ final class SurvivalController {
             if (craftResult(bot, Material.IRON_PICKAXE)) return;
         }
 
-        if (axeTier < 1 && planks >= 3 && count(bot, Material.STICK) >= 2) {
+        if (axeTier < 1 && planks >= 3 + projectPlankReserve
+                && count(bot, Material.STICK) >= 2) {
             if (craftResult(bot, Material.WOODEN_AXE)) return;
         }
-        if (axeTier < 3 && count(bot, Material.COBBLESTONE) >= 3
+        if (axeTier < 3 && count(bot, Material.COBBLESTONE) >= 3 + projectCobbleReserve
                 && count(bot, Material.STICK) >= 2) {
             if (craftResult(bot, Material.STONE_AXE)) return;
         }
@@ -568,7 +575,8 @@ final class SurvivalController {
         }
 
         // Workstations are built only when an actual input can be processed.
-        if (!hasProcessingBlock(bot, 4) && count(bot, Material.COBBLESTONE) >= 8
+        if (!hasProcessingBlock(bot, 4)
+                && count(bot, Material.COBBLESTONE) >= 8 + projectCobbleReserve
                 && findSmeltable(bot) != null) {
             if (craftResult(bot, Material.FURNACE)) return;
         }
@@ -582,14 +590,16 @@ final class SurvivalController {
         }
 
         if (isNight(bot) && !hasNearbyBed(bot, tick) && !hasBedItem(bot)
-                && countBySuffix(bot, "_WOOL") >= 3 && planks >= 3) {
+                && countBySuffix(bot, "_WOOL") >= 3
+                && planks >= 3 + projectPlankReserve) {
             if (craftMatching(bot, type -> type.name().endsWith("_BED"))) return;
         }
 
         // Storage is useful only when the inventory is nearly full and there is
         // no accessible chest/barrel nearby. A chest is not an automatic craft goal.
         if (emptyStorageSlots(bot) <= 2 && findNearbyStorage(bot, 4) == null
-                && count(bot, Material.CHEST) == 0 && planks >= 8) {
+                && count(bot, Material.CHEST) == 0
+                && planks >= 8 + projectPlankReserve) {
             if (craftResult(bot, Material.CHEST)) return;
         }
 
