@@ -72,7 +72,8 @@ final class RecipeKnowledge {
         if (!loaded) return "Ещё загружаю рецепты сервера.";
         return "Знаю " + registeredRecipeCount + " рецептов сервера, включая "
                 + craftingRecipes.size() + " рецептов верстака и " + recipeFamilies.size()
-                + " типов обработки.";
+                + " типов обработки. Различаю назначение предметов: инструменты, защита, "
+                + "строительство, хранение, еда, освещение и механизмы с редстоуном.";
     }
 
     /** Practical role classification used by goal selection and diagnostics. */
