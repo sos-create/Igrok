@@ -266,8 +266,7 @@ final class BlockPerception {
         String name = material.name();
         return name.endsWith("_LOG") || name.endsWith("_WOOD")
                 || name.endsWith("_STEM") || name.endsWith("_HYPHAE")
-                || name.endsWith("_LEAVES") || name.equals("BAMBOO_BLOCK")
-                || name.endsWith("_ORE")
+                || name.equals("BAMBOO_BLOCK") || name.endsWith("_ORE")
                 || name.equals("WATER") || name.equals("LAVA")
                 || name.equals("CHEST") || name.equals("TRAPPED_CHEST") || name.equals("BARREL")
                 || name.equals("CRAFTING_TABLE") || name.equals("FURNACE")
