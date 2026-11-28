@@ -209,25 +209,41 @@ final class AutonomousPlanner {
         if (s.pistonLabUnlocked() && !s.pistonLabCompleted()) {
             if (s.projectMissingCobblestone() > 0 && s.stoneSearchReady()
                     && s.pickaxeTier() >= 1) {
-                best = better(best, collect(true, "stone", 0.88,
-                        "PISTON_LAB_STONE", "Для поршневого стенда не хватает "
+                best = better(best, collect(true, "stone", 0.90,
+                        "PISTON_LAB_STONE", "Для стенда не хватает "
                                 + s.projectMissingCobblestone() + " блоков булыжника.", false));
             }
-            if (s.redstoneDust() < 9 && s.pickaxeTier() >= 4) {
-                best = better(best, collect(s.redstoneSearchReady(), "redstone", 0.86,
-                        "REDSTONE", "Готовлю пыль редстоуна для питания поршневого механизма.", false));
+            // The blueprint needs 16 cobblestone blocks; the piston recipe
+            // additionally consumes four. Keep that dependency in the plan.
+            if (s.projectMissingPiston() > 0 && s.cobblestone() < 20
+                    && s.stoneSearchReady() && s.pickaxeTier() >= 1) {
+                best = better(best, collect(true, "stone", 0.89,
+                        "PISTON_RECIPE_STONE", "Собираю ещё камень для рецепта поршня."));
             }
-            if (s.projectMissingPiston() > 0 && s.ironIngots() < 1
+            if (s.projectMissingPiston() > 0 && s.planks() < 3) {
+                if (s.logs() > 0) {
+                    best = better(best, decision(GoalPlanner.Goal.IDLE, "", 0.87, "PISTON_PLANKS",
+                            "Древесина уже есть: перерабатываю её в доски для поршня."));
+                } else {
+                    best = better(best, collect(s.woodSearchReady(), "wood", 0.86,
+                            "PISTON_WOOD", "Для поршня не хватает трёх досок; ищу дерево."));
+                }
+            }
+            if (s.redstoneDust() < 9 && s.pickaxeTier() >= 4) {
+                best = better(best, collect(s.redstoneSearchReady(), "redstone", 0.88,
+                        "REDSTONE", "Готовлю редстоун для поршня и блока питания.", false));
+            }
+            if (s.projectMissingPiston() > 0 && s.ironIngots() + s.rawIron() < 1
                     && s.pickaxeTier() >= 3) {
-                best = better(best, collect(s.ironSearchReady(), "iron", 0.84,
-                        "PISTON_IRON", "Для поршня не хватает железа; добываю руду, чтобы изготовить механизм.", false));
+                best = better(best, collect(s.ironSearchReady(), "iron", 0.88,
+                        "PISTON_IRON", "Для поршня нужно железо. Ищу железную руду.", false));
             } else if (s.projectMissingPiston() > 0) {
                 best = better(best, decision(GoalPlanner.Goal.IDLE, "", 0.85, "PISTON_CRAFT",
-                        "Для стенда нужен поршень. Проверяю ингредиенты и изготавливаю его из своего инвентаря."));
+                        "Проверяю ингредиенты и собираю поршень из своего инвентаря."));
             }
             if (s.projectMissingRedstoneBlock() > 0 && s.redstoneDust() >= 9) {
-                best = better(best, decision(GoalPlanner.Goal.IDLE, "", 0.87, "REDSTONE_BLOCK",
-                        "Поршень готов. Собираю блок редстоуна как источник питания испытательного стенда."));
+                best = better(best, decision(GoalPlanner.Goal.IDLE, "", 0.90, "REDSTONE_BLOCK",
+                        "Поршень готов. Изготавливаю блок редстоуна для питания механизма."));
             }
             if (s.projectReady()) {
                 best = better(best, decision(GoalPlanner.Goal.IDLE, "", 0.97, "PISTON_LAB_READY",
