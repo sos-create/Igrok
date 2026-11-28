@@ -1,10 +1,17 @@
 package ru.soscreate.igrok;
 
+import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.World;
-import org.bukkit.block.Block;
 import org.bukkit.Material;
+import org.bukkit.block.Block;
+import org.bukkit.block.BlockFace;
+import org.bukkit.block.data.Openable;
 import org.bukkit.entity.Player;
+import org.bukkit.event.Event;
+import org.bukkit.event.block.Action;
+import org.bukkit.event.player.PlayerInteractEvent;
+import org.bukkit.inventory.EquipmentSlot;
 import org.bukkit.util.Vector;
 
 import java.util.ArrayList;
@@ -74,6 +81,7 @@ final class AgentNavigator {
             failPath();
             return false;
         }
+        tryOpenDoorAhead(destination);
 
         boolean destinationChanged = lastRequestedDestination == null
                 || lastRequestedDestination.getWorld() != destination.getWorld()
@@ -205,6 +213,65 @@ final class AgentNavigator {
      * It advances one walkable block at a time, respects loaded chunks, world
      * borders, hazards and headroom, and lets vanilla entity physics do the walking.
      */
+    /**
+     * Opens a closed wooden/copper door or fence gate when it blocks the requested
+     * route. The normal PlayerInteractEvent is fired first so protection plugins
+     * can deny it; iron doors are never forced open.
+     */
+    private void tryOpenDoorAhead(Location destination) {
+        Location position = bot.getLocation();
+        Vector desired = destination.toVector().subtract(position.toVector());
+        desired.setY(0.0);
+        if (desired.lengthSquared() < 0.01) return;
+        desired.normalize();
+
+        World world = bot.getWorld();
+        Location eye = bot.getEyeLocation();
+        int ox = position.getBlockX();
+        int oy = position.getBlockY();
+        int oz = position.getBlockZ();
+        Block best = null;
+        Openable bestData = null;
+        double bestDistance = Double.POSITIVE_INFINITY;
+
+        for (int x = ox - 2; x <= ox + 2; x++) {
+            for (int z = oz - 2; z <= oz + 2; z++) {
+                if (!world.isChunkLoaded(x >> 4, z >> 4)) continue;
+                for (int y = oy - 1; y <= oy + 2; y++) {
+                    if (y <= world.getMinHeight() || y >= world.getMaxHeight()) continue;
+                    Block block = world.getBlockAt(x, y, z);
+                    String name = block.getType().name();
+                    if (name.contains("IRON") || !(name.endsWith("_DOOR") || name.endsWith("_FENCE_GATE"))) continue;
+                    if (!(block.getBlockData() instanceof Openable openable) || openable.isOpen()) continue;
+
+                    Vector toward = block.getLocation().add(0.5, 0.5, 0.5).toVector()
+                            .subtract(position.toVector());
+                    Vector horizontal = toward.clone();
+                    horizontal.setY(0.0);
+                    double distanceSquared = toward.lengthSquared();
+                    if (distanceSquared > 2.6 * 2.6 || Math.abs(toward.getY()) > 1.7
+                            || horizontal.lengthSquared() < 0.01) continue;
+                    horizontal.normalize();
+                    if (desired.dot(horizontal) < 0.35
+                            || distanceSquared >= bestDistance
+                            || !BlockPerception.canSee(eye, block, 4.5)) continue;
+                    best = block;
+                    bestData = openable;
+                    bestDistance = distanceSquared;
+                }
+            }
+        }
+        if (best == null || bestData == null) return;
+
+        PlayerInteractEvent event = new PlayerInteractEvent(bot, Action.RIGHT_CLICK_BLOCK,
+                bot.getInventory().getItemInMainHand(), best, BlockFace.UP, EquipmentSlot.HAND);
+        Bukkit.getPluginManager().callEvent(event);
+        if (event.useInteractedBlock() == Event.Result.DENY) return;
+
+        bestData.setOpen(true);
+        best.setBlockData((org.bukkit.block.data.BlockData) bestData, true);
+    }
+
     private boolean moveDirectlyToward(Location destination) {
         if (destination == null || destination.getWorld() != bot.getWorld()) return false;
         World world = bot.getWorld();
