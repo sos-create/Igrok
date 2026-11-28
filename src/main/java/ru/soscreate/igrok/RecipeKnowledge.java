@@ -4,6 +4,7 @@ import org.bukkit.Bukkit;
 import org.bukkit.Material;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.Recipe;
+import org.bukkit.inventory.RecipeChoice;
 import org.bukkit.inventory.ShapedRecipe;
 import org.bukkit.inventory.ShapelessRecipe;
 
@@ -12,6 +13,8 @@ import java.util.EnumMap;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.util.LinkedHashMap;
+import java.util.StringJoiner;
 
 /**
  * Runtime knowledge of the recipes registered by the exact Paper server version.
@@ -72,43 +75,54 @@ final class RecipeKnowledge {
         if (!loaded) return "Ещё загружаю рецепты сервера.";
         return "Знаю " + registeredRecipeCount + " рецептов сервера, включая "
                 + craftingRecipes.size() + " рецептов верстака и " + recipeFamilies.size()
-                + " типов обработки. Различаю назначение предметов: инструменты, защита, "
-                + "строительство, хранение, еда, освещение и механизмы с редстоуном.";
+                + " типов обработки. Для предметов определяю назначение и ингредиенты; "
+                + "разделяю инструменты, защиту, строительные материалы, рабочие станции, "
+                + "хранение, земледелие, пищу и компоненты автоматики. "
+                + "Крафт выбираю по дефициту текущего проекта, а не ради случайного запаса.";
     }
 
-    /** Practical role classification used by goal selection and diagnostics. */
+    /** Practical role classification shared by perception and planning. */
     String purpose(Material material) {
-        if (material == null) return "неизвестное назначение";
-        String name = material.name();
-        if (name.contains("PISTON") || name.contains("REDSTONE") || name.contains("OBSERVER")
-                || name.contains("REPEATER") || name.contains("COMPARATOR")
-                || name.contains("DISPENSER") || name.contains("DROPPER") || name.contains("HOPPER")) {
-            return "механизмы и редстоун";
+        return BlockKnowledge.purpose(material);
+    }
+
+    /**
+     * Explains the first supported crafting recipe using ingredient choices
+     * registered by this Paper server. Alternatives are represented by the
+     * first valid choice; the actual craft still validates the full recipe.
+     */
+    String recipeExplanation(Material result) {
+        List<Recipe> recipes = recipesFor(result);
+        for (Recipe recipe : recipes) {
+            Map<Material, Integer> ingredients = new LinkedHashMap<>();
+            if (recipe instanceof ShapelessRecipe shapeless) {
+                for (RecipeChoice choice : shapeless.getChoiceList()) addChoice(ingredients, choice, 1);
+            } else if (recipe instanceof ShapedRecipe shaped) {
+                Map<Character, RecipeChoice> choices = shaped.getChoiceMap();
+                for (String row : shaped.getShape()) {
+                    for (int i = 0; i < row.length(); i++) {
+                        RecipeChoice choice = choices.get(row.charAt(i));
+                        if (choice != null) addChoice(ingredients, choice, 1);
+                    }
+                }
+            } else {
+                continue;
+            }
+            if (ingredients.isEmpty()) continue;
+            StringJoiner joiner = new StringJoiner(", ");
+            ingredients.forEach((material, amount) -> joiner.add(amount + " × "
+                    + BlockPerception.russianName(material)));
+            return "Для " + BlockPerception.russianName(result) + " требуется: " + joiner + ".";
         }
-        if (name.endsWith("_PICKAXE") || name.endsWith("_AXE") || name.endsWith("_SWORD")
-                || name.endsWith("_SHOVEL") || name.endsWith("_HOE") || name.endsWith("_SHEARS")) {
-            return "инструменты и добыча";
-        }
-        if (name.endsWith("_HELMET") || name.endsWith("_CHESTPLATE")
-                || name.endsWith("_LEGGINGS") || name.endsWith("_BOOTS") || name.equals("SHIELD")) {
-            return "защита";
-        }
-        if (name.endsWith("_PLANKS") || name.endsWith("_STAIRS") || name.endsWith("_SLAB")
-                || name.endsWith("_FENCE") || name.endsWith("_DOOR") || name.endsWith("_TRAPDOOR")
-                || name.endsWith("_WALL") || name.endsWith("_BRICKS")) {
-            return "строительство";
-        }
-        if (name.equals("FURNACE") || name.equals("BLAST_FURNACE") || name.equals("SMOKER")
-                || name.equals("CRAFTING_TABLE") || name.equals("CHEST") || name.equals("BARREL")) {
-            return "рабочие станции и хранение";
-        }
-        if (name.equals("BREAD") || name.endsWith("_STEW") || name.endsWith("_SOUP")
-                || name.equals("COOKIE") || name.equals("PUMPKIN_PIE")) {
-            return "пища";
-        }
-        if (name.endsWith("_BED") || name.equals("TORCH") || name.equals("LANTERN")) {
-            return "отдых и освещение";
-        }
-        return "универсальное применение";
+        return knowsRecipeFor(result)
+                ? "Рецепт зарегистрирован сервером, но бот пока не выполняет этот тип обработки автоматически."
+                : "На этом сервере не найден известный рецепт для этого предмета.";
+    }
+
+    private void addChoice(Map<Material, Integer> ingredients, RecipeChoice choice, int amount) {
+        if (choice == null) return;
+        ItemStack representative = choice.getItemStack();
+        if (representative == null || representative.getType().isAir()) return;
+        ingredients.merge(representative.getType(), amount, Integer::sum);
     }
 }
