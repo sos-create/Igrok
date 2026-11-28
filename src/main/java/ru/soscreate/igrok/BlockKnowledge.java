@@ -71,7 +71,26 @@ final class BlockKnowledge {
             java.util.Map.entry("железная лопата", Material.IRON_SHOVEL),
             java.util.Map.entry("лопата", Material.IRON_SHOVEL),
             java.util.Map.entry("мотыга", Material.IRON_HOE),
-            java.util.Map.entry("ножницы", Material.SHEARS)
+            java.util.Map.entry("ножницы", Material.SHEARS),
+            java.util.Map.entry("компостер", Material.COMPOSTER),
+            java.util.Map.entry("наковальня", Material.ANVIL),
+            java.util.Map.entry("кузнечный стол", Material.SMITHING_TABLE),
+            java.util.Map.entry("стол зачарований", Material.ENCHANTING_TABLE),
+            java.util.Map.entry("варочная стойка", Material.BREWING_STAND),
+            java.util.Map.entry("камнерез", Material.STONECUTTER),
+            java.util.Map.entry("точило", Material.GRINDSTONE),
+            java.util.Map.entry("грядка", Material.FARMLAND),
+            java.util.Map.entry("ягодный куст", Material.SWEET_BERRY_BUSH),
+            java.util.Map.entry("какао", Material.COCOA),
+            java.util.Map.entry("адский нарост", Material.NETHER_WART),
+            java.util.Map.entry("доски из ели", Material.SPRUCE_PLANKS),
+            java.util.Map.entry("еловые доски", Material.SPRUCE_PLANKS),
+            java.util.Map.entry("еловое бревно", Material.SPRUCE_LOG),
+            java.util.Map.entry("бревна", Material.OAK_LOG),
+            java.util.Map.entry("брёвна", Material.OAK_LOG),
+            java.util.Map.entry("угольной руды", Material.COAL_ORE),
+            java.util.Map.entry("железной руды", Material.IRON_ORE),
+            java.util.Map.entry("рудой железа", Material.IRON_ORE)
     );
 
     static Material findMaterialMention(String text) {
@@ -96,6 +115,11 @@ final class BlockKnowledge {
         if (isLog(name) || name.equals("BAMBOO_BLOCK")) return "срубить топором; сырьё переработать в доски и палки";
         if (name.endsWith("_LEAVES")) return "можно разобрать после рубки дерева; искать саженцы и еду";
         if (isCrop(name)) return "проверить зрелость; собрать урожай и пересадить имеющимися семенами";
+        if (name.equals("COCOA")) return "какао растёт на боковой стороне джунглевых брёвен; автоматическая посадка и сбор пока не реализованы";
+        if (name.equals("PUMPKIN_STEM") || name.equals("MELON_STEM")) {
+            return "не ломать стебель: плод вырастает на соседнем блоке; автоматический сбор пока не реализован";
+        }
+        if (name.equals("SWEET_BERRY_BUSH")) return "ягодный куст даёт ягоды при сборе; автоматический сбор и пересадка пока не реализованы";
         if (name.equals("FARMLAND")) return "почва для посадки культур; не выкапывать без необходимости";
         if (name.equals("CHEST") || name.equals("TRAPPED_CHEST") || name.equals("BARREL")
                 || name.endsWith("SHULKER_BOX")) return "контейнер: открыть по доступу и сложить только собственные излишки";
@@ -150,7 +174,7 @@ final class BlockKnowledge {
         if (block == null) return "Блок не определён.";
         Material material = block.getType();
         String result = BlockPerception.russianName(material) + ": " + quickAction(material) + ".";
-        if (block.getBlockData() instanceof Ageable ageable) {
+        if (isCrop(material) && block.getBlockData() instanceof Ageable ageable) {
             if (ageable.getAge() >= ageable.getMaximumAge()) {
                 result += " Урожай созрел — можно собрать и пересадить.";
             } else {
@@ -213,9 +237,7 @@ final class BlockKnowledge {
 
     private static boolean isCrop(String name) {
         return name.equals("WHEAT") || name.equals("CARROTS") || name.equals("POTATOES")
-                || name.equals("BEETROOTS") || name.equals("NETHER_WART")
-                || name.equals("COCOA") || name.equals("PUMPKIN_STEM")
-                || name.equals("MELON_STEM") || name.equals("SWEET_BERRY_BUSH");
+                || name.equals("BEETROOTS") || name.equals("NETHER_WART");
     }
 
     private static boolean isLog(String name) {
@@ -230,6 +252,9 @@ final class BlockKnowledge {
     private static String oreAction(String name) {
         int tier;
         String tool;
+        if (name.equals("NETHER_GOLD_ORE") || name.contains("QUARTZ") || name.contains("COAL")) {
+            return "добывать любой киркой";
+        }
         if (name.contains("DIAMOND") || name.contains("EMERALD") || name.contains("GOLD")
                 || name.contains("REDSTONE") || name.equals("ANCIENT_DEBRIS")) {
             tier = name.equals("ANCIENT_DEBRIS") ? 5 : 4;
@@ -237,9 +262,6 @@ final class BlockKnowledge {
         } else if (name.contains("IRON") || name.contains("COPPER") || name.contains("LAPIS")) {
             tier = 3;
             tool = "каменная кирка или лучше";
-        } else if (name.contains("COAL") || name.contains("QUARTZ") || name.contains("NETHER_GOLD")) {
-            tier = 1;
-            tool = "любая подходящая кирка";
         } else {
             tier = 1;
             tool = "кирка подходящего уровня";
