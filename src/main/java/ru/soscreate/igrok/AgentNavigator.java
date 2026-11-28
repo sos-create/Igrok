@@ -681,7 +681,7 @@ final class AgentNavigator {
         double rise = Math.max(0.0, next.y() - startY);
         // The normal jump impulse peaks a little above one block. Keep the
         // estimate conservative; vanilla physics still decides the real motion.
-        double jumpHeight = 0.82;
+        double jumpHeight = 0.62;
         double[] samples = {0.22, 0.42, 0.62, 0.82, 0.96};
         double[] bodyHeights = {0.10, 0.90, 1.70};
         for (double t : samples) {
@@ -720,7 +720,11 @@ final class AgentNavigator {
 
     private void pruneBlockedNodes() {
         int now = bot.getTicksLived();
-        blockedNodesUntil.entrySet().removeIf(entry -> entry.getValue() <= now);
+        blockedNodesUntil.entrySet().removeIf(entry -> {
+            if (entry.getValue() > now) return false;
+            blockedNodeFailures.remove(entry.getKey());
+            return true;
+        });
     }
 
     private boolean isStandableOrKnown(World world, Node node, Map<Node, Double> knownCosts) {
@@ -762,11 +766,12 @@ final class AgentNavigator {
 
     private Node findStandable(World world, int x, int y, int z) {
         // Prefer level ground; only climb or descend when the current height is blocked.
-        for (int dy : new int[]{0, 1, -1}) {
-            Node node = new Node(x, y + dy, z);
-            if (standable(world, node)) return node;
-        }
-        return null;
+        Node level = new Node(x, y, z);
+        if (standable(world, level)) return level;
+        Node above = new Node(x, y + 1, z);
+        if (standable(world, above)) return above;
+        Node below = new Node(x, y - 1, z);
+        return standable(world, below) ? below : null;
     }
 
     private boolean standable(World world, Node node) {
