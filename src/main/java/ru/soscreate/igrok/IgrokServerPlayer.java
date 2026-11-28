@@ -45,7 +45,9 @@ final class IgrokServerPlayer extends ServerPlayer {
         float intendedYaw = getYRot();
         float intendedPitch = getXRot();
         float intendedHeadYaw = getYHeadRot();
-        float intendedBodyYaw = intendedYaw;
+        // Keep the body's independent yaw. Using intendedYaw here used to collapse
+        // head and torso rotation together after every vanilla movement tick.
+        float intendedBodyYaw = getYBodyRot();
         doTick();
         if (isRemoved() || !isAlive()) return;
 
