@@ -1,4 +1,4 @@
-# Igrok 0.9.31
+# Igrok 0.9.45
 
 Paper 1.21.4 server-side player agent (Java 21). Igrok is a lightweight autonomous survival agent built around a fake server-side Player, bounded pathfinding, utility-based goals, associative cognition and compact persistent memory.
 
@@ -50,12 +50,16 @@ This is an algorithmic simulation. It does not provide human-level intelligence,
 - Igrok replies when addressed by its configured name or Игрок; recent direct conversation can continue without repeating the name.
 - Unrelated player-to-player chat is ignored.
 - Player requests are expressed in ordinary chat; the bot may accept or refuse them.
+- Igrok also starts conversations on his own: comments are selected from nearby threats, weather, night, hunger, exploration and the relationship with the player.
+- He can initiate a food request or invite a nearby player to explore. A clear yes/no answer is linked to that invitation; accepting an exploration invite makes him accompany the player while survival and danger rules remain in control.
+- Player gifts are recognized when Igrok actually picks up an item thrown by that player. Gift events, conversations and negative actions change the persistent per-player relationship record.
+- Ambient speech and invitations have independent cooldowns, and unsolicited dialogue is skipped while Igrok is busy with urgent survival, combat, a player pause or a construction project.
 - No slash-command interface is required.
 - TNT and ignition remain forbidden.
 
 ## Notes
 
-The plugin is compiled against Paper 1.21.4. Version 0.9.31 adds independent development branches and a persistent self-model; older build notes remain in the repository history. A successful CI build verifies source compilation and artifact packaging, but actual movement, crop interaction, furnace behavior and protection-plugin compatibility must still be tested on the target live server.
+The plugin is compiled against Paper 1.21.4. Version 0.9.45 adds contextual social behaviour, player-initiated relationship memory and bot-initiated invitations on top of the independent development branches and persistent self-model. A successful CI build verifies source compilation and artifact packaging, but actual movement, crop interaction, furnace behavior and protection-plugin compatibility must still be tested on the target live server.
 
 Unexpected runtime failures in chat, the brain and construction are isolated: a failed construction step cancels that build, a failed brain tick pauses and retries instead of cancelling the scheduler, and duplicate stack traces are rate-limited. Chat input is length-limited before parsing. These safeguards prevent cascading errors; they do not repair invalid chunk data already stored in a world region file.\n\nIgrok is explicitly placed in Survival mode and is never an operator. It starts with an empty inventory, 20 health, 20 food and normal saturation; saved inventory and vitals are restored across restarts. Vanilla item entities handle pickup, so the bot no longer vacuums items from four blocks away. Mining, farming, container access and building are limited to ordinary player reach and line of sight; building walks to a legal standing position and respects BlockPlaceEvent cancellation. Death uses vanilla inventory and experience loss before automatic respawn.
 

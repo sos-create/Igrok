@@ -218,6 +218,8 @@ final class ChatDialogue implements Listener {
         pendingThoughts.put(senderId, thought);
         plugin.cognition().learn(thought, 0.0);
         plugin.brain().onPlayerMessage(sender, rawMessage);
+        if (continuation && plugin.socialLife() != null
+                && plugin.socialLife().handleReply(sender, rawMessage)) return;
 
         String action = thought.action();
         if ("tnt".equals(action)) {

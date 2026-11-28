@@ -21,6 +21,9 @@ chat:
     radius: 7
     scan-interval-ticks: 20
     greeting-cooldown-seconds: 300
+    ambient-enabled: true
+    ambient-cooldown-seconds: 150
+    initiative-cooldown-seconds: 360
 
 building:
   enabled: true
