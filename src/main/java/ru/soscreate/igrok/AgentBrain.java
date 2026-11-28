@@ -150,7 +150,8 @@ final class AgentBrain {
                         .append(" блока от меня (")
                         .append(item.location().getBlockX()).append(", ")
                         .append(item.location().getBlockY()).append(", ")
-                        .append(item.location().getBlockZ()).append(')');
+                        .append(item.location().getBlockZ()).append(") — ")
+                        .append(BlockKnowledge.quickAction(item.material()));
             }
             report.append('.');
         }
@@ -176,7 +177,8 @@ final class AgentBrain {
     }
 
     String skillSummary() {
-        return plugin.skills().summary() + " " + survival.recipeKnowledgeSummary();
+        return plugin.skills().summary() + " " + survival.recipeKnowledgeSummary()
+                + " Назначение ближайших блоков и безопасный способ работы с ними я определяю отдельно.";
     }
 
     String selfModelSummary() {
