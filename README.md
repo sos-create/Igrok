@@ -60,7 +60,7 @@ This is an algorithmic simulation. It does not provide human-level intelligence,
 
 ## Notes
 
-The plugin is compiled against Paper 1.21.4. Version 0.9.45 adds contextual social behaviour, player-initiated relationship memory and bot-initiated invitations on top of the independent development branches and persistent self-model. A successful CI build verifies source compilation and artifact packaging, but actual movement, crop interaction, furnace behavior and protection-plugin compatibility must still be tested on the target live server.
+The plugin is compiled against Paper 1.21.4. Version 0.9.50 strengthens independent goal continuity, removes chat-driven interruption of autonomous work, resets temporary orders on restart, and hardens sleep/build recovery. A successful CI build verifies source compilation and artifact packaging, but actual movement, crop interaction, furnace behavior and protection-plugin compatibility must still be tested on the target live server.
 
 Unexpected runtime failures in chat, the brain and construction are isolated: a failed construction step cancels that build, a failed brain tick pauses and retries instead of cancelling the scheduler, and duplicate stack traces are rate-limited. Chat input is length-limited before parsing. These safeguards prevent cascading errors; they do not repair invalid chunk data already stored in a world region file.\n\nIgrok is explicitly placed in Survival mode and is never an operator. It starts with an empty inventory, 20 health, 20 food and normal saturation; saved inventory and vitals are restored across restarts. Vanilla item entities handle pickup, so the bot no longer vacuums items from four blocks away. Mining, farming, container access and building are limited to ordinary player reach and line of sight; building walks to a legal standing position and respects BlockPlaceEvent cancellation. Death uses vanilla inventory and experience loss before automatic respawn.
 
@@ -115,3 +115,5 @@ Repeated identical dialogue replies are replaced with a distinct non-question re
 - A restart discards temporary player orders and stale navigation targets. Skills, memory, personality and learned danger lessons remain; the planner selects a fresh goal after startup.
 - Communication experience is awarded only after the message passes cooldown and duplicate checks, preventing rapid chat spam from farming social skills.
 - The resource planner counts Nether stems, hyphae and bamboo blocks as wood, so agents in those biomes can progress with the materials they actually have.
+
+- Version 0.9.50 also caps communication-skill gains to one award per player per 30 seconds; the planner recognises Overworld logs, Nether stems/hyphae and bamboo blocks as wood.
