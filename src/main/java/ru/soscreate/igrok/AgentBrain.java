@@ -55,6 +55,16 @@ final class AgentBrain {
     private Block miningTarget;
     private int miningTicks;
     private int minedThisTask;
+    private boolean miningTargetProspecting;
+    private boolean prospectingActive;
+    private int prospectingX;
+    private int prospectingY;
+    private int prospectingZ;
+    private int prospectingDx;
+    private int prospectingDz;
+    private int prospectingStage;
+    private int prospectingSteps;
+    private int prospectingBlocks;
     private int nextAttackTick;
     private int nextSearchTick;
     private int nextExploreTick;
@@ -282,6 +292,7 @@ final class AgentBrain {
         miningTarget = null;
         miningTicks = 0;
         minedThisTask = 0;
+        resetProspecting();
         attackRequested = false;
         explorationRequested = false;
         exploreTarget = null;
@@ -1084,6 +1095,7 @@ final class AgentBrain {
                         minedThisTask = 0;
                         miningTarget = null;
                         miningTicks = 0;
+                        resetProspecting();
                         nextSearchTick = 0;
                         explorationRequested = false;
                         exploreTarget = null;
@@ -1368,10 +1380,17 @@ final class AgentBrain {
                 return;
             }
             miningTarget = findMiningTarget(bot);
-            nextSearchTick = tickCounter + (miningTarget == null ? 100 : 0);
+            miningTargetProspecting = false;
+            if (miningTarget == null) miningTarget = findProspectingTarget(bot);
+            nextSearchTick = tickCounter + (miningTarget == null
+                    ? (prospectingActive ? 2 : 100) : 0);
             miningTicks = 0;
         }
         if (miningTarget == null) {
+            if (prospectingActive) {
+                state = "Проверяю безопасный проход для поиска ресурсов";
+                return;
+            }
             if (tickCounter % 100 == 0) {
                 say("Поблизости не нашёл подходящего блока. Перейду в другое место.");
                 survival.deferMining(miningMode, tickCounter);
@@ -1422,20 +1441,48 @@ final class AgentBrain {
 
         if (miningTicks >= requiredTicks) {
             Material brokenType = miningTarget.getType();
+            boolean wasProspecting = miningTargetProspecting;
             if (bot.breakBlock(miningTarget)) {
                 memory.recordMined(brokenType);
-                minedThisTask++;
+                boolean actualResource = isWantedResource(brokenType);
+                if (!wasProspecting || actualResource || miningMode.equals("stone")) {
+                    minedThisTask++;
+                }
+                if (wasProspecting) {
+                    prospectingBlocks++;
+                    prospectingStage++;
+                }
                 miningTarget = null;
+                miningTargetProspecting = false;
                 miningTicks = 0;
-                nextSearchTick = tickCounter + 40;
+                nextSearchTick = tickCounter + (prospectingActive ? 2 : 8);
                 int limit = Math.max(1, plugin.getConfig().getInt("brain.mining.blocks-per-order", 4));
                 if (minedThisTask >= limit) {
                     miningRequested = false;
                     manualOrderActive = false;
                     minedThisTask = 0;
+                    resetProspecting();
                     goal = GoalPlanner.Goal.IDLE;
                     say("Закончил добычу. Теперь у меня в памяти " + memory.totalMined() + " добытых блоков.");
+                } else if (prospectingBlocks >= 24 && !miningMode.equals("stone")) {
+                    survival.deferMining(miningMode, tickCounter);
+                    miningRequested = false;
+                    manualOrderActive = false;
+                    resetProspecting();
+                    goal = GoalPlanner.Goal.EXPLORE;
+                    explorationRequested = true;
+                    exploreTarget = null;
+                    say("В этом месте не нашёл нужную руду. Перехожу в другой район, чтобы не копать бесконечно.");
                 }
+            } else if (wasProspecting) {
+                // Respect region protection. Abandon this tunnel direction and
+                // try another one; never bypass a cancelled BlockBreakEvent.
+                resetProspecting();
+                miningTarget = null;
+                miningTargetProspecting = false;
+                miningTicks = 0;
+                nextSearchTick = tickCounter + 20;
+                state = "Проход закрыт защитой; проверяю другое направление";
             } else {
                 miningScanReset();
                 miningRequested = false;
@@ -1445,6 +1492,156 @@ final class AgentBrain {
                 say("Не получилось сломать этот блок. Сервер или регион запретил добычу, поэтому я не обхожу защиту.");
             }
         }
+    }
+
+    /**
+     * Opens a short, two-block-high passage through ordinary stone when an ore
+     * vein is not exposed. It never digs below the bot's feet, never removes its
+     * floor, and only breaks common rock blocks after checking the next cell.
+     * Region protection still applies through Player.breakBlock().
+     */
+    private Block findProspectingTarget(Player bot) {
+        if (!java.util.Set.of("stone", "coal", "iron", "redstone").contains(miningMode)) return null;
+        if (miningMode.equals("iron") && survivalToolTier(bot, "PICKAXE") < 3) return null;
+        if (miningMode.equals("redstone") && survivalToolTier(bot, "PICKAXE") < 4) return null;
+        if (!miningMode.equals("stone") && !miningMode.equals("coal")
+                && !miningMode.equals("iron") && !miningMode.equals("redstone")) return null;
+
+        if (!prospectingActive && !beginProspecting(bot)) return null;
+        if (prospectingSteps >= 10 || prospectingBlocks >= 24) {
+            resetProspecting();
+            return null;
+        }
+
+        while (prospectingStage < 2) {
+            if (!bot.getWorld().isChunkLoaded(prospectingX >> 4, prospectingZ >> 4)) {
+                resetProspecting();
+                return null;
+            }
+            Block target = bot.getWorld().getBlockAt(prospectingX,
+                    prospectingY + prospectingStage, prospectingZ);
+            if (target.isLiquid() || isProspectingHazard(target.getType())) {
+                resetProspecting();
+                return null;
+            }
+            if (target.isPassable()) {
+                prospectingStage++;
+                continue;
+            }
+            if (!isProspectingRock(target.getType())) {
+                resetProspecting();
+                return null;
+            }
+            if (!BlockPerception.canSee(bot.getEyeLocation(), target, 4.5)) return null;
+            miningTargetProspecting = true;
+            return target;
+        }
+
+        Location nextCell = new Location(bot.getWorld(),
+                prospectingX + 0.5, prospectingY, prospectingZ + 0.5);
+        double distanceSquared = bot.getLocation().distanceSquared(nextCell);
+        if (distanceSquared <= 0.55) {
+            prospectingX += prospectingDx;
+            prospectingZ += prospectingDz;
+            prospectingStage = 0;
+            prospectingSteps++;
+            return findProspectingTarget(bot);
+        }
+
+        if (!bot.getWorld().isChunkLoaded((prospectingX + prospectingDx) >> 4,
+                (prospectingZ + prospectingDz) >> 4)) {
+            resetProspecting();
+            return null;
+        }
+        boolean moving = navigator.moveTo(nextCell);
+        if (!moving && distanceSquared > 0.55) {
+            resetProspecting();
+            return null;
+        }
+        state = "Прокладываю безопасный проход и проверяю породу";
+        return null;
+    }
+
+    private boolean beginProspecting(Player bot) {
+        if (survivalToolTier(bot, "PICKAXE") < 1) return false;
+        Location location = bot.getLocation();
+        int y = location.getBlockY();
+        World world = bot.getWorld();
+        int[][] directions = {{0, 1}, {-1, 0}, {0, -1}, {1, 0}};
+        Vector facing = location.getDirection();
+        facing.setY(0);
+        if (facing.lengthSquared() < 0.001) facing = new Vector(0, 0, 1);
+        facing.normalize();
+
+        int bestDx = 0;
+        int bestDz = 0;
+        double bestScore = -Double.MAX_VALUE;
+        for (int[] direction : directions) {
+            int dx = direction[0];
+            int dz = direction[1];
+            int x = location.getBlockX() + dx;
+            int z = location.getBlockZ() + dz;
+            if (!world.isChunkLoaded(x >> 4, z >> 4)
+                    || !world.getWorldBorder().isInside(new Location(world, x + 0.5, y, z + 0.5))) {
+                continue;
+            }
+            Block lower = world.getBlockAt(x, y, z);
+            Block upper = world.getBlockAt(x, y + 1, z);
+            Block floor = world.getBlockAt(x, y - 1, z);
+            if (lower.isLiquid() || upper.isLiquid() || !floor.getType().isSolid()
+                    || floor.isLiquid() || isProspectingHazard(floor.getType())
+                    || isProspectingHazard(lower.getType()) || isProspectingHazard(upper.getType())) continue;
+            boolean lowerOkay = lower.isPassable() || isProspectingRock(lower.getType());
+            boolean upperOkay = upper.isPassable() || isProspectingRock(upper.getType());
+            if (!lowerOkay || !upperOkay
+                    || (lower.isPassable() && upper.isPassable())) continue;
+            double score = facing.getX() * dx + facing.getZ() * dz;
+            if (score > bestScore) {
+                bestScore = score;
+                bestDx = dx;
+                bestDz = dz;
+            }
+        }
+        if (bestScore < -0.25) return false;
+        prospectingX = location.getBlockX() + bestDx;
+        prospectingY = y;
+        prospectingZ = location.getBlockZ() + bestDz;
+        prospectingDx = bestDx;
+        prospectingDz = bestDz;
+        prospectingStage = 0;
+        prospectingSteps = 0;
+        prospectingBlocks = 0;
+        prospectingActive = true;
+        return true;
+    }
+
+    private boolean isProspectingRock(Material material) {
+        String name = material.name();
+        return material == Material.STONE || material == Material.DEEPSLATE
+                || material == Material.COBBLESTONE || material == Material.COBBLED_DEEPSLATE
+                || material == Material.TUFF || material == Material.GRANITE
+                || material == Material.DIORITE || material == Material.ANDESITE
+                || material == Material.CALCITE || material == Material.DRIPSTONE_BLOCK
+                || name.endsWith("_COAL_ORE") || name.endsWith("_IRON_ORE")
+                || name.endsWith("_REDSTONE_ORE");
+    }
+
+    private boolean isProspectingHazard(Material material) {
+        return switch (material) {
+            case BEDROCK, BARRIER, STRUCTURE_VOID, FIRE, SOUL_FIRE, LAVA, WATER,
+                    MAGMA_BLOCK, CACTUS, POWDER_SNOW, POINTED_DRIPSTONE -> true;
+            default -> false;
+        };
+    }
+
+    private void resetProspecting() {
+        prospectingActive = false;
+        prospectingStage = 0;
+        prospectingSteps = 0;
+        prospectingBlocks = 0;
+        miningTargetProspecting = false;
+        prospectingDx = 0;
+        prospectingDz = 0;
     }
 
     private Block findMiningTarget(Player bot) {
@@ -1642,6 +1839,9 @@ final class AgentBrain {
         manualOrderActive = true;
         miningRequested = true;
         minedThisTask = 0;
+        resetProspecting();
+        miningTarget = null;
+        miningTicks = 0;
         followTarget = null;
         attackRequested = false;
         goal = GoalPlanner.Goal.MINE;
@@ -1709,6 +1909,7 @@ final class AgentBrain {
         threat = null;
         followTarget = null;
         miningRequested = false;
+        resetProspecting();
         attackRequested = false;
         explorationRequested = false;
         idleWanderTarget = null;
