@@ -24,10 +24,16 @@ final class DialogueComposer {
         String name = player.getName();
 
         String normalizedMessage = parsed.cleaned().replace('ё', 'е');
+        if (contains(normalizedMessage, "что крафтить", "что мне крафтить", "что мне нужно",
+                "какие материалы", "каких материалов", "каких ресурсов", "что не хватает",
+                "чего не хватает", "для проекта", "план крафта", "что делать дальше")) {
+            return avoidImmediateRepeat(id, plugin.brain().craftingPlanSummary());
+        }
         if (contains(normalizedMessage, "рецепт", "скрафт", "крафт", "из чего сделать",
+                "что такое", "что делает", "как работает", "что можно сделать из",
                 "как сделать", "как изготовить", "как использовать", "как открыть",
                 "как взаимодействовать", "для чего нужен", "для чего используется",
-                "зачем нужен", "чем добывать")) {
+                "зачем нужен", "чем добывать", "чем сломать")) {
             org.bukkit.Material mentioned = BlockKnowledge.findMaterialMention(normalizedMessage);
             if (mentioned != null) {
                 String answer = BlockPerception.russianName(mentioned) + " — "
