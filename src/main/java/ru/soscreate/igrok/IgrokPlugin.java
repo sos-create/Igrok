@@ -547,6 +547,7 @@ public final class IgrokPlugin extends JavaPlugin implements Listener {
 
     FakePlayerController controller() { return controller; }
     ChatDialogue dialogue() { return dialogue; }
+    SocialLife socialLife() { return socialLife; }
     HouseBuilder houseBuilder() { return houseBuilder; }
     AgentBrain brain() { return brain; }
     CognitiveNetwork cognition() { return cognition; }
