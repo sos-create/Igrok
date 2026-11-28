@@ -1,4 +1,4 @@
-# Igrok 0.9.50
+# Igrok 0.9.51
 
 Paper 1.21.4 server-side player agent (Java 21). Igrok is a lightweight autonomous survival agent built around a fake server-side Player, bounded pathfinding, utility-based goals, associative cognition and compact persistent memory.
 
@@ -60,9 +60,11 @@ This is an algorithmic simulation. It does not provide human-level intelligence,
 
 ## Notes
 
-The plugin is compiled against Paper 1.21.4. Version 0.9.50 strengthens independent goal continuity, removes chat-driven interruption of autonomous work, resets temporary orders on restart, and hardens sleep/build recovery. A successful CI build verifies source compilation and artifact packaging, but actual movement, crop interaction, furnace behavior and protection-plugin compatibility must still be tested on the target live server.
+The plugin is compiled against Paper 1.21.4. Version 0.9.51 preserves an active construction across death and respawn, saves the last bot location before replacement, and resumes near a safe saved position with a world-spawn fallback. Version 0.9.50 also strengthened independent goal continuity, removed chat-driven interruption of autonomous work, reset temporary orders on restart, and hardened sleep/build recovery. A successful CI build verifies source compilation and artifact packaging, but actual movement, crop interaction, furnace behavior and protection-plugin compatibility must still be tested on the target live server.
 
-Unexpected runtime failures in chat, the brain and construction are isolated: a failed construction step cancels that build, a failed brain tick pauses and retries instead of cancelling the scheduler, and duplicate stack traces are rate-limited. Chat input is length-limited before parsing. These safeguards prevent cascading errors; they do not repair invalid chunk data already stored in a world region file.\n\nIgrok is explicitly placed in Survival mode and is never an operator. It starts with an empty inventory, 20 health, 20 food and normal saturation; saved inventory and vitals are restored across restarts. Vanilla item entities handle pickup, so the bot no longer vacuums items from four blocks away. Mining, farming, container access and building are limited to ordinary player reach and line of sight; building walks to a legal standing position and respects BlockPlaceEvent cancellation. Death uses vanilla inventory and experience loss before automatic respawn.
+Unexpected runtime failures in chat, the brain and construction are isolated: a failed construction step cancels that build, a failed brain tick pauses and retries instead of cancelling the scheduler, and duplicate stack traces are rate-limited. Chat input is length-limited before parsing. These safeguards prevent cascading errors; they do not repair invalid chunk data already stored in a world region file.
+
+Igrok is explicitly placed in Survival mode and is never an operator. It starts with an empty inventory, 20 health, 20 food and normal saturation; saved inventory and vitals are restored across restarts. Vanilla item entities handle pickup, so the bot no longer vacuums items from four blocks away. Mining, farming, container access and building are limited to ordinary player reach and line of sight; building walks to a legal standing position and respects BlockPlaceEvent cancellation. Death uses vanilla inventory and experience loss before automatic respawn.
 
 Chat messages are coalesced and duplicate text is ignored for one minute, except valid answers to a recent bot question. Unrelated chat cannot replace a pending message addressed to Igrok. Responses are intentionally delayed by a configurable 20–30 seconds after the last queued message. The autonomous planner runs at 10 Hz while the Minecraft player entity continues to receive normal server physics ticks. Crafting, farming, furnace, storage and bed scans run less frequently; A* has a smaller node budget and mining search radius.
 
@@ -117,3 +119,10 @@ Repeated identical dialogue replies are replaced with a distinct non-question re
 - The resource planner counts Nether stems, hyphae and bamboo blocks as wood, so agents in those biomes can progress with the materials they actually have.
 
 - Version 0.9.50 also caps communication-skill gains to one award per player per 30 seconds; the planner recognises Overworld logs, Nether stems/hyphae and bamboo blocks as wood.
+
+
+## Death and construction recovery (0.9.51)
+
+- If Igrok dies while building, the plugin saves the current block cursor and world position before replacing the fake player. The builder task is not cancelled; it waits for the respawned player and rebinds its navigator.
+- Automatic respawn first tries the last saved location and searches for safe ground there. If that chunk or position cannot be used, it falls back to the configured world spawn.
+- Builder recovery uses a 60-second wall-clock timeout so low build speeds, chunk loading and server lag do not consume the retry window too quickly.
