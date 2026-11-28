@@ -140,6 +140,17 @@ final class AgentBrain {
                 position.getBlockX(), position.getBlockY() - 1, position.getBlockZ());
         report.append("Под ногами — ").append(BlockPerception.russianName(underfoot.getType()))
                 .append(". ");
+        org.bukkit.block.Block feet = position.getBlock();
+        org.bukkit.block.Block head = feet.getRelative(org.bukkit.block.BlockFace.UP);
+        org.bukkit.block.Block aboveHead = head.getRelative(org.bukkit.block.BlockFace.UP);
+        boolean supported = underfoot.getType().isSolid() && !underfoot.isLiquid();
+        boolean headroom = feet.isPassable() && head.isPassable() && aboveHead.isPassable();
+        report.append("Положение тела: ")
+                .append(supported ? "есть опора" : "нет надёжной опоры")
+                .append(", ")
+                .append(headroom ? "над головой достаточно места" : "сверху или на уровне тела есть препятствие")
+                .append(". ");
+        report.append(BlockPerception.nearbyBlockCounts(bot, 4, 2, 3, 5)).append(". ");
         List<BlockPerception.Observation> visible = BlockPerception.nearbyVisible(
                 bot, 10 + Math.min(4, plugin.skills().level("awareness")), 5);
         if (visible.isEmpty()) {

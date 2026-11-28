@@ -37,6 +37,7 @@ final class AgentNavigator {
     // A collision can reveal a narrow obstacle that a simple passability test misses.
     // Temporarily blacklist that next cell so A* chooses another side instead of retrying it.
     private final Map<Node, Integer> blockedNodesUntil = new HashMap<>();
+    private final Map<Node, Integer> blockedNodeFailures = new HashMap<>();
     private Node plannedDestination;
     private int pathIndex;
     private int stuckTicks;
@@ -50,6 +51,9 @@ final class AgentNavigator {
     private int sprintUntilTick;
     private boolean sprinting;
     private int doorCheckCooldown;
+    private Node jumpPrimedNode;
+    private int jumpStartedTick = Integer.MIN_VALUE;
+    private int routeVariant;
     private int lastTurnUpdateTick = Integer.MIN_VALUE;
 
     AgentNavigator(Player bot) {
@@ -126,7 +130,13 @@ final class AgentNavigator {
             }
         }
 
-        while (pathIndex < path.size() && reached(path.get(pathIndex))) pathIndex++;
+        while (pathIndex < path.size() && reached(path.get(pathIndex))) {
+            Node reachedNode = path.get(pathIndex++);
+            blockedNodesUntil.remove(reachedNode);
+            blockedNodeFailures.remove(reachedNode);
+            if (reachedNode.equals(jumpPrimedNode)) jumpPrimedNode = null;
+            stuckTicks = 0;
+        }
         if (pathIndex >= path.size()) {
             stop();
             plannedDestination = goal;
@@ -147,7 +157,7 @@ final class AgentNavigator {
         Location current = bot.getLocation();
         if (!hasClearPlayerWidth(currentWorld, current, next)) {
             // Do not keep pushing into a wall when the node looked passable on paper.
-            blockedNodesUntil.put(next, bot.getTicksLived() + 40);
+            markBlocked(next);
             path.clear();
             pathIndex = 0;
             plannedDestination = null;
@@ -170,13 +180,38 @@ final class AgentNavigator {
         double turnError = turnToward(yaw);
 
         double vertical = bot.isOnGround() ? 0.0 : bot.getVelocity().getY();
-        if (bot.isOnGround() && next.y() > current.getBlockY()) {
-            Block feet = currentWorld.getBlockAt(current.getBlockX(), current.getBlockY(), current.getBlockZ());
-            if (feet.getRelative(0, 1, 0).isPassable()
-                    && feet.getRelative(0, 2, 0).isPassable()) vertical = 0.42;
-        }
         double alignment = turnError > 110.0 ? 0.48 : turnError > 65.0 ? 0.68 : 1.0;
         double speed = movementSpeed() * alignment;
+        if (next.y() > current.getBlockY()) {
+            if (bot.isOnGround() && !next.equals(jumpPrimedNode)) {
+                Block feet = current.getBlock();
+                if (feet.getRelative(0, 1, 0).isPassable()
+                        && feet.getRelative(0, 2, 0).isPassable()) {
+                    jumpPrimedNode = next;
+                    jumpStartedTick = bot.getTicksLived();
+                    vertical = 0.42;
+                } else {
+                    markBlocked(next);
+                    path.clear();
+                    plannedDestination = null;
+                    clearMovementIntent();
+                    return true;
+                }
+            }
+            // Give the jump a few ticks to gain height before driving into the step.
+            if (next.equals(jumpPrimedNode)
+                    && bot.getTicksLived() - jumpStartedTick < 4) {
+                speed = Math.min(speed, 0.035);
+            } else if (next.equals(jumpPrimedNode)
+                    && bot.isOnGround() && bot.getTicksLived() - jumpStartedTick > 5) {
+                markBlocked(next);
+                jumpPrimedNode = null;
+                path.clear();
+                plannedDestination = null;
+                clearMovementIntent();
+                return true;
+            }
+        }
         applyHorizontalVelocity(dx, dz, speed);
         if (vertical > bot.getVelocity().getY()) {
             Vector velocity = bot.getVelocity();
@@ -191,6 +226,7 @@ final class AgentNavigator {
         }
         previousPosition = now.clone();
         if (stuckTicks > 8) {
+            if (pathIndex < path.size()) markBlocked(path.get(pathIndex));
             path.clear();
             plannedDestination = null;
             retryCooldown = 5;
@@ -224,7 +260,10 @@ final class AgentNavigator {
         path.clear();
         pathIndex = 0;
         plannedDestination = null;
+        jumpPrimedNode = null;
+        jumpStartedTick = Integer.MIN_VALUE;
         blockedNodesUntil.clear();
+        blockedNodeFailures.clear();
         stuckTicks = 0;
         retryCooldown = 0;
         previousPosition = null;
@@ -538,6 +577,7 @@ final class AgentNavigator {
             }
             expanded++;
 
+            int directionIndex = 0;
             for (int[] dir : DIRECTIONS) {
                 for (int dy = 1; dy >= -3; dy--) {
                     Node candidate = new Node(current.node().x() + dir[0],
@@ -553,16 +593,22 @@ final class AgentNavigator {
                                 || !isStandableOrKnown(world, sideB, costs)) continue;
                     }
 
-                    double verticalCost = dy > 0 ? 0.85 : Math.max(0, -dy) * 0.38;
+                    int drop = Math.max(0, -dy);
+                    double verticalCost = dy > 0 ? 0.85 : drop * 0.38 + drop * drop * 0.20;
                     double step = (dir[0] == 0 || dir[1] == 0 ? 1.0 : 1.414)
                             + verticalCost;
-                    double nextCost = current.g() + step + terrainPenalty(world, candidate);
+                    // On equal-cost routes, rotate the preferred direction after
+                    // a failed attempt so the bot does not repeat the same approach.
+                    double directionBias = Math.floorMod(directionIndex + routeVariant, DIRECTIONS.length) * 0.0015;
+                    double nextCost = current.g() + step + terrainPenalty(world, candidate)
+                            + directionBias;
                     if (nextCost >= costs.getOrDefault(candidate, Double.POSITIVE_INFINITY)) continue;
                     costs.put(candidate, nextCost);
                     parents.put(candidate, current.node());
                     open.add(new OpenNode(candidate, nextCost,
                             nextCost + heuristic(candidate, requestedGoal)));
                 }
+                directionIndex++;
             }
         }
 
@@ -589,34 +635,91 @@ final class AgentNavigator {
      * are queried.
      */
     private boolean hasClearPlayerWidth(World world, Location current, Node next) {
+        if (next.y() > current.getBlockY()) {
+            // Once this exact step has been launched, let vanilla physics finish it.
+            if (next.equals(jumpPrimedNode) && !bot.isOnGround()) return true;
+            return hasJumpClearance(world, current, next);
+        }
         if (current == null || current.getWorld() != world
                 || !world.isChunkLoaded(next.x() >> 4, next.z() >> 4)) return false;
-        double targetX = next.x() + 0.5;
-        double targetZ = next.z() + 0.5;
-        double dx = targetX - current.getX();
-        double dz = targetZ - current.getZ();
+        double dx = next.x() + 0.5 - current.getX();
+        double dz = next.z() + 0.5 - current.getZ();
         double horizontal = Math.sqrt(dx * dx + dz * dz);
         if (horizontal < 0.08) return true;
         double sideX = -dz / horizontal * 0.19;
         double sideZ = dx / horizontal * 0.19;
-        double startY = current.getY();
-        double endY = next.y();
+        Vector ray = new Vector(dx, next.y() - current.getY(), dz);
+        double length = ray.length();
+        if (length < 0.08) return true;
+        ray.normalize();
+        // Three lanes at leg, torso and head height catch wall edges and fences.
         double[] heights = {0.32, 0.92, 1.52};
-        for (double height : heights) {
-            for (int side = -1; side <= 1; side++) {
+        for (int side = -1; side <= 1; side++) {
+            for (double height : heights) {
                 Location start = new Location(world,
-                        current.getX() + sideX * side, startY + height,
+                        current.getX() + sideX * side, current.getY() + height,
                         current.getZ() + sideZ * side);
-                Vector ray = new Vector(dx, endY - startY, dz);
-                double length = ray.length();
-                if (length < 0.08) continue;
-                ray.normalize();
                 org.bukkit.util.RayTraceResult hit = world.rayTraceBlocks(
                         start, ray, length, FluidCollisionMode.NEVER, true);
                 if (hit != null && hit.getHitBlock() != null) return false;
             }
         }
         return true;
+    }
+
+    /**
+     * A one-block rise is a jump, not a wall. Sample the predicted jump arc at
+     * four points and across the bot's width. This permits a normal step-up while
+     * still rejecting low ceilings, overhangs, fences and solid collision shapes.
+     */
+    private boolean hasJumpClearance(World world, Location current, Node next) {
+        if (current == null || current.getWorld() != world || !bot.isOnGround()
+                || !world.isChunkLoaded(next.x() >> 4, next.z() >> 4)) return false;
+        Block currentFeet = current.getBlock();
+        if (!currentFeet.isPassable()
+                || !currentFeet.getRelative(0, 1, 0).isPassable()
+                || !currentFeet.getRelative(0, 2, 0).isPassable()) return false;
+        double dx = next.x() + 0.5 - current.getX();
+        double dz = next.z() + 0.5 - current.getZ();
+        double horizontal = Math.sqrt(dx * dx + dz * dz);
+        if (horizontal < 0.08) return true;
+        double sideX = -dz / horizontal * 0.19;
+        double sideZ = dx / horizontal * 0.19;
+        double startY = current.getY();
+        double rise = Math.max(0.0, next.y() - startY);
+        // The normal jump impulse peaks a little above one block. Keep the
+        // estimate conservative; vanilla physics still decides the real motion.
+        double jumpHeight = 0.62;
+        double[] samples = {0.22, 0.42, 0.62, 0.82, 0.96};
+        double[] bodyHeights = {0.10, 0.90, 1.70};
+        for (double t : samples) {
+            double x = current.getX() + dx * t;
+            double z = current.getZ() + dz * t;
+            double feetY = startY + rise * t + jumpHeight * 4.0 * t * (1.0 - t);
+            for (int side = -1; side <= 1; side++) {
+                double sampleX = x + sideX * side;
+                double sampleZ = z + sideZ * side;
+                int blockX = (int) Math.floor(sampleX);
+                int blockZ = (int) Math.floor(sampleZ);
+                if (!world.isChunkLoaded(blockX >> 4, blockZ >> 4)) return false;
+                for (double bodyHeight : bodyHeights) {
+                    Block occupied = world.getBlockAt(blockX,
+                            (int) Math.floor(feetY + bodyHeight), blockZ);
+                    if (!occupied.isPassable() || occupied.isLiquid()
+                            || isHazard(occupied.getType())) return false;
+                }
+            }
+        }
+        return true;
+    }
+
+    private void markBlocked(Node node) {
+        if (node == null) return;
+        routeVariant = (routeVariant + 1) & 7;
+        int failures = Math.min(5, blockedNodeFailures.getOrDefault(node, 0) + 1);
+        blockedNodeFailures.put(node, failures);
+        // Repeated failures keep the bot from trying the same bad maneuver again.
+        blockedNodesUntil.put(node, bot.getTicksLived() + 40 * failures);
     }
 
     private boolean isTemporarilyBlocked(Node node) {
@@ -626,7 +729,11 @@ final class AgentNavigator {
 
     private void pruneBlockedNodes() {
         int now = bot.getTicksLived();
-        blockedNodesUntil.entrySet().removeIf(entry -> entry.getValue() <= now);
+        blockedNodesUntil.entrySet().removeIf(entry -> {
+            if (entry.getValue() > now) return false;
+            blockedNodeFailures.remove(entry.getKey());
+            return true;
+        });
     }
 
     private boolean isStandableOrKnown(World world, Node node, Map<Node, Double> knownCosts) {
@@ -667,11 +774,13 @@ final class AgentNavigator {
     }
 
     private Node findStandable(World world, int x, int y, int z) {
-        for (int dy = 1; dy >= -1; dy--) {
-            Node node = new Node(x, y + dy, z);
-            if (standable(world, node)) return node;
-        }
-        return null;
+        // Prefer level ground; only climb or descend when the current height is blocked.
+        Node level = new Node(x, y, z);
+        if (standable(world, level)) return level;
+        Node above = new Node(x, y + 1, z);
+        if (standable(world, above)) return above;
+        Node below = new Node(x, y - 1, z);
+        return standable(world, below) ? below : null;
     }
 
     private boolean standable(World world, Node node) {

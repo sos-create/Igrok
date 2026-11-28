@@ -13,6 +13,8 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
+import java.util.HashMap;
 
 /**
  * Server-side block perception: material identity, distance and actual ray visibility.
@@ -91,6 +93,37 @@ final class BlockPerception {
         visible.sort(Comparator.comparingDouble(Observation::distance));
         if (visible.size() > limit) return new ArrayList<>(visible.subList(0, limit));
         return visible;
+    }
+
+    /**
+     * Compact local block census for the agent's own situational report.
+     * The scan is intentionally small and skips unloaded chunks.
+     */
+    static String nearbyBlockCounts(Player player, int radius, int below, int above, int limit) {
+        if (player == null || !player.isOnline()) return "окружающие блоки не определены";
+        World world = player.getWorld();
+        Location origin = player.getLocation();
+        Map<Material, Integer> counts = new HashMap<>();
+        int scanned = 0;
+        for (int x = origin.getBlockX() - radius; x <= origin.getBlockX() + radius; x++) {
+            for (int z = origin.getBlockZ() - radius; z <= origin.getBlockZ() + radius; z++) {
+                if (!world.isChunkLoaded(x >> 4, z >> 4)) continue;
+                for (int y = Math.max(world.getMinHeight(), origin.getBlockY() - below);
+                     y <= Math.min(world.getMaxHeight() - 1, origin.getBlockY() + above); y++) {
+                    Material material = world.getBlockAt(x, y, z).getType();
+                    if (material.isAir()) continue;
+                    counts.merge(material, 1, Integer::sum);
+                    scanned++;
+                }
+            }
+        }
+        if (counts.isEmpty()) return "рядом нет обнаруженных твёрдых блоков";
+        String summary = counts.entrySet().stream()
+                .sorted(Map.Entry.<Material, Integer>comparingByValue().reversed())
+                .limit(Math.max(1, limit))
+                .map(entry -> russianName(entry.getKey()) + " ×" + entry.getValue())
+                .collect(java.util.stream.Collectors.joining(", "));
+        return "локальный обзор (" + scanned + " блоков): " + summary;
     }
 
     static boolean isTransparentForVision(Material material) {
