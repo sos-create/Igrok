@@ -1,4 +1,4 @@
-# Igrok 0.9.48
+# Igrok 0.9.49
 
 Paper 1.21.4 server-side player agent (Java 21). Igrok is a lightweight autonomous survival agent built around a fake server-side Player, bounded pathfinding, utility-based goals, associative cognition and compact persistent memory.
 
@@ -51,10 +51,10 @@ This is an algorithmic simulation. It does not provide human-level intelligence,
 - Ordinary chat can start naturally when only one non-spectator player is within the listening radius; the same player can continue the conversation for the configured session window without repeating the bot name.
 - When several players are nearby, Igrok does not intrude on their conversation unless directly addressed or already in a conversation with that player.
 - Player requests are expressed in ordinary chat; the bot may accept or refuse them.
-- Igrok also starts conversations on his own: comments are selected from nearby threats, weather, night, hunger, exploration and the relationship with the player.
-- He can initiate a food request or invite a nearby player to explore. A clear yes/no answer is linked to that invitation; accepting an exploration invite makes him accompany the player while survival and danger rules remain in control.
+- Igrok does not greet players first, request items, invite anyone to explore or suggest joint activities. He keeps pursuing his own survival, crafting, resource and exploration goals.
+- Conversation begins when a player addresses Igrok or starts ordinary chat with him. Gift pickup can trigger a brief thank-you because the player initiated that interaction.
 - Player gifts are recognized when Igrok actually picks up an item thrown by that player. Gift events, conversations and negative actions change the persistent per-player relationship record.
-- Ambient speech and invitations have independent cooldowns, and unsolicited dialogue is skipped while Igrok is busy with urgent survival, combat, a player pause or a construction project.
+- There is no ambient unsolicited speech or invitation scheduler. Social memory and trust still change through player conversations and gifts.
 - No slash-command interface is required.
 - TNT and ignition remain forbidden.
 
@@ -80,9 +80,7 @@ Repeated identical dialogue replies are replaced with a distinct non-question re
 ## Independent life routines (0.9.46)
 
 - During overworld storms Igrok searches only already-loaded chunks for a safe position under a roof, then temporarily pauses its current voluntary route and resumes it when the storm ends. The scan radius and interval are bounded in config.
-- A social invitation opens a short reply window. A clear yes/no answer is consumed by the invitation handler before the general command parser, so "да" cannot accidentally trigger an unrelated player order.
-- Ambient remarks and invitations are sent only to the nearby player they concern instead of being broadcast to the whole server.
-- Gifts and accepted joint activities add experience to the social/cooperation development branch. The existing independent skill branches remain optional and continue to grow from actual in-world actions.
+- Gifts add experience to the social/cooperation development branch. The existing independent skill branches remain optional and continue to grow from actual in-world actions.
 
 
 ## Social and weather bug fixes (0.9.47)
@@ -101,3 +99,11 @@ Repeated identical dialogue replies are replaced with a distinct non-question re
 - Replies use the bot's current survival state and nearby world conditions where applicable. For example, answers about hunger use its actual food level and inventory; answers about danger inspect nearby hostile mobs.
 - Conversation wording is newly written for Igrok. The social interaction categories are reimplemented independently; Borya's source code, assets and dialogue lines are not copied.
 - This remains an adaptive algorithmic dialogue system, not a pretrained language model or human consciousness.
+
+
+## Independent goals and player requests (0.9.49)
+
+- Igrok no longer initiates greetings, asks for food, invites players to explore or proposes doing things together. It spends its time on its own survival and development goals.
+- Players can still start ordinary chat or make a request in chat. Igrok evaluates requests against current danger, construction, its active goal, personality and its relationship with the player; it may accept or refuse.
+- Even requests to gather wood or stone are no longer automatically accepted. Immediate danger and an active construction cannot be interrupted by a normal request.
+- Social memory and gift recognition remain. A brief thank-you is sent only after Igrok actually receives a player-thrown item.
