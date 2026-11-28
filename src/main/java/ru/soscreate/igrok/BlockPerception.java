@@ -157,6 +157,15 @@ final class BlockPerception {
             case "BEE_NEST" -> "пчелиное гнездо";
             case "BEEHIVE" -> "улей";
             case "FARMLAND" -> "грядка";
+            case "WHEAT" -> "пшеница";
+            case "CARROTS" -> "морковь";
+            case "POTATOES" -> "картофель";
+            case "BEETROOTS" -> "свёкла";
+            case "NETHER_WART" -> "адский нарост";
+            case "COCOA" -> "какао";
+            case "PUMPKIN_STEM" -> "стебель тыквы";
+            case "MELON_STEM" -> "стебель арбуза";
+            case "SWEET_BERRY_BUSH" -> "куст сладких ягод";
             case "PISTON" -> "поршень";
             case "OBSERVER" -> "наблюдатель";
             case "REPEATER" -> "повторитель";
