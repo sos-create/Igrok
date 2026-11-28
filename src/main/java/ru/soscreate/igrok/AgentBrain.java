@@ -181,6 +181,10 @@ final class AgentBrain {
                 + " Назначение ближайших блоков и безопасный способ работы с ними я определяю отдельно.";
     }
 
+    String recipeExplanation(Material output) {
+        return survival.recipeExplanation(output);
+    }
+
     String selfModelSummary() {
         return DevelopmentTree.selfModel(plugin.skills());
     }
