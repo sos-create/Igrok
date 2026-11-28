@@ -1,4 +1,4 @@
-# Igrok 0.9.53
+# Igrok 0.9.54
 
 Paper 1.21.4 server-side player agent (Java 21). Igrok is a lightweight autonomous survival agent built around a fake server-side Player, bounded pathfinding, utility-based goals, associative cognition and compact persistent memory.
 
@@ -20,6 +20,12 @@ Paper 1.21.4 server-side player agent (Java 21). Igrok is a lightweight autonomo
 - The preferred branch emerges from the bot's accumulated experience. It influences autonomous priorities, so different histories can produce different choices.
 - At higher development stages the planner gradually shifts from resource grinding toward self-chosen exploration, optional projects and ordinary downtime. Critical survival and immediate danger still take priority.
 - "Self-awareness" is an algorithmic self-model: a compact summary of strengths, preferences and lessons from previous actions. It is not sentience or human-level consciousness.
+
+## Decision diversity and performance
+
+- Strategic choices keep a short novelty history. When several useful options are close, the agent temporarily avoids repeating the same activity and rotates between exploration, resource gathering, crafting and optional projects.
+- The novelty penalty is bounded and cannot override urgent food/safety decisions or a clearly better task.
+- Expensive inventory and blueprint scans are reused for up to two seconds. Critical hunger bypasses the cache, and combat/navigation continue on their own faster loop.
 
 ## Decision and cognition
 

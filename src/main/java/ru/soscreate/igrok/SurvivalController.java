@@ -66,6 +66,11 @@ final class SurvivalController {
     private Location knownBed;
     private Location knownChest;
     private boolean learnedFoodCaution;
+    // Inventory/blueprint scans are more expensive than the actual decision.
+    // Reuse the last strategic choice for two seconds unless survival is urgent.
+    private AutonomyDecision cachedAutonomyDecision;
+    private GoalPlanner.Goal cachedAutonomyCurrent;
+    private int cachedAutonomyTick = Integer.MIN_VALUE;
 
     SurvivalController(IgrokPlugin plugin) {
         this.plugin = plugin;
@@ -186,6 +191,13 @@ final class SurvivalController {
 
     AutonomyDecision chooseAutonomousGoal(Player bot, AgentPersonality personality,
                                            GoalPlanner.Goal current, int tick) {
+        boolean urgentFood = bot.getFoodLevel() <= 8 && !hasFood(bot);
+        if (!urgentFood && cachedAutonomyDecision != null
+                && cachedAutonomyCurrent == current
+                && tick >= cachedAutonomyTick && tick - cachedAutonomyTick < 40) {
+            return cachedAutonomyDecision;
+        }
+
         // Count every vanilla wood family, including Nether stems and bamboo blocks.
         int logs = countBySuffix(bot, "_LOG") + countBySuffix(bot, "_WOOD")
                 + countBySuffix(bot, "_STEM") + countBySuffix(bot, "_HYPHAE")
@@ -257,9 +269,15 @@ final class SurvivalController {
                 projectReady);
 
         AutonomousPlanner.Decision decision = autonomousPlanner.choose(snapshot);
-        if (decision == null) return null;
-        return new AutonomyDecision(decision.goal(), decision.utility(),
+        if (decision == null) {
+            cachedAutonomyDecision = null;
+            return null;
+        }
+        cachedAutonomyDecision = new AutonomyDecision(decision.goal(), decision.utility(),
                 "[" + decision.phase() + "] " + decision.reason(), decision.miningMode());
+        cachedAutonomyCurrent = current;
+        cachedAutonomyTick = tick;
+        return cachedAutonomyDecision;
     }
 
     boolean hasFood(Player bot) {
