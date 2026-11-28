@@ -35,9 +35,6 @@ final class AgentBrain {
     private final Map<UUID, Long> lastAttackPenaltyAt = new HashMap<>();
     private AgentNavigator navigator;
     private int navigatorEntityId = Integer.MIN_VALUE;
-    private UUID conversationTarget;
-    private int conversationUntilTick;
-    private final Map<UUID, Long> lastAddressAckAt = new HashMap<>();
 
     private GoalPlanner.Goal goal = GoalPlanner.Goal.IDLE;
     private UUID followTarget;
@@ -229,32 +226,21 @@ final class AgentBrain {
     }
 
     void loadState(YamlConfiguration data) {
-        try { goal = GoalPlanner.Goal.valueOf(data.getString("brain.goal", "IDLE")); }
-        catch (IllegalArgumentException ignored) { goal = GoalPlanner.Goal.IDLE; }
-        String id = data.getString("brain.follow-target", "");
-        try {
-            UUID savedTarget = id.isBlank() ? null : UUID.fromString(id);
-            Player onlineTarget = savedTarget == null ? null : Bukkit.getPlayer(savedTarget);
-            // Following is a temporary order. Never let an offline player UUID
-            // pin an autonomous survival bot in FOLLOW after a server restart.
-            followTarget = onlineTarget != null && onlineTarget.isOnline() ? savedTarget : null;
-        } catch (IllegalArgumentException ignored) {
-            followTarget = null;
-        }
-        miningRequested = data.getBoolean("brain.mining-requested", false);
+        // Player-issued tasks are temporary. On restart the bot chooses a new
+        // goal from its current needs instead of replaying stale FOLLOW/MINE orders.
+        goal = GoalPlanner.Goal.IDLE;
+        followTarget = null;
+        miningRequested = false;
         miningMode = data.getString("brain.mining-mode", "wood");
-        if (!java.util.Set.of("wood", "stone", "coal", "iron", "redstone").contains(miningMode)) miningMode = "wood";
-        minedThisTask = Math.max(0, data.getInt("brain.mined-this-task", 0));
-        // Combat targets disappear when the server stops. Do not restore a
-        // stale attack order that would suppress autonomous survival forever.
-        attackRequested = false;
-        explorationRequested = data.getBoolean("brain.exploration-requested", false);
-        String worldName = data.getString("brain.explore-world", "");
-        World world = worldName.isBlank() ? null : Bukkit.getWorld(worldName);
-        if (world != null && data.contains("brain.explore-x")) {
-            exploreTarget = new Location(world, data.getDouble("brain.explore-x"),
-                    data.getDouble("brain.explore-y"), data.getDouble("brain.explore-z"));
+        if (!java.util.Set.of("wood", "stone", "coal", "iron", "redstone").contains(miningMode)) {
+            miningMode = "wood";
         }
+        minedThisTask = 0;
+        miningTarget = null;
+        attackRequested = false;
+        explorationRequested = false;
+        exploreTarget = null;
+        manualOrderActive = false;
         learnedDangerZones.clear();
         long now = System.currentTimeMillis();
         for (String entry : data.getStringList("learning.danger-zones")) {
@@ -272,11 +258,7 @@ final class AgentBrain {
         starvationDeaths = Math.max(0, data.getInt("learning.starvation-deaths", 0));
         lastLesson = data.getString("learning.last-lesson", "Пока не было смертельных ошибок.");
         survival.setLearnedFoodCaution(learnedFoodCaution);
-        if (goal == GoalPlanner.Goal.MINE) miningRequested = true;
-        if (goal == GoalPlanner.Goal.DEFEND) goal = GoalPlanner.Goal.IDLE;
-        if (goal == GoalPlanner.Goal.FOLLOW && followTarget == null) goal = GoalPlanner.Goal.IDLE;
-        manualOrderActive = followTarget != null || miningRequested || attackRequested || explorationRequested;
-        state = "Восстанавливаю прежний план: " + goal.name();
+        state = "Накопленный опыт загружен; выбираю самостоятельную цель";
     }
 
     /**
@@ -305,8 +287,6 @@ final class AgentBrain {
         defensiveDestination = null;
         defensiveUntilTick = 0;
         nextDefensiveMoveTick = tickCounter;
-        conversationTarget = null;
-        conversationUntilTick = 0;
         followTarget = null;
         foodTarget = null;
         miningRequested = false;
@@ -379,7 +359,6 @@ final class AgentBrain {
             state = "Жду на месте";
             return;
         }
-        if (handleConversationAttention(bot)) return;
 
         if (plugin.houseBuilder().isBuilding()) {
             // HouseBuilder controls movement with its own navigator. Stopping the
@@ -613,75 +592,12 @@ final class AgentBrain {
         }
     }
 
+    /** Records who addressed Igrok. Chat never interrupts an autonomous task. */
     void onPlayerAddressed(Player player) {
         if (player == null || !player.isOnline()) return;
         Player bot = plugin.controller().bukkitPlayer();
         if (bot == null || !bot.isOnline() || player.getWorld() != bot.getWorld()) return;
-
-        UUID playerId = player.getUniqueId();
-        memory.rememberPlayerName(playerId, player.getName());
-        double distanceSquared = player.getLocation().distanceSquared(bot.getLocation());
-        face(bot, player.getEyeLocation());
-
-        if (distanceSquared > 20.25 && distanceSquared <= 24.0 * 24.0) {
-            if (pausedByPlayer) return;
-            ensureNavigator(bot);
-            if (plugin.houseBuilder().isBuilding()) plugin.houseBuilder().cancel(false);
-            conversationTarget = playerId;
-            conversationUntilTick = tickCounter + 200; // 10 seconds of approach
-            navigator.stop();
-        }
-
-        long now = System.currentTimeMillis();
-        if (now - lastAddressAckAt.getOrDefault(playerId, 0L) >= 5_000L) {
-            lastAddressAckAt.put(playerId, now);
-            if (lastAddressAckAt.size() > 512) {
-                lastAddressAckAt.entrySet().removeIf(entry -> now - entry.getValue() > 300_000L);
-            }
-            String acknowledgement = distanceSquared > 20.25
-                    ? "Слышу тебя, " + player.getName() + ". Сейчас подойду."
-                    : "Слушаю тебя, " + player.getName() + ".";
-            memory.recordConversation(playerId, acknowledgement, true);
-            say(acknowledgement);
-        }
-    }
-
-    private boolean handleConversationAttention(Player bot) {
-        if (conversationTarget == null) return false;
-        Player speaker = Bukkit.getPlayer(conversationTarget);
-        if (speaker == null || !speaker.isOnline() || speaker.getWorld() != bot.getWorld()
-                || tickCounter > conversationUntilTick) {
-            conversationTarget = null;
-            conversationUntilTick = 0;
-            if (navigator != null) navigator.stop();
-            return false;
-        }
-
-        double distanceSquared = speaker.getLocation().distanceSquared(bot.getLocation());
-        if (distanceSquared <= 20.25) {
-            navigator.stop();
-            face(bot, speaker.getEyeLocation());
-            conversationTarget = null;
-            conversationUntilTick = 0;
-            state = "Остановился поговорить с " + speaker.getName();
-            return true;
-        }
-
-        if (plugin.houseBuilder().isBuilding()) plugin.houseBuilder().cancel(false);
-        ensureNavigator(bot);
-        boolean moving = navigator.moveTo(speaker.getLocation());
-        Vector horizontalVelocity = bot.getVelocity().clone().setY(0.0);
-        if (!moving || horizontalVelocity.lengthSquared() < 0.0004) {
-            Vector toward = speaker.getLocation().toVector().subtract(bot.getLocation().toVector());
-            toward.setY(0.0);
-            tryCombatMove(toward, 0.12);
-        }
-        // Movement sets yaw toward the path. Restore eye contact after movement.
-        face(bot, speaker.getEyeLocation());
-        state = "Подхожу поговорить с " + speaker.getName();
-        decisionReason = "Игрок обратился ко мне — прекращаю бездействие и подхожу на расстояние разговора.";
-        decisionConfidence = 1.0;
-        return true;
+        memory.rememberPlayerName(player.getUniqueId(), player.getName());
     }
 
     private boolean moveTowardSafely(Player bot, Location destination, double speed) {
@@ -1995,8 +1911,6 @@ final class AgentBrain {
 
     void stop() {
         pausedByPlayer = false;
-        conversationTarget = null;
-        conversationUntilTick = 0;
         manualOrderActive = false;
         foodTarget = null;
         threat = null;
