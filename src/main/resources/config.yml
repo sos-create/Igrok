@@ -1,4 +1,4 @@
-# Igrok 0.9.41 configuration
+# Igrok 0.9.42 configuration
 # Optional Mojang account name whose signed player skin Igrok should use.
 # Leave empty to use the standard Steve/Alex fallback skin.
 skin-owner: ""
@@ -40,6 +40,7 @@ brain:
     radius: 12
   mining:
     search-radius: 10
+    scan-interval-ticks: 20
     break-ticks: 28
     blocks-per-order: 4
     prospecting:
