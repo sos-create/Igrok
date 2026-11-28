@@ -73,6 +73,10 @@ final class SurvivalController {
         learnedFoodCaution = enabled;
     }
 
+    String recipeKnowledgeSummary() {
+        return recipeKnowledge.knowledgeSummary();
+    }
+
     void tick(Player bot, int tick) {
         if (!recipeKnowledge.isLoaded() || tick >= nextRecipeRefreshTick) {
             recipeKnowledge.refresh();
