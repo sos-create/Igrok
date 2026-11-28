@@ -242,7 +242,7 @@ final class AutonomousPlanner {
                 best = better(best, decision(GoalPlanner.Goal.IDLE, "", 0.85, "PISTON_CRAFT",
                         "Проверяю ингредиенты и собираю поршень из своего инвентаря."));
             }
-            if (s.projectMissingRedstoneBlock() > 0 && s.redstoneDust() >= 9) {
+            if (s.projectMissingRedstoneBlock() > 0 && s.redstoneDust() >= redstoneNeeded) {
                 best = better(best, decision(GoalPlanner.Goal.IDLE, "", 0.90, "REDSTONE_BLOCK",
                         "Поршень готов. Изготавливаю блок редстоуна для питания механизма."));
             }
