@@ -30,7 +30,6 @@ final class AgentBrain {
     private final AgentPersonality personality;
     private final AgentMemory memory;
     private final GoalPlanner planner = new GoalPlanner();
-    private final Map<UUID, Integer> lastGreetingTick = new HashMap<>();
     private final Map<UUID, Long> lastInteractionReplyAt = new HashMap<>();
     private final Map<UUID, Long> lastAttackReplyAt = new HashMap<>();
     private final Map<UUID, Long> lastAttackPenaltyAt = new HashMap<>();
@@ -597,9 +596,10 @@ final class AgentBrain {
     }
 
 
+    /** Remembers nearby players without interrupting them with unsolicited speech. */
     private void socialize(Player bot) {
-        if (!plugin.getConfig().getBoolean("chat.social.enabled", true)) return;
-        if (goal != GoalPlanner.Goal.IDLE) return;
+        if (!plugin.getConfig().getBoolean("chat.social.enabled", true)
+                || goal != GoalPlanner.Goal.IDLE) return;
         double radius = Math.max(2.0, plugin.getConfig().getDouble("chat.social.radius", 7.0));
         Player nearest = bot.getNearbyEntities(radius, 3.0, radius).stream()
                 .filter(entity -> entity instanceof Player)
@@ -608,25 +608,8 @@ final class AgentBrain {
                 .filter(Player::isOnline)
                 .min(Comparator.comparingDouble(player -> player.getLocation().distanceSquared(bot.getLocation())))
                 .orElse(null);
-        if (nearest == null) return;
-
-        // idle() owns gradual head tracking. Re-facing every social scan caused
-        // repeated snapping between random looks and the nearest player's eyes.
-        memory.rememberPlayerName(nearest.getUniqueId(), nearest.getName());
-        long greetCooldown = Math.max(30L, plugin.getConfig().getLong("chat.social.greeting-cooldown-seconds", 300)) * 1000L;
-        if (memory.shouldGreet(nearest.getUniqueId(), greetCooldown)
-                && tickCounter - lastGreetingTick.getOrDefault(nearest.getUniqueId(), Integer.MIN_VALUE / 2) > 100) {
-            String greeting = "Привет, " + nearest.getName() + "! Рад тебя видеть. Как у тебя дела?";
-            bot.swingMainHand();
-            memory.markGreeted(nearest.getUniqueId(), greeting);
-            memory.observeAction(nearest.getUniqueId(), "social");
-            plugin.cognition().observeBehavior("social");
-            if (plugin.dialogue() != null) plugin.dialogue().recordBotReply(nearest.getUniqueId(), greeting);
-            lastGreetingTick.put(nearest.getUniqueId(), tickCounter);
-            state = "Общаюсь с " + nearest.getName();
-            say(greeting);
-        } else {
-            state = "Рядом с игроком " + nearest.getName();
+        if (nearest != null) {
+            memory.rememberPlayerName(nearest.getUniqueId(), nearest.getName());
         }
     }
 
@@ -949,42 +932,47 @@ final class AgentBrain {
         if (normalized.contains("tnt") || normalized.contains("динамит")
                 || normalized.contains("подж") || normalized.contains("взорв")) return false;
         if ("stop".equals(normalized)) return true;
-        // A player must always be able to release an explicit pause by asking Igrok
-        // to come over; random personality refusal must not make the pause permanent.
+        // A player can release an explicit pause, but ordinary requests remain optional.
         if (pausedByPlayer && "follow".equals(normalized)) return true;
         if (plugin.getConfig().getBoolean("autonomy.refuse-all-player-orders", false)) return false;
 
-        // Basic resource requests should not be rejected by a random personality roll.
-        // They may interrupt low-priority mining/exploration, but never combat, fleeing,
-        // urgent survival tasks, or an active house construction.
-        if (("wood".equals(normalized) || "stone".equals(normalized))
-                && (goal == GoalPlanner.Goal.IDLE || goal == GoalPlanner.Goal.EXPLORE
-                    || goal == GoalPlanner.Goal.MINE)
-                && !plugin.houseBuilder().isBuilding()) return true;
+        // Never abandon immediate danger or a construction already in progress.
+        if (goal == GoalPlanner.Goal.FLEE || goal == GoalPlanner.Goal.DEFEND
+                || plugin.houseBuilder().isBuilding()) return false;
 
         int trust = memory.trust(playerId);
-        double willingness = 0.42 + personality.sociability() * 0.18
-                + personality.patience() * 0.12 + Math.max(-5, Math.min(5, trust)) * 0.055;
-        // A request is a proposal; a bare imperative is more intrusive and receives
-        // a lower acceptance chance. Igrok still evaluates risk, trust and its own goal.
-        if (directOrder) willingness -= 0.22;
-        if (goal != GoalPlanner.Goal.IDLE && !normalized.contains("останов")) willingness -= 0.20;
-        if (normalized.contains("атак") || normalized.contains("напад")) willingness -= 0.16;
-        if (normalized.contains("след") || normalized.contains("иди")) willingness -= 0.04;
-        willingness = Math.max(0.05, Math.min(0.90, willingness));
+        // Every request is evaluated, including gathering wood and stone. Personality,
+        // relationship, urgency and the current independent goal affect willingness.
+        double willingness = 0.30 + personality.sociability() * 0.16
+                + personality.patience() * 0.12
+                + Math.max(-5, Math.min(5, trust)) * 0.05;
+        if (directOrder) willingness -= 0.18;
+        if (goal != GoalPlanner.Goal.IDLE) willingness -= 0.24;
+        if (manualOrderActive) willingness -= 0.12;
+        if (normalized.contains("атак") || normalized.contains("напад")) willingness -= 0.15;
+        if (normalized.contains("след") || normalized.contains("иди")) willingness -= 0.05;
+        if (trust <= -4) willingness -= 0.12;
+        willingness = Math.max(0.05, Math.min(0.82, willingness));
         return ThreadLocalRandom.current().nextDouble() < willingness;
     }
 
     String refusalReason(UUID playerId, boolean directOrder) {
-        if (directOrder) return "Я понял, что ты мне приказываешь, но я не обязан подчиняться автоматически. У меня есть свои цели и причины отказаться.";
-        int trust = memory.trust(playerId);
-        if (goal != GoalPlanner.Goal.IDLE) return "Нет, я уже занят своим делом и не хочу бросать его.";
-        if (trust < 0) return "Нет. Пока я тебе недостаточно доверяю.";
+        if (goal == GoalPlanner.Goal.FLEE || goal == GoalPlanner.Goal.DEFEND) {
+            return "Сейчас рядом опасность. Сначала я должен разобраться с ней и сохранить себе жизнь.";
+        }
+        if (plugin.houseBuilder().isBuilding()) {
+            return "Я уже строю и не хочу бросать начатую работу.";
+        }
+        if (goal != GoalPlanner.Goal.IDLE) {
+            return "Сейчас я занят своим делом. Закончу его и продолжу свои планы.";
+        }
+        if (memory.trust(playerId) < 0) return "Нет. Пока я тебе недостаточно доверяю.";
+        if (directOrder) return "Я услышал приказ, но сам решаю, соглашаться ли. Сейчас я откажусь.";
         return switch (ThreadLocalRandom.current().nextInt(4)) {
             case 0 -> "Нет, сейчас я не хочу этим заниматься.";
             case 1 -> "Я подумал и решил отказаться. У меня есть свои планы.";
-            case 2 -> "Не сегодня. Я сам решаю, чем мне заниматься.";
-            default -> "Я понимаю просьбу, но не обязан соглашаться. В этот раз — нет.";
+            case 2 -> "Не сейчас. Я предпочитаю продолжить своё дело.";
+            default -> "Я понимаю просьбу, но в этот раз решил не помогать.";
         };
     }
 
