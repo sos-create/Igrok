@@ -185,6 +185,10 @@ final class AgentBrain {
         return survival.recipeExplanation(output);
     }
 
+    String craftingPlanSummary() {
+        return survival.craftingPlanSummary(plugin.controller().bukkitPlayer());
+    }
+
     String selfModelSummary() {
         return DevelopmentTree.selfModel(plugin.skills());
     }
