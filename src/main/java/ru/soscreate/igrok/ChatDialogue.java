@@ -74,6 +74,9 @@ final class ChatDialogue implements Listener {
         String lower = rawMessage.toLowerCase(Locale.ROOT);
         Player sender = Bukkit.getPlayer(senderId);
         boolean addressed = mentionsBot(lower, plugin.getConfig().getString("bot-name", "Igrok"));
+        // Do not cache addressed messages sent outside listening range: otherwise
+        // repeating the exact same sentence after walking closer is suppressed.
+        if (addressed && (sender == null || !isWithinListenRadius(sender))) return;
         long followUpMillis = Math.max(10L,
                 plugin.getConfig().getLong("chat.follow-up-window-seconds", 90)) * 1000L;
         long questionAt = lastBotQuestionAt.getOrDefault(senderId, 0L);
@@ -85,6 +88,10 @@ final class ChatDialogue implements Listener {
         if (questionAt > 0L && now - questionAt > followUpMillis) {
             lastBotQuestionAt.remove(senderId);
         }
+
+        // Ignore unrelated public messages before recording their fingerprints.
+        // This keeps them from blocking a later, genuinely addressed message.
+        if (!addressed && !continuation && !ordinaryStart) return;
 
         String previousFingerprint = lastIncomingFingerprint.get(senderId);
         long previousAt = lastIncomingAt.getOrDefault(senderId, 0L);
