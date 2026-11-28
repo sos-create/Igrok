@@ -1395,7 +1395,8 @@ final class AgentBrain {
                 state = "Проверяю безопасный проход для поиска ресурсов";
                 return;
             }
-            if (prospectingAttempts >= 3 || prospectingTotalBlocks >= 24) {
+            if (prospectingAttempts >= maxProspectingAttempts()
+                    || prospectingTotalBlocks >= maxProspectingBlocks()) {
                 survival.deferMining(miningMode, tickCounter);
                 miningRequested = false;
                 manualOrderActive = false;
@@ -1481,7 +1482,8 @@ final class AgentBrain {
                     resetProspectingForNewOrder();
                     goal = GoalPlanner.Goal.IDLE;
                     say("Закончил добычу. Теперь у меня в памяти " + memory.totalMined() + " добытых блоков.");
-                } else if (prospectingTotalBlocks >= 24 && !miningMode.equals("stone")) {
+                } else if (prospectingTotalBlocks >= maxProspectingBlocks()
+                        && !miningMode.equals("stone")) {
                     survival.deferMining(miningMode, tickCounter);
                     miningRequested = false;
                     manualOrderActive = false;
@@ -1518,11 +1520,12 @@ final class AgentBrain {
      * Region protection still applies through Player.breakBlock().
      */
     private Block findProspectingTarget(Player bot) {
-        if (!java.util.Set.of("stone", "coal", "iron", "redstone").contains(miningMode)) return null;
+        if (!plugin.getConfig().getBoolean("brain.mining.prospecting.enabled", true)
+                || !java.util.Set.of("stone", "coal", "iron", "redstone").contains(miningMode)) return null;
         if (miningMode.equals("iron") && survivalToolTier(bot, "PICKAXE") < 3) return null;
         if (miningMode.equals("redstone") && survivalToolTier(bot, "PICKAXE") < 4) return null;
         if (!prospectingActive && !beginProspecting(bot)) return null;
-        if (prospectingSteps >= 8 || prospectingBlocks >= 20) {
+        if (prospectingSteps >= maxProspectingSteps() || prospectingBlocks >= 20) {
             endProspectingPass();
             return null;
         }
@@ -1585,8 +1588,24 @@ final class AgentBrain {
         return null;
     }
 
+    private int maxProspectingAttempts() {
+        return Math.max(1, Math.min(10,
+                plugin.getConfig().getInt("brain.mining.prospecting.max-tunnels-per-order", 3)));
+    }
+
+    private int maxProspectingBlocks() {
+        return Math.max(4, Math.min(64,
+                plugin.getConfig().getInt("brain.mining.prospecting.max-blocks-per-order", 24)));
+    }
+
+    private int maxProspectingSteps() {
+        return Math.max(2, Math.min(16,
+                plugin.getConfig().getInt("brain.mining.prospecting.max-steps-per-tunnel", 8)));
+    }
+
     private boolean beginProspecting(Player bot) {
-        if (prospectingAttempts >= 3 || prospectingTotalBlocks >= 24
+        if (prospectingAttempts >= maxProspectingAttempts()
+                || prospectingTotalBlocks >= maxProspectingBlocks()
                 || survivalToolTier(bot, "PICKAXE") < 1) return false;
         Location location = bot.getLocation();
         int y = location.getBlockY();
