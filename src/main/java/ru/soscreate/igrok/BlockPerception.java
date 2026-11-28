@@ -107,6 +107,7 @@ final class BlockPerception {
         if (wood != null) {
             String base = name.startsWith("STRIPPED_") ? name.substring("STRIPPED_".length()) : name;
             if (base.endsWith("_LOG")) return "бревно " + wood;
+            if (base.endsWith("_STEM")) return "стебель " + wood;
             if (base.endsWith("_WOOD") || base.endsWith("_HYPHAE")) return "древесина " + wood;
             if (base.endsWith("_PLANKS")) return "доски " + wood;
             if (base.endsWith("_LEAVES")) return "листва " + wood;
@@ -167,6 +168,7 @@ final class BlockPerception {
             case "IRON_ORE", "DEEPSLATE_IRON_ORE" -> "железная руда";
             case "GOLD_ORE", "DEEPSLATE_GOLD_ORE" -> "золотая руда";
             case "DIAMOND_ORE", "DEEPSLATE_DIAMOND_ORE" -> "алмазная руда";
+            case "BAMBOO_BLOCK" -> "блок бамбука";
             case "OAK_LOG" -> "дубовое бревно";
             case "SPRUCE_LOG" -> "еловое бревно";
             case "BIRCH_LOG" -> "берёзовое бревно";
@@ -183,7 +185,8 @@ final class BlockPerception {
         String normalized = name.startsWith("STRIPPED_")
                 ? name.substring("STRIPPED_".length()) : name;
         if (!(normalized.endsWith("_LOG") || normalized.endsWith("_WOOD")
-                || normalized.endsWith("_HYPHAE") || normalized.endsWith("_PLANKS")
+                || normalized.endsWith("_STEM") || normalized.endsWith("_HYPHAE")
+                || normalized.endsWith("_PLANKS")
                 || normalized.endsWith("_LEAVES") || normalized.endsWith("_FENCE")
                 || normalized.endsWith("_FENCE_GATE") || normalized.endsWith("_STAIRS")
                 || normalized.endsWith("_SLAB") || normalized.endsWith("_DOOR")
@@ -213,6 +216,7 @@ final class BlockPerception {
     private static boolean isInteresting(Material material) {
         String name = material.name();
         return name.endsWith("_LOG") || name.endsWith("_WOOD")
+                || name.endsWith("_STEM") || name.endsWith("_HYPHAE")
                 || name.endsWith("_LEAVES") || name.equals("BAMBOO_BLOCK")
                 || name.endsWith("_ORE")
                 || name.equals("WATER") || name.equals("LAVA")
