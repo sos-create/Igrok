@@ -40,6 +40,7 @@ import com.destroystokyo.paper.profile.ProfileProperty;
 public final class IgrokPlugin extends JavaPlugin implements Listener {
     private FakePlayerController controller;
     private ChatDialogue dialogue;
+    private SocialLife socialLife;
     private HouseBuilder houseBuilder;
     private AgentBrain brain;
     private AgentMemory memory;
