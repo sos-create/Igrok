@@ -55,7 +55,9 @@ public final class IgrokPlugin extends JavaPlugin implements Listener {
     private BukkitTask skinFallbackTask;
     private File stateFile;
     private YamlConfiguration stateData;
-    private final Map<UUID, Long> lastExplorationObservation = new HashMap<>();
+    // Access-ordered and capped so UUIDs from players who left cannot accumulate forever.
+    private final Map<UUID, Long> lastExplorationObservation =
+            new java.util.LinkedHashMap<>(64, 0.75F, true);
     private final Map<String, Long> runtimeErrorLogTimes = new ConcurrentHashMap<>();
 
     @Override
@@ -432,6 +434,13 @@ public final class IgrokPlugin extends JavaPlugin implements Listener {
                 skills.gain("exploration_lore", 1);
             }
             lastExplorationObservation.put(id, now);
+            if (lastExplorationObservation.size() > 512) {
+                java.util.Iterator<UUID> oldest = lastExplorationObservation.keySet().iterator();
+                while (lastExplorationObservation.size() > 384 && oldest.hasNext()) {
+                    oldest.next();
+                    oldest.remove();
+                }
+            }
         }
     }
 
