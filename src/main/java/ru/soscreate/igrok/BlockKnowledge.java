@@ -3,6 +3,9 @@ package ru.soscreate.igrok;
 import org.bukkit.Material;
 import org.bukkit.block.Block;
 import org.bukkit.block.data.Ageable;
+import org.bukkit.block.data.Openable;
+import org.bukkit.block.data.Powerable;
+import org.bukkit.block.data.Directional;
 
 /**
  * Practical affordance knowledge for Minecraft blocks.
@@ -149,9 +152,19 @@ final class BlockKnowledge {
         if (name.equals("BREWING_STAND")) return "варочная стойка используется для зелий; автоматическая варка пока не реализована";
         if (name.equals("STONECUTTER")) return "камнерез изготавливает варианты каменных строительных блоков; автоматическая работа пока не реализована";
         if (name.equals("GRINDSTONE")) return "точило снимает зачарования и ремонтирует одинаковые предметы; автоматическая работа пока не реализована";
+        if (name.equals("PISTON") || name.equals("STICKY_PISTON")) {
+            return "поршень выдвигает блок на один шаг при подаче сигнала; использовать в готовой схеме";
+        }
+        if (name.equals("OBSERVER")) return "наблюдатель замечает изменение соседнего блока и выдаёт короткий импульс";
+        if (name.equals("REPEATER")) return "повторитель передаёт и задерживает сигнал редстоуна";
+        if (name.equals("COMPARATOR")) return "компаратор сравнивает силу сигналов и состояние контейнеров";
+        if (name.equals("HOPPER")) return "воронка перемещает предметы между контейнерами; использовать в системе хранения";
+        if (name.equals("DROPPER")) return "выбрасыватель выдаёт предметы по сигналу редстоуна";
+        if (name.equals("DISPENSER")) return "раздатчик использует предметы по сигналу редстоуна";
+        if (name.equals("REDSTONE_BLOCK")) return "постоянный источник питания для соседних компонентов";
         if (name.equals("LEVER") || name.endsWith("_BUTTON") || name.endsWith("_PRESSURE_PLATE")
                 || name.equals("REDSTONE_TORCH") || name.equals("REDSTONE_WIRE")) {
-            return "элемент редстоун-схемы: использовать только в запланированном механизме";
+            return "элемент редстоун-схемы; автоматическое переключение ботом пока не реализовано, поэтому не тратить без чертежа";
         }
         if (name.endsWith("_DOOR")) {
             return name.contains("IRON")
@@ -181,6 +194,18 @@ final class BlockKnowledge {
                 result += " Урожай ещё растёт (" + ageable.getAge() + "/"
                         + ageable.getMaximumAge() + "); пока не ломать.";
             }
+        }
+        if (block.getBlockData() instanceof Openable openable) {
+            result += openable.isOpen() ? " Сейчас открыто." : " Сейчас закрыто; если это обычная дверь, я могу попробовать открыть её при проходе.";
+        }
+        if (block.getBlockData() instanceof Powerable powerable) {
+            result += powerable.isPowered() ? " Сейчас подано питание." : " Сейчас питание выключено.";
+        }
+        if (block.getBlockData() instanceof Directional directional
+                && (material == Material.PISTON || material == Material.STICKY_PISTON
+                    || material == Material.OBSERVER || material == Material.DISPENSER
+                    || material == Material.DROPPER)) {
+            result += " Направление: " + directional.getFacing().name().toLowerCase(java.util.Locale.ROOT) + ".";
         }
         return result;
     }
