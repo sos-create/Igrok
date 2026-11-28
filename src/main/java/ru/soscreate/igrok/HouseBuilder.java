@@ -425,13 +425,18 @@ final class HouseBuilder {
     }
 
     void cancel(boolean announce) {
-        if (task == null) {
-            actorUnavailableSinceMillis = 0L;
-            return;
+        boolean wasActive = task != null || resumePending;
+        // Invalidate asynchronous chunk-load callbacks so a cancelled project
+        // cannot unexpectedly restart itself after the user or planner stops it.
+        resumeGeneration++;
+        resumePending = false;
+        resumeAttempts = 0;
+        if (task != null) {
+            task.cancel();
+            task = null;
         }
-        task.cancel();
-        task = null;
         actorUnavailableSinceMillis = 0L;
+        if (!wasActive) return;
         plan.clear();
         workStandPosition = null;
         if (navigator != null) navigator.stop();
