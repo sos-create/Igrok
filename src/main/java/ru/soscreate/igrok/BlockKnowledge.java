@@ -124,6 +124,25 @@ final class BlockKnowledge {
         String name = material.name();
 
         if (isOre(name)) return oreAction(name);
+        if (name.equals("RAW_IRON") || name.equals("RAW_GOLD") || name.equals("RAW_COPPER")) {
+            return "переплавить в печи или плавильной печи; не расходовать, пока проекту нужны слитки";
+        }
+        if (name.endsWith("_INGOT")) return "металл для инструментов, брони и механизмов; сначала проверить дефицит активного проекта";
+        if (name.equals("COAL") || name.equals("CHARCOAL")) return "топливо для печи и сырьё для факелов; сохранять часть для освещения";
+        if (name.equals("REDSTONE")) return "компонент схем; резервировать под поршень и блок питания, не тратить на случайные механизмы";
+        if (name.equals("STICK")) return "ингредиент для инструментов и оружия; не крафтить сверх ближайшей потребности";
+        if (name.endsWith("_PLANKS")) return "строительный материал; сначала оставить точное количество для чертежа, излишек использовать на верстак и инструменты";
+        if (name.endsWith("_PICKAXE")) return "использовать для камня и руды только в пределах уровня этой кирки";
+        if (name.endsWith("_AXE")) return "использовать для брёвен, древесины и стеблей";
+        if (name.endsWith("_SWORD") || name.equals("SHIELD")
+                || name.endsWith("_HELMET") || name.endsWith("_CHESTPLATE")
+                || name.endsWith("_LEGGINGS") || name.endsWith("_BOOTS")) {
+            return "экипировать для защиты и боя; не создавать дубликат исправного снаряжения";
+        }
+        if (name.startsWith("COOKED_") || name.equals("BREAD") || name.equals("BAKED_POTATO")
+                || name.endsWith("_STEW") || name.endsWith("_SOUP")) {
+            return "пища для восстановления голода; есть при необходимости, не тратить ингредиенты проекта";
+        }
         if (isLog(name) || name.equals("BAMBOO_BLOCK")) return "срубить топором; сырьё переработать в доски и палки";
         if (name.endsWith("_LEAVES")) return "можно разобрать после рубки дерева; искать саженцы и еду";
         if (isCrop(name)) return "проверить зрелость; собрать урожай и пересадить имеющимися семенами";
@@ -226,9 +245,15 @@ final class BlockKnowledge {
                 || name.equals("STONE") || name.equals("DEEPSLATE")
                 || name.equals("COBBLESTONE")) return "сырьё";
         if (name.endsWith("_PICKAXE") || name.endsWith("_AXE") || name.endsWith("_SWORD")
-                || name.endsWith("_SHOVEL") || name.endsWith("_HOE") || name.endsWith("_SHEARS")) {
-            return "инструмент";
+                || name.endsWith("_SHOVEL") || name.endsWith("_HOE") || name.endsWith("_SHEARS")
+                || name.equals("FISHING_ROD") || name.equals("BOW") || name.equals("CROSSBOW")) {
+            return "инструмент или оружие";
         }
+        if (name.startsWith("RAW_") || name.endsWith("_INGOT") || name.endsWith("_NUGGET")) {
+            return "металл и сырьё для крафта";
+        }
+        if (name.equals("COAL") || name.equals("CHARCOAL") || name.equals("BLAZE_ROD")) return "топливо";
+        if (name.equals("REDSTONE") || name.equals("REDSTONE_BLOCK")) return "автоматика";
         if (name.endsWith("_HELMET") || name.endsWith("_CHESTPLATE")
                 || name.endsWith("_LEGGINGS") || name.endsWith("_BOOTS") || name.equals("SHIELD")) {
             return "защита";
@@ -249,7 +274,8 @@ final class BlockKnowledge {
         if (name.equals("CHEST") || name.equals("TRAPPED_CHEST") || name.equals("BARREL")
                 || name.endsWith("SHULKER_BOX")) return "хранение";
         if (isCrop(name) || name.equals("WHEAT_SEEDS") || name.equals("BEETROOT_SEEDS")) return "земледелие";
-        if (name.endsWith("_BED") || name.equals("TORCH") || name.equals("LANTERN")) return "отдых и свет";
+        if (name.endsWith("_BED")) return "отдых";
+        if (name.equals("TORCH") || name.equals("LANTERN") || name.equals("GLOWSTONE")) return "освещение";
         if (name.equals("BREAD") || name.endsWith("_STEW") || name.endsWith("_SOUP")
                 || name.startsWith("COOKED_") || name.equals("BAKED_POTATO")) return "пища";
         return "вспомогательный ресурс";
