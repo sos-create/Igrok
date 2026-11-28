@@ -4,6 +4,7 @@ import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.World;
 import org.bukkit.Material;
+import org.bukkit.FluidCollisionMode;
 import org.bukkit.block.Block;
 import org.bukkit.block.BlockFace;
 import org.bukkit.block.data.Openable;
@@ -33,6 +34,9 @@ final class AgentNavigator {
     private final Player bot;
     private final AgentSkillBook skills;
     private final List<Node> path = new ArrayList<>();
+    // A collision can reveal a narrow obstacle that a simple passability test misses.
+    // Temporarily blacklist that next cell so A* chooses another side instead of retrying it.
+    private final Map<Node, Integer> blockedNodesUntil = new HashMap<>();
     private Node plannedDestination;
     private int pathIndex;
     private int stuckTicks;
@@ -131,6 +135,7 @@ final class AgentNavigator {
 
         Node next = path.get(pathIndex);
         World currentWorld = bot.getWorld();
+        pruneBlockedNodes();
         if (!currentWorld.isChunkLoaded(next.x() >> 4, next.z() >> 4) || !standable(currentWorld, next)) {
             // A path can outlive a chunk ticket. Never move toward stale chunk data.
             path.clear();
@@ -140,6 +145,16 @@ final class AgentNavigator {
             return true;
         }
         Location current = bot.getLocation();
+        if (!hasClearPlayerWidth(currentWorld, current, next)) {
+            // Do not keep pushing into a wall when the node looked passable on paper.
+            blockedNodesUntil.put(next, bot.getTicksLived() + 40);
+            path.clear();
+            pathIndex = 0;
+            plannedDestination = null;
+            stuckTicks = 0;
+            clearMovementIntent();
+            return true;
+        }
         double dx = next.x() + 0.5 - current.getX();
         double dz = next.z() + 0.5 - current.getZ();
         double horizontal = Math.sqrt(dx * dx + dz * dz);
@@ -209,6 +224,7 @@ final class AgentNavigator {
         path.clear();
         pathIndex = 0;
         plannedDestination = null;
+        blockedNodesUntil.clear();
         stuckTicks = 0;
         retryCooldown = 0;
         previousPosition = null;
@@ -526,6 +542,7 @@ final class AgentNavigator {
                             current.node().y() + dy, current.node().z() + dir[1]);
                     if (Math.abs(candidate.x() - start.x()) > pathRadius()
                             || Math.abs(candidate.z() - start.z()) > pathRadius()
+                            || isTemporarilyBlocked(candidate)
                             || (!costs.containsKey(candidate) && !standable(world, candidate))) continue;
                     if (dir[0] != 0 && dir[1] != 0) {
                         Node sideA = new Node(current.node().x() + dir[0], current.node().y(), current.node().z());
@@ -561,6 +578,53 @@ final class AgentNavigator {
         plannedDestination = requestedGoal;
         stuckTicks = 0;
         return true;
+    }
+
+    /**
+     * Checks the swept width of a player, not just the center line. Three short
+     * collision rays at shoulder/torso/leg height catch walls, protruding blocks,
+     * and tight corners before velocity is applied. Only already-loaded chunks
+     * are queried.
+     */
+    private boolean hasClearPlayerWidth(World world, Location current, Node next) {
+        if (current == null || current.getWorld() != world
+                || !world.isChunkLoaded(next.x() >> 4, next.z() >> 4)) return false;
+        double targetX = next.x() + 0.5;
+        double targetZ = next.z() + 0.5;
+        double dx = targetX - current.getX();
+        double dz = targetZ - current.getZ();
+        double horizontal = Math.sqrt(dx * dx + dz * dz);
+        if (horizontal < 0.08) return true;
+        double sideX = -dz / horizontal * 0.19;
+        double sideZ = dx / horizontal * 0.19;
+        double startY = current.getY();
+        double endY = next.y();
+        double[] heights = {0.32, 0.92, 1.52};
+        for (double height : heights) {
+            for (int side = -1; side <= 1; side++) {
+                Location start = new Location(world,
+                        current.getX() + sideX * side, startY + height,
+                        current.getZ() + sideZ * side);
+                Vector ray = new Vector(dx, endY - startY, dz);
+                double length = ray.length();
+                if (length < 0.08) continue;
+                ray.normalize();
+                org.bukkit.util.RayTraceResult hit = world.rayTraceBlocks(
+                        start, ray, length, FluidCollisionMode.NEVER, true);
+                if (hit != null && hit.getHitBlock() != null) return false;
+            }
+        }
+        return true;
+    }
+
+    private boolean isTemporarilyBlocked(Node node) {
+        Integer until = blockedNodesUntil.get(node);
+        return until != null && until > bot.getTicksLived();
+    }
+
+    private void pruneBlockedNodes() {
+        int now = bot.getTicksLived();
+        blockedNodesUntil.entrySet().removeIf(entry -> entry.getValue() <= now);
     }
 
     private boolean isStandableOrKnown(World world, Node node, Map<Node, Double> knownCosts) {
