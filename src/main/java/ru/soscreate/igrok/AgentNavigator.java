@@ -361,10 +361,14 @@ final class AgentNavigator {
         open.add(new OpenNode(start, 0.0, heuristic(start, requestedGoal)));
         costs.put(start, 0.0);
         Node found = null;
+        int searchBudget = pathSearchBudget();
         int expanded = 0;
-
-        while (!open.isEmpty() && expanded < pathSearchBudget()) {
+        int polled = 0;
+        // Stale duplicate entries do not count as expansions. Cap queue polling too,
+        // otherwise a crowded open set could keep the main thread busy past the A* budget.
+        while (!open.isEmpty() && expanded < searchBudget && polled < searchBudget * 4) {
             OpenNode current = open.poll();
+            polled++;
             if (current.g() > costs.getOrDefault(current.node(), Double.POSITIVE_INFINITY)) continue;
             if (current.node().equals(requestedGoal)) {
                 found = current.node();
