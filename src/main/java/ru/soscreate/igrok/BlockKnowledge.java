@@ -14,6 +14,60 @@ import org.bukkit.block.data.Ageable;
 final class BlockKnowledge {
     private BlockKnowledge() { }
 
+    private static final java.util.Map<String, Material> RUSSIAN_MATERIAL_NAMES = java.util.Map.ofEntries(
+            java.util.Map.entry("поршень", Material.PISTON),
+            java.util.Map.entry("липкий поршень", Material.STICKY_PISTON),
+            java.util.Map.entry("блок редстоуна", Material.REDSTONE_BLOCK),
+            java.util.Map.entry("редстоуновая пыль", Material.REDSTONE),
+            java.util.Map.entry("повторитель", Material.REPEATER),
+            java.util.Map.entry("наблюдатель", Material.OBSERVER),
+            java.util.Map.entry("раздатчик", Material.DISPENSER),
+            java.util.Map.entry("выбрасыватель", Material.DROPPER),
+            java.util.Map.entry("воронка", Material.HOPPER),
+            java.util.Map.entry("верстак", Material.CRAFTING_TABLE),
+            java.util.Map.entry("печь", Material.FURNACE),
+            java.util.Map.entry("плавильная печь", Material.BLAST_FURNACE),
+            java.util.Map.entry("коптильня", Material.SMOKER),
+            java.util.Map.entry("сундук", Material.CHEST),
+            java.util.Map.entry("бочка", Material.BARREL),
+            java.util.Map.entry("железная кирка", Material.IRON_PICKAXE),
+            java.util.Map.entry("каменная кирка", Material.STONE_PICKAXE),
+            java.util.Map.entry("деревянная кирка", Material.WOODEN_PICKAXE),
+            java.util.Map.entry("кирка", Material.IRON_PICKAXE),
+            java.util.Map.entry("железный топор", Material.IRON_AXE),
+            java.util.Map.entry("каменный топор", Material.STONE_AXE),
+            java.util.Map.entry("топор", Material.IRON_AXE),
+            java.util.Map.entry("меч", Material.IRON_SWORD),
+            java.util.Map.entry("щит", Material.SHIELD),
+            java.util.Map.entry("факел", Material.TORCH),
+            java.util.Map.entry("кровать", Material.WHITE_BED),
+            java.util.Map.entry("хлеб", Material.BREAD),
+            java.util.Map.entry("палка", Material.STICK),
+            java.util.Map.entry("булыжник", Material.COBBLESTONE),
+            java.util.Map.entry("дубовые доски", Material.OAK_PLANKS),
+            java.util.Map.entry("доски", Material.OAK_PLANKS),
+            java.util.Map.entry("бревно", Material.OAK_LOG),
+            java.util.Map.entry("дубовое бревно", Material.OAK_LOG),
+            java.util.Map.entry("уголь", Material.COAL),
+            java.util.Map.entry("железный слиток", Material.IRON_INGOT),
+            java.util.Map.entry("железо", Material.IRON_INGOT),
+            java.util.Map.entry("красная пыль", Material.REDSTONE)
+    );
+
+    static Material findMaterialMention(String text) {
+        if (text == null || text.isBlank()) return null;
+        String normalized = text.toLowerCase(java.util.Locale.ROOT).replace('ё', 'е');
+        for (String alias : RUSSIAN_MATERIAL_NAMES.keySet().stream()
+                .sorted((a, b) -> Integer.compare(b.length(), a.length())).toList()) {
+            if (normalized.contains(alias)) return RUSSIAN_MATERIAL_NAMES.get(alias);
+        }
+        for (Material material : Material.values()) {
+            String id = material.name().toLowerCase(java.util.Locale.ROOT).replace('_', ' ');
+            if (id.length() >= 4 && normalized.contains(id)) return material;
+        }
+        return null;
+    }
+
     static String quickAction(Material material) {
         if (material == null) return "назначение пока неизвестно";
         String name = material.name();
