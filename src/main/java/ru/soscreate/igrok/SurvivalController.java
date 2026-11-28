@@ -309,7 +309,13 @@ final class SurvivalController {
             nextBedScanTick = tick + 200;
             return false;
         }
-        navigator.moveTo(knownBed);
+        // Do not keep the SLEEP goal forever when a bed is behind an
+        // unreachable wall or the bounded path search cannot reach it.
+        if (!navigator.moveTo(knownBed)) {
+            knownBed = null;
+            nextBedScanTick = tick + 200;
+            return false;
+        }
         return true;
     }
 
