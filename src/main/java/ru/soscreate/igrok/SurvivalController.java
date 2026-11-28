@@ -312,6 +312,16 @@ final class SurvivalController {
         // Do not keep the SLEEP goal forever when a bed is behind an
         // unreachable wall or the bounded path search cannot reach it.
         if (!navigator.moveTo(knownBed)) {
+            // A* reports completion and path failure through the same boolean.
+            // Reaching a nearby standable block can still leave the bed slightly
+            // farther than the early distance threshold, so make one final
+            // legitimate sleep attempt before discarding this bed as unreachable.
+            double finalDistance = bot.getLocation()
+                    .distanceSquared(knownBed.clone().add(0.5, 0.0, 0.5));
+            if (finalDistance <= 12.25) {
+                navigator.stop();
+                if (bot.sleep(knownBed, false)) return true;
+            }
             knownBed = null;
             nextBedScanTick = tick + 200;
             return false;
