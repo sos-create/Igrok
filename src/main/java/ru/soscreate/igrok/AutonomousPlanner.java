@@ -1,5 +1,8 @@
 package ru.soscreate.igrok;
 
+import java.util.HashMap;
+import java.util.Map;
+
 /**
  * Multi-project survival planner.
  *
@@ -12,6 +15,14 @@ package ru.soscreate.igrok;
  * this class only chooses the next verified intention.
  */
 final class AutonomousPlanner {
+    /*
+     * A compact novelty memory. Recently selected strategic phases receive a
+     * temporary score penalty, so the agent does not grind the same activity
+     * forever when several useful alternatives are available.
+     */
+    private final Map<String, Integer> phaseCooldowns = new HashMap<>();
+    private String lastChosenPhase = "";
+
     record Snapshot(
             int foodLevel,
             boolean hasFood,
@@ -61,6 +72,8 @@ final class AutonomousPlanner {
                     String phase, String reason) { }
 
     Decision choose(Snapshot s) {
+        phaseCooldowns.replaceAll((phase, remaining) -> remaining - 1);
+        phaseCooldowns.values().removeIf(remaining -> remaining <= 0);
         double curiosity = clamp(s.curiosity());
         double creativity = clamp(s.creativity());
         int stage = Math.max(0, Math.min(4, s.developmentStage()));
@@ -78,8 +91,8 @@ final class AutonomousPlanner {
 
         // Immediate survival is a hard constraint, not just another optional project.
         if (s.foodLevel() <= 8 && !s.hasFood() && s.huntReady()) {
-            return decision(GoalPlanner.Goal.HUNT, "", 1.0, "SURVIVAL",
-                    "Еда стала срочной задачей: сначала найду пищу, а затем вернусь к другим проектам.");
+            return remember(decision(GoalPlanner.Goal.HUNT, "", 1.0, "SURVIVAL",
+                    "Еда стала срочной задачей: сначала найду пищу, а затем вернусь к другим проектам."));
         }
         if (s.foodLevel() <= 12 && !s.hasFood()) {
             Decision foodDecision = s.huntReady()
@@ -259,7 +272,7 @@ final class AutonomousPlanner {
 
         // A lack of a nearby resource must never become a permanent wait state.
         // The caller moves to a new area and cooldowns prevent immediate retry loops.
-        return best;
+        return remember(best);
     }
 
     private Decision collect(boolean searchReady, String mode, double utility,
@@ -273,7 +286,26 @@ final class AutonomousPlanner {
     }
 
     private Decision better(Decision current, Decision candidate) {
-        return candidate.utility() > current.utility() ? candidate : current;
+        return adjustedUtility(candidate) > adjustedUtility(current) ? candidate : current;
+    }
+
+    private double adjustedUtility(Decision decision) {
+        int cooldown = phaseCooldowns.getOrDefault(decision.phase(), 0);
+        // Maximum penalty is 0.16: novelty can change a close decision, never
+        // override a genuinely urgent or substantially more useful task.
+        return decision.utility() - Math.min(0.16, cooldown * 0.0032);
+    }
+
+    private Decision remember(Decision decision) {
+        if (decision == null) return null;
+        String phase = decision.phase();
+        if (!lastChosenPhase.isBlank() && !lastChosenPhase.equals(phase)) {
+            // Keep the previous activity out of the immediate next choice for
+            // about 50 planning passes (normally ~50 seconds).
+            phaseCooldowns.put(lastChosenPhase, 50);
+        }
+        lastChosenPhase = phase;
+        return decision;
     }
 
     private Decision decision(GoalPlanner.Goal goal, String mode, double utility,
