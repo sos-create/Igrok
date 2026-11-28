@@ -997,26 +997,44 @@ final class SurvivalController {
     }
 
     private Block findNearbyProcessor(Player bot, int radius) {
-        Material preferred = preferredProcessor(bot);
-        Block result = findNearbyBlock(bot, preferred, radius);
-        if (result != null) return result;
+        // Finish work already started in a station before choosing another one.
+        // This also prevents a partly cooked stack from being abandoned when the
+        // last raw item leaves the bot's inventory.
         for (Material type : new Material[]{Material.FURNACE, Material.BLAST_FURNACE, Material.SMOKER}) {
-            if (type == preferred) continue;
-            result = findNearbyBlock(bot, type, radius);
+            Block candidate = findNearbyBlock(bot, type, radius);
+            if (candidate == null) continue;
+            BlockState state = candidate.getState();
+            if (state instanceof Furnace furnace) {
+                org.bukkit.inventory.FurnaceInventory inventory = furnace.getInventory();
+                if (hasItem(inventory.getSmelting()) || hasItem(inventory.getResult())
+                        || furnace.getBurnTime() > 0) return candidate;
+            }
+        }
+
+        boolean foodReady = hasRawFood(bot);
+        boolean oreReady = hasRawOre(bot);
+        Material[] preference = foodReady
+                ? new Material[]{Material.SMOKER, Material.FURNACE}
+                : oreReady
+                    ? new Material[]{Material.BLAST_FURNACE, Material.FURNACE}
+                    : new Material[]{Material.FURNACE, Material.SMOKER, Material.BLAST_FURNACE};
+        for (Material type : preference) {
+            Block result = findNearbyBlock(bot, type, radius);
             if (result != null) return result;
         }
         return null;
     }
 
-    /** Choose a station with a bounded inventory scan, without iterating all Materials. */
-    private Material preferredProcessor(Player bot) {
+    private boolean hasRawFood(Player bot) {
         Material[] foods = {
                 Material.BEEF, Material.PORKCHOP, Material.MUTTON, Material.CHICKEN,
                 Material.RABBIT, Material.COD, Material.SALMON, Material.POTATO
         };
-        for (Material food : foods) {
-            if (count(bot, food) > 0) return Material.SMOKER;
-        }
+        for (Material food : foods) if (count(bot, food) > 0) return true;
+        return false;
+    }
+
+    private boolean hasRawOre(Player bot) {
         for (int slot = 0; slot < 36; slot++) {
             ItemStack item = bot.getInventory().getItem(slot);
             if (item == null || item.getType().isAir()) continue;
@@ -1024,9 +1042,13 @@ final class SurvivalController {
             if (name.equals("RAW_IRON") || name.equals("RAW_GOLD") || name.equals("RAW_COPPER")
                     || name.equals("ANCIENT_DEBRIS") || name.endsWith("_IRON_ORE")
                     || name.endsWith("_GOLD_ORE") || name.endsWith("_COPPER_ORE")
-                    || name.equals("NETHER_GOLD_ORE")) return Material.BLAST_FURNACE;
+                    || name.equals("NETHER_GOLD_ORE")) return true;
         }
-        return Material.FURNACE;
+        return false;
+    }
+
+    private boolean hasItem(ItemStack item) {
+        return item != null && !item.getType().isAir() && item.getAmount() > 0;
     }
 
     private void maintainFurnace(Player bot) {
