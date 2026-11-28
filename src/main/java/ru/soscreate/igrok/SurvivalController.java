@@ -22,6 +22,7 @@ import org.bukkit.entity.Player;
 import org.bukkit.event.block.BlockPlaceEvent;
 import org.bukkit.inventory.EquipmentSlot;
 import org.bukkit.inventory.Inventory;
+import org.bukkit.inventory.InventoryHolder;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.PlayerInventory;
 import org.bukkit.inventory.Recipe;
@@ -130,8 +131,9 @@ final class SurvivalController {
         int charcoal = count(bot, Material.CHARCOAL);
         int torches = count(bot, Material.TORCH);
         boolean hasTable = hasNearbyCraftingTable(bot) || count(bot, Material.CRAFTING_TABLE) > 0;
-        boolean hasFurnace = findNearbyBlock(bot, Material.FURNACE, 4) != null
-                || count(bot, Material.FURNACE) > 0;
+        boolean hasFurnace = hasProcessingBlock(bot, 4)
+                || count(bot, Material.FURNACE) + count(bot, Material.BLAST_FURNACE)
+                    + count(bot, Material.SMOKER) > 0;
         HouseBuilder builder = plugin.houseBuilder();
         boolean shelterComplete = builder.hasCompleted();
         boolean shelterReady = !shelterComplete && builder.canBuild(bot);
@@ -697,24 +699,24 @@ final class SurvivalController {
     private void manageStorage(Player bot, int tick) {
         if (knownChest == null || knownChest.getWorld() != bot.getWorld()
                 || !bot.getWorld().isChunkLoaded(knownChest.getBlockX() >> 4, knownChest.getBlockZ() >> 4)
-                || knownChest.getBlock().getType() != Material.CHEST
+                || !isStorageBlock(knownChest.getBlock().getType())
                 || !withinContainerReach(bot, knownChest)) {
             knownChest = null;
             if (tick < nextChestScanTick) return;
-            knownChest = findNearbyChest(bot, 4);
+            knownChest = findNearbyStorage(bot, 4);
             nextChestScanTick = tick + 200;
         }
         if (knownChest == null && count(bot, Material.CHEST) > 0) {
             placeChest(bot);
-            knownChest = findNearbyChest(bot, 4);
+            knownChest = findNearbyStorage(bot, 4);
         }
         if (knownChest == null) return;
 
         Block block = knownChest.getBlock();
         if (!bot.getWorld().isChunkLoaded(block.getX() >> 4, block.getZ() >> 4)) return;
         BlockState state = block.getState();
-        if (!(state instanceof Chest chest)) return;
-        Inventory storage = chest.getInventory();
+        if (!(state instanceof InventoryHolder holder)) return;
+        Inventory storage = holder.getInventory();
         if (!canOpenInventory(bot, storage)) return;
         PlayerInventory inventory = bot.getInventory();
 
@@ -737,7 +739,7 @@ final class SurvivalController {
                 inventory.setItem(slot, item);
             }
         }
-        chest.update(true, false);
+        state.update(true, false);
     }
 
     private int keepInPersonalInventory(Material material) {
@@ -774,7 +776,12 @@ final class SurvivalController {
         return true;
     }
 
-    private Location findNearbyChest(Player bot, int radius) {
+    private boolean isStorageBlock(Material material) {
+        return material == Material.CHEST || material == Material.TRAPPED_CHEST
+                || material == Material.BARREL;
+    }
+
+    private Location findNearbyStorage(Player bot, int radius) {
         Location origin = bot.getLocation();
         World world = bot.getWorld();
         Location best = null;
@@ -785,7 +792,7 @@ final class SurvivalController {
                 for (int y = origin.getBlockY() - 3; y <= origin.getBlockY() + 4; y++) {
                     if (y <= world.getMinHeight() || y >= world.getMaxHeight()) continue;
                     Block block = world.getBlockAt(x, y, z);
-                    if (block.getType() != Material.CHEST) continue;
+                    if (!isStorageBlock(block.getType())) continue;
                     Location center = block.getLocation().add(0.5, 0.5, 0.5);
                     double distance = bot.getEyeLocation().distanceSquared(center);
                     if (distance > 4.5 * 4.5
@@ -801,7 +808,7 @@ final class SurvivalController {
     }
 
     private boolean placeChest(Player bot) {
-        if (count(bot, Material.CHEST) <= 0) return false;
+        if (count(bot, Material.CHEST) <= 0 || findNearbyStorage(bot, 4) != null) return false;
         Block target = findPlacementSpot(bot, 2);
         if (target == null) return false;
         ItemStack item = firstItem(bot, Material.CHEST);
@@ -865,7 +872,7 @@ final class SurvivalController {
     }
 
     private boolean placeFurnace(Player bot) {
-        if (count(bot, Material.FURNACE) <= 0 || findNearbyBlock(bot, Material.FURNACE, 4) != null) return false;
+        if (count(bot, Material.FURNACE) <= 0 || hasProcessingBlock(bot, 4)) return false;
         Block target = findPlacementSpot(bot, 2);
         if (target == null) return false;
         ItemStack item = firstItem(bot, Material.FURNACE);
@@ -880,7 +887,7 @@ final class SurvivalController {
     }
 
     private void maintainFurnace(Player bot) {
-        Block block = findNearbyBlock(bot, Material.FURNACE, 4);
+        Block block = findNearbyProcessor(bot, 4);
         if (block == null) return;
         BlockState state = block.getState();
         if (!(state instanceof Furnace furnace)) return;
