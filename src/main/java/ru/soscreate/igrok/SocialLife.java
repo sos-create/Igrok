@@ -46,6 +46,9 @@ final class SocialLife implements Listener {
 
     /** Called only at the existing low-frequency social scan, never every tick. */
     void tick(Player bot) {
+        long now = System.currentTimeMillis();
+        expirePending(now);
+        trimCaches();
         if (bot == null || !bot.isOnline()
                 || !plugin.getConfig().getBoolean("chat.social.enabled", true)
                 || !plugin.getConfig().getBoolean("chat.social.ambient-enabled", true)
@@ -53,9 +56,6 @@ final class SocialLife implements Listener {
             return;
         }
 
-        long now = System.currentTimeMillis();
-        expirePending(now);
-        trimCaches();
         Player nearby = nearestPlayer(bot);
         if (nearby == null) return;
 
