@@ -151,7 +151,7 @@ final class AgentNavigator {
         dx /= horizontal;
         dz /= horizontal;
         float yaw = (float) Math.toDegrees(Math.atan2(-dx, dz));
-        turnToward(yaw);
+        double turnError = turnToward(yaw);
 
         double vertical = bot.isOnGround() ? 0.0 : bot.getVelocity().getY();
         if (bot.isOnGround() && next.y() > current.getBlockY()) {
@@ -159,8 +159,13 @@ final class AgentNavigator {
             if (feet.getRelative(0, 1, 0).isPassable()
                     && feet.getRelative(0, 2, 0).isPassable()) vertical = 0.42;
         }
-        double speed = movementSpeed();
-        bot.setVelocity(new Vector(dx * speed, vertical, dz * speed));
+        double alignment = turnError > 110.0 ? 0.48 : turnError > 65.0 ? 0.68 : 1.0;
+        double speed = movementSpeed() * alignment;
+        applyHorizontalVelocity(dx, dz, speed);
+        if (vertical > bot.getVelocity().getY()) {
+            Vector velocity = bot.getVelocity();
+            bot.setVelocity(new Vector(velocity.getX(), vertical, velocity.getZ()));
+        }
 
         Location now = bot.getLocation();
         if (previousPosition != null && now.distanceSquared(previousPosition) < 0.0025) {
@@ -192,7 +197,10 @@ final class AgentNavigator {
 
     void stop() {
         Vector velocity = bot.getVelocity();
-        bot.setVelocity(new Vector(0.0, bot.isOnGround() ? 0.0 : velocity.getY(), 0.0));
+        // Keep a small amount of horizontal momentum. Vanilla friction removes it
+        // over the next few ticks instead of making the avatar snap to a halt.
+        bot.setVelocity(new Vector(velocity.getX() * 0.22,
+                bot.isOnGround() ? 0.0 : velocity.getY(), velocity.getZ() * 0.22));
         bot.setSprinting(false);
         sprinting = false;
         gaitTick = 0;
@@ -314,15 +322,20 @@ final class AgentNavigator {
         if (length < 0.001) return false;
         dx /= length;
         dz /= length;
-        turnToward((float) Math.toDegrees(Math.atan2(-dx, dz)));
+        double turnError = turnToward((float) Math.toDegrees(Math.atan2(-dx, dz)));
+        double alignment = turnError > 110.0 ? 0.48 : turnError > 65.0 ? 0.68 : 1.0;
+        double speed = movementSpeed() * alignment;
         double vertical = bot.isOnGround() ? 0.0 : bot.getVelocity().getY();
         if (bot.isOnGround() && best.y() > current.getBlockY()) {
             Block feet = current.getBlock();
             if (feet.getRelative(0, 1, 0).isPassable()
                     && feet.getRelative(0, 2, 0).isPassable()) vertical = 0.42;
         }
-        double speed = movementSpeed();
-        bot.setVelocity(new Vector(dx * speed, vertical, dz * speed));
+        applyHorizontalVelocity(dx, dz, speed);
+        if (vertical > bot.getVelocity().getY()) {
+            Vector velocity = bot.getVelocity();
+            bot.setVelocity(new Vector(velocity.getX(), vertical, velocity.getZ()));
+        }
         return true;
     }
 
@@ -330,16 +343,54 @@ final class AgentNavigator {
      * Turn like a player instead of snapping the body to the next path vector.
      * The fake player's tick keeps these angles after vanilla movement physics.
      */
-    private void turnToward(float targetYaw) {
-        float currentYaw = bot.getLocation().getYaw();
-        float delta = wrapDegrees(targetYaw - currentYaw);
-        float nextYaw = currentYaw + Math.max(-18.0F, Math.min(18.0F, delta));
-        float pitch = bot.getLocation().getPitch();
-        bot.setRotation(nextYaw, pitch);
+    /**
+     * Rotate the head slightly ahead of the torso. A real player can look toward
+     * the destination before the body has fully turned; preserving that lag also
+     * prevents the avatar from snapping around corners.
+     *
+     * @return remaining head-yaw error in degrees
+     */
+    private double turnToward(float targetYaw) {
         org.bukkit.craftbukkit.entity.CraftPlayer craftPlayer =
                 (org.bukkit.craftbukkit.entity.CraftPlayer) bot;
-        craftPlayer.getHandle().setYHeadRot(nextYaw);
-        craftPlayer.getHandle().setYBodyRot(nextYaw);
+        net.minecraft.server.level.ServerPlayer handle = craftPlayer.getHandle();
+        float currentYaw = handle.getYRot();
+        float currentHeadYaw = handle.getYHeadRot();
+        float currentBodyYaw = handle.getYBodyRot();
+        float headDelta = wrapDegrees(targetYaw - currentHeadYaw);
+        float bodyDelta = wrapDegrees(targetYaw - currentBodyYaw);
+        float nextHeadYaw = currentHeadYaw + Math.max(-18.0F, Math.min(18.0F, headDelta));
+        float nextBodyYaw = currentBodyYaw + Math.max(-11.0F, Math.min(11.0F, bodyDelta));
+        float pitch = handle.getXRot();
+
+        // The network-facing player yaw stays aligned with the torso, while the
+        // head is allowed to lead it by a limited angle during a turn.
+        handle.setYRot(nextBodyYaw);
+        handle.setXRot(pitch);
+        handle.setYHeadRot(nextHeadYaw);
+        handle.setYBodyRot(nextBodyYaw);
+        return Math.abs(wrapDegrees(targetYaw - nextHeadYaw));
+    }
+
+    /** Accelerate and brake instead of replacing velocity with a fixed vector. */
+    private void applyHorizontalVelocity(double directionX, double directionZ, double targetSpeed) {
+        Vector current = bot.getVelocity();
+        double targetX = directionX * targetSpeed;
+        double targetZ = directionZ * targetSpeed;
+        double deltaX = targetX - current.getX();
+        double deltaZ = targetZ - current.getZ();
+        double deltaLength = Math.sqrt(deltaX * deltaX + deltaZ * deltaZ);
+
+        // Two-tick AI cadence: a bounded impulse makes movement start gradually,
+        // change direction with inertia and settle at a stable walking speed.
+        double maxAcceleration = bot.isOnGround() ? 0.075 : 0.035;
+        if (deltaLength > maxAcceleration && deltaLength > 0.0001) {
+            double scale = maxAcceleration / deltaLength;
+            deltaX *= scale;
+            deltaZ *= scale;
+        }
+        bot.setVelocity(new Vector(current.getX() + deltaX,
+                current.getY(), current.getZ() + deltaZ));
     }
 
     private float wrapDegrees(float degrees) {
@@ -367,7 +418,7 @@ final class AgentNavigator {
     }
 
     private double movementSpeed() {
-        return sprinting ? 0.18 : 0.135;
+        return sprinting ? 0.275 : 0.205;
     }
 
     private void failPath() {
@@ -400,15 +451,20 @@ final class AgentNavigator {
         if (safeTarget == null || Math.abs(safeTarget.y() - current.getBlockY()) > 1) return false;
 
         float yaw = (float) Math.toDegrees(Math.atan2(-horizontal.getX(), horizontal.getZ()));
-        turnToward(yaw);
+        double turnError = turnToward(yaw);
         bot.setSprinting(false);
+        double alignment = turnError > 110.0 ? 0.48 : turnError > 65.0 ? 0.68 : 1.0;
         double vertical = bot.isOnGround() ? 0.0 : bot.getVelocity().getY();
         if (bot.isOnGround() && safeTarget.y() > current.getBlockY()) {
             Block feet = current.getBlock();
             if (feet.getRelative(0, 1, 0).isPassable()
                     && feet.getRelative(0, 2, 0).isPassable()) vertical = 0.42;
         }
-        bot.setVelocity(new Vector(horizontal.getX() * speed, vertical, horizontal.getZ() * speed));
+        applyHorizontalVelocity(horizontal.getX(), horizontal.getZ(), speed * alignment);
+        if (vertical > bot.getVelocity().getY()) {
+            Vector velocity = bot.getVelocity();
+            bot.setVelocity(new Vector(velocity.getX(), vertical, velocity.getZ()));
+        }
         return true;
     }
 
