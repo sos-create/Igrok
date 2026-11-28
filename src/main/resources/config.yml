@@ -1,4 +1,4 @@
-# Igrok 0.9.47 configuration
+# Igrok 0.9.48 configuration
 # Optional Mojang account name whose signed player skin Igrok should use.
 # Leave empty to use the standard Steve/Alex fallback skin.
 skin-owner: ""
@@ -17,10 +17,14 @@ chat:
   enabled: true
   cooldown-seconds: 5
   listen-radius: 16
+  ordinary-chat:
+    enabled: true
+    # A conversation remains open for this long after either side speaks.
+    session-seconds: 180
   # Bot answers five seconds after the last addressed or nearby message.
   reply-delay-min-seconds: 5
   reply-delay-max-seconds: 5
-  # Igrok answers direct mentions and short follow-ups in a recent conversation.
+  # Direct mentions work at any nearby-player count; solo nearby chat can start a conversation.\n  # Follow-up messages continue naturally during the ordinary-chat session.
   follow-up-window-seconds: 120
   social:
     enabled: true
